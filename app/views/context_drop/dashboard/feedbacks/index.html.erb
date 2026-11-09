@@ -1,0 +1,86 @@
+<div class="cd-tabs" role="tablist" aria-label="Filter feedback by status">
+  <a href="<%= dashboard_feedbacks_path(q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+     class="cd-tab <%= 'active' if @current_status.blank? %>">
+    All (<%= @status_counts["all"] %>)
+  </a>
+  <% ContextDrop::Feedback::STATUSES.each do |status_name| %>
+    <a href="<%= dashboard_feedbacks_path(status: status_name, q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+       class="cd-tab <%= 'active' if @current_status == status_name %>">
+      <%= status_name.capitalize %> (<%= @status_counts[status_name] || 0 %>)
+    </a>
+  <% end %>
+</div>
+
+<div class="cd-card">
+  <form method="get" action="<%= dashboard_feedbacks_path %>" class="cd-filter-bar">
+    <% if @current_status.present? %>
+      <input type="hidden" name="status" value="<%= @current_status %>">
+    <% end %>
+    <input type="search"
+           name="q"
+           value="<%= @search_query %>"
+           placeholder="Search message, selector, or DOM text..."
+           class="cd-input"
+           aria-label="Search feedback">
+    <input type="text"
+           name="page_url"
+           value="<%= @page_url_filter %>"
+           placeholder="Filter by page URL (e.g. /checkout)"
+           class="cd-input"
+           aria-label="Filter by page URL">
+    <button type="submit" class="cd-btn cd-btn-primary">Filter</button>
+    <% if @search_query.present? || @page_url_filter.present? || @current_status.present? %>
+      <a href="<%= dashboard_feedbacks_path %>" class="cd-btn">Reset</a>
+    <% end %>
+  </form>
+
+  <% if @feedbacks.empty? %>
+    <p style="color: var(--cd-muted); padding: 1.5rem 0; text-align: center; margin: 0;">
+      No feedback records found matching the current filters.
+    </p>
+  <% else %>
+    <table class="cd-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Message &amp; Context</th>
+          <th>Page URL</th>
+          <th>Submitter</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @feedbacks.each do |fb| %>
+          <tr id="feedback-row-<%= fb.id %>">
+            <td><a href="<%= dashboard_feedback_path(fb) %>" class="cd-mono">#<%= fb.id %></a></td>
+            <td>
+              <span class="cd-badge cd-badge-<%= fb.status %>"><%= fb.status %></span>
+            </td>
+            <td>
+              <div style="font-weight: 500; margin-bottom: 0.25rem;">
+                <%= fb.message.present? ? truncate(fb.message, length: 120) : "(No text message)" %>
+              </div>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--cd-muted);">
+                <span>Attachments: <strong><%= fb.attachments.size %></strong></span>
+                <span>Elements: <strong><%= fb.element_references.size %></strong></span>
+                <% fb.element_references.first(2).each do |el| %>
+                  <code class="cd-mono"><%= el.selector %></code>
+                <% end %>
+              </div>
+            </td>
+            <td><code class="cd-mono"><%= fb.page_url %></code></td>
+            <td><%= fb.submitter_label %></td>
+            <td style="white-space: nowrap; color: var(--cd-muted);">
+              <%= fb.created_at&.strftime("%Y-%m-%d %H:%M UTC") %>
+            </td>
+            <td>
+              <a href="<%= dashboard_feedback_path(fb) %>" class="cd-btn">Inspect</a>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</div>
