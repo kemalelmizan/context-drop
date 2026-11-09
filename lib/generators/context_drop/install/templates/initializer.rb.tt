@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+ContextDrop.configure do |config|
+  # Environment-based master switch (disables widget, dashboard, and ingestion endpoints when false)
+  config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"
+
+  # Widget position: :bottom_right, :bottom_left, :top_right, :top_left
+  config.position = :bottom_right
+
+  # Attachment storage backend
+  config.storage = :active_storage
+  config.active_storage_service = nil # nil uses host app's default Active Storage service
+
+  # Submission permissions
+  config.allow_anonymous = true
+
+  # Attachment & element limits
+  config.max_attachments = 10
+  config.max_element_references = 10
+  config.max_attachment_size = 10.megabytes
+  config.allowed_content_types = %w[image/png image/jpeg image/webp image/gif]
+  config.max_image_dimensions = [4096, 4096]
+
+  # Widget feature flags
+  config.element_selection = true
+  config.screenshot_capture = true
+  config.element_capture_padding = 16
+
+  # DOM selectors excluded from selection and redacted in screenshots
+  config.excluded_selectors = [
+    "[data-feedback-ignore]",
+    "[data-feedback-sensitive]",
+    "input[type='password']",
+    "input[type='hidden']",
+    "[autocomplete^='cc-']"
+  ]
+
+  # Host authentication integration (returns any ActiveRecord model for polymorphic `submitter`, or nil)
+  config.current_submitter = ->(controller) { controller.try(:current_user) }
+
+  # Authorization policies
+  config.authorize_submission = ->(_controller) { true }
+  config.authorize_dashboard = ->(controller) { controller.try(:current_user)&.try(:admin?) || Rails.env.development? }
+
+  # Rate limiting on submission/upload endpoints
+  config.rate_limit = { max_requests: 20, period: 1.hour }
+
+  # Optional lifecycle callback invoked after feedback creation
+  config.on_feedback_created = ->(feedback) {}
+
+  # Model Context Protocol (MCP) server settings (Phase 2)
+  config.mcp_enabled = ENV.fetch("CONTEXT_DROP_MCP_ENABLED", "false") == "true"
+  config.mcp_api_key = ENV["CONTEXT_DROP_MCP_API_KEY"]
+  config.authorize_mcp = nil
+end

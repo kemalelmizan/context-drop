@@ -1,0 +1,15 @@
+/.bundle/
+/vendor/bundle
+/pkg/
+/tmp/
+/log/
+/node_modules/
+/coverage/
+/spec/dummy/db/*.sqlite3*
+/spec/dummy/log/*
+/spec/dummy/tmp/*
+/spec/dummy/storage/*
+!.keep
+.DS_Store
+*.gem
+*.rbc
