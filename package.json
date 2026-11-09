@@ -1,0 +1,17 @@
+{
+  "name": "@context-drop/widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Decoupled TypeScript Shadow DOM feedback widget for ContextDrop Rails Engine",
+  "type": "module",
+  "main": "app/assets/javascripts/context_drop/context_drop.js",
+  "module": "app/javascript/context_drop/index.ts",
+  "scripts": {
+    "build": "node scripts/build_widget.mjs",
+    "test": "node --test app/javascript/context_drop/__tests__/*.test.ts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "license": "MIT"
+}
