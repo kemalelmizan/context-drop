@@ -6,7 +6,10 @@ import {
   computeSelector,
   extractSanitizedAttributes,
   extractSanitizedText,
-  isElementExcluded
+  isElementExcluded,
+  isSelectableElement,
+  resolveAncestorChain,
+  resolveCandidateStack
 } from "../sanitizer.ts";
 
 interface MockNodeInit {
@@ -194,5 +197,83 @@ describe("ContextDrop Frontend DOM Sanitizer & Snapshot Capture", () => {
     assert.equal(snapshot.text_content, "Complete Purchase");
     assert.deepEqual(snapshot.bounding_rect, { x: 100, y: 250, width: 200, height: 48 });
     assert.equal("outerHTML" in snapshot, false);
+  });
+
+  it("resolves cascading ancestor chain and overlapping candidate stack while filtering sensitive elements", () => {
+    const iconSpan = new MockElement({
+      tagName: "SPAN",
+      attributes: { class: "icon-label" },
+      children: [new MockTextNode("Pay $49.00")],
+      rect: { x: 112, y: 260, width: 88, height: 20 }
+    });
+    const button = new MockElement({
+      tagName: "BUTTON",
+      attributes: { id: "pay-btn", class: "btn-cta" },
+      children: [iconSpan],
+      rect: { x: 100, y: 250, width: 200, height: 44 }
+    });
+    const card = new MockElement({
+      tagName: "DIV",
+      attributes: { class: "pricing-card featured" },
+      children: [button],
+      rect: { x: 80, y: 180, width: 320, height: 240 }
+    });
+    const overlappingRibbon = new MockElement({
+      tagName: "DIV",
+      attributes: { class: "floating-promo-badge" },
+      children: [new MockTextNode("Limited Offer")],
+      rect: { x: 95, y: 245, width: 140, height: 28 }
+    });
+    const excludedOverlay = new MockElement({
+      tagName: "DIV",
+      attributes: { "data-feedback-ignore": "true", class: "ignored-overlay" },
+      rect: { x: 0, y: 0, width: 500, height: 500 }
+    });
+    const section = new MockElement({
+      tagName: "SECTION",
+      attributes: { id: "checkout-section" },
+      children: [card, overlappingRibbon, excludedOverlay],
+      rect: { x: 40, y: 120, width: 640, height: 400 }
+    });
+    const body = new MockElement({
+      tagName: "BODY",
+      children: [section],
+      rect: { x: 0, y: 0, width: 1280, height: 800 }
+    });
+
+    assert.equal(isSelectableElement(body as unknown as Element), false);
+    assert.equal(isSelectableElement(excludedOverlay as unknown as Element), false);
+    assert.equal(isSelectableElement(button as unknown as Element), true);
+
+    const ancestors = resolveAncestorChain(button as unknown as Element);
+    assert.equal(ancestors.length, 3);
+    assert.deepEqual(
+      ancestors.map((el) => computeSelector(el)),
+      ["#checkout-section", "div.pricing-card.featured", "#pay-btn"]
+    );
+
+    const stack = resolveCandidateStack(
+      button as unknown as Element,
+      [
+        excludedOverlay as unknown as Element,
+        button as unknown as Element,
+        overlappingRibbon as unknown as Element,
+        card as unknown as Element
+      ]
+    );
+
+    assert.deepEqual(
+      stack.map((item) => ({
+        selector: item.selector,
+        relation: item.relation
+      })),
+      [
+        { selector: "#pay-btn", relation: "target" },
+        { selector: "div.floating-promo-badge", relation: "overlap" },
+        { selector: "span.icon-label", relation: "child" },
+        { selector: "div.pricing-card.featured", relation: "ancestor" },
+        { selector: "#checkout-section", relation: "ancestor" }
+      ]
+    );
   });
 });

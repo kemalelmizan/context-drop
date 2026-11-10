@@ -1,5 +1,7 @@
 import type {
   BoundingRectSnapshot,
+  ElementCandidateInfo,
+  ElementCandidateRelation,
   ElementReferenceSnapshot,
   ViewportSnapshot
 } from "./types.ts";
@@ -81,6 +83,18 @@ function elementMatchesAny(el: Element, selectors: string[]): boolean {
   return false;
 }
 
+export function getParentOrHostElement(node: Element | null): Element | null {
+  if (!node) return null;
+  if (node.parentElement) {
+    return node.parentElement;
+  }
+  const rootNode = typeof node.getRootNode === "function" ? node.getRootNode() : null;
+  if (rootNode && "host" in rootNode && (rootNode as ShadowRoot).host instanceof Element) {
+    return (rootNode as ShadowRoot).host;
+  }
+  return null;
+}
+
 export function isElementExcluded(node: Element | null, customSelectors: string[] = []): boolean {
   if (!node) return true;
   const selectors = buildExcludedSelectorList(customSelectors);
@@ -90,18 +104,32 @@ export function isElementExcluded(node: Element | null, customSelectors: string[
     if (elementMatchesAny(current, selectors)) {
       return true;
     }
-    if (current.parentElement) {
-      current = current.parentElement;
-    } else {
-      const rootNode = typeof current.getRootNode === "function" ? current.getRootNode() : null;
-      if (rootNode && "host" in rootNode && (rootNode as ShadowRoot).host instanceof Element) {
-        current = (rootNode as ShadowRoot).host;
-      } else {
-        current = null;
-      }
-    }
+    current = getParentOrHostElement(current);
   }
   return false;
+}
+
+export function isSelectableElement(node: Element | null, customSelectors: string[] = []): boolean {
+  if (!node) return false;
+  const tag = (node.tagName || "").toUpperCase();
+  if (!tag || tag === "HTML" || tag === "BODY" || tag === "HEAD" || tag === "SCRIPT" || tag === "STYLE") {
+    return false;
+  }
+  if (typeof node.closest === "function") {
+    if (node.closest("context-drop-widget") || node.closest("[data-context-drop-ui]")) {
+      return false;
+    }
+  }
+  if (isElementExcluded(node, customSelectors)) {
+    return false;
+  }
+  const rect = typeof node.getBoundingClientRect === "function"
+    ? node.getBoundingClientRect()
+    : { width: 0, height: 0 };
+  if ((rect.width ?? 0) <= 0 || (rect.height ?? 0) <= 0) {
+    return false;
+  }
+  return true;
 }
 
 export function extractSanitizedAttributes(el: Element): Record<string, string> {
@@ -250,20 +278,147 @@ export function computeDomPath(el: Element): string {
     }
 
     segments.unshift(segment);
-
-    if (current.parentElement) {
-      current = current.parentElement;
-    } else {
-      const rootNode = typeof current.getRootNode === "function" ? current.getRootNode() : null;
-      if (rootNode && "host" in rootNode && (rootNode as ShadowRoot).host instanceof Element) {
-        current = (rootNode as ShadowRoot).host;
-      } else {
-        current = null;
-      }
-    }
+    current = getParentOrHostElement(current);
   }
 
   return segments.join(" > ").slice(0, 1000);
+}
+
+export function computeBoundingRect(el: Element): BoundingRectSnapshot {
+  const rect = typeof el.getBoundingClientRect === "function"
+    ? el.getBoundingClientRect()
+    : { x: 0, y: 0, width: 0, height: 0 };
+
+  return {
+    x: Math.round((rect.x ?? (rect as DOMRect).left ?? 0) * 100) / 100,
+    y: Math.round((rect.y ?? (rect as DOMRect).top ?? 0) * 100) / 100,
+    width: Math.round((rect.width ?? 0) * 100) / 100,
+    height: Math.round((rect.height ?? 0) * 100) / 100
+  };
+}
+
+export function describeElementCandidate(
+  el: Element,
+  relation: ElementCandidateRelation,
+  depth: number,
+  customSelectors: string[] = []
+): ElementCandidateInfo {
+  const rawText = extractSanitizedText(el, customSelectors);
+  const textPreview = rawText
+    ? rawText.length > 64
+      ? `${rawText.slice(0, 61)}...`
+      : rawText
+    : null;
+
+  return {
+    element: el,
+    tagName: (el.tagName || "div").toLowerCase(),
+    selector: computeSelector(el),
+    domPath: computeDomPath(el),
+    textPreview,
+    rect: computeBoundingRect(el),
+    relation,
+    depth
+  };
+}
+
+export function resolveAncestorChain(
+  el: Element | null,
+  customSelectors: string[] = [],
+  maxDepth: number = 8
+): Element[] {
+  if (!el || !isSelectableElement(el, customSelectors)) {
+    return [];
+  }
+
+  const chain: Element[] = [];
+  let current: Element | null = el;
+
+  while (current && chain.length < maxDepth) {
+    if (isSelectableElement(current, customSelectors)) {
+      chain.unshift(current);
+    }
+    current = getParentOrHostElement(current);
+  }
+
+  return chain;
+}
+
+function isAncestorOf(possibleAncestor: Element, node: Element): boolean {
+  let current: Element | null = getParentOrHostElement(node);
+  while (current) {
+    if (current === possibleAncestor) return true;
+    current = getParentOrHostElement(current);
+  }
+  return false;
+}
+
+/**
+ * Builds an ordered list of candidate elements for a pointer location so users can
+ * disambiguate overlapping sibling layers, deeply nested children, and parent containers.
+ *
+ * Order:
+ * 1. Direct child elements (if the target is a container with immediate selectable children)
+ * 2. Primary hovered/clicked target ("target")
+ * 3. Overlapping non-ancestor elements at the same screen coordinate ("overlap")
+ * 4. DOM ancestors from immediate parent up to top-level layout section ("ancestor")
+ */
+export function resolveCandidateStack(
+  primaryTarget: Element | null,
+  pointElements: Element[] = [],
+  customSelectors: string[] = [],
+  maxCandidates: number = 10
+): ElementCandidateInfo[] {
+  const seen = new Set<Element>();
+  const stack: ElementCandidateInfo[] = [];
+
+  const validPrimary =
+    primaryTarget && isSelectableElement(primaryTarget, customSelectors)
+      ? primaryTarget
+      : pointElements.find((candidate) => isSelectableElement(candidate, customSelectors)) || null;
+
+  if (!validPrimary) {
+    return [];
+  }
+
+  // 1. Primary target at index 0 so default hover/click is the exact element under pointer
+  seen.add(validPrimary);
+  stack.push(describeElementCandidate(validPrimary, "target", 0, customSelectors));
+
+  // 2. Overlapping non-ancestor elements from elementsFromPoint (e.g., elements behind an overlay or badge)
+  for (const ptEl of pointElements) {
+    if (stack.length >= maxCandidates) break;
+    if (seen.has(ptEl)) continue;
+    if (!isSelectableElement(ptEl, customSelectors)) continue;
+    if (!isAncestorOf(ptEl, validPrimary)) {
+      seen.add(ptEl);
+      stack.push(describeElementCandidate(ptEl, "overlap", stack.length, customSelectors));
+    }
+  }
+
+  // 3. Direct selectable children of the primary target (when a wrapper intercepts hover)
+  const childNodes = (validPrimary as unknown as { children?: ArrayLike<Element>; childNodes?: ArrayLike<Node> }).children ||
+    (validPrimary.childNodes || []);
+  for (let i = 0; i < childNodes.length; i += 1) {
+    if (stack.length >= maxCandidates) break;
+    const node = childNodes[i] as Element;
+    if (node && node.nodeType === 1 && !seen.has(node) && isSelectableElement(node, customSelectors)) {
+      seen.add(node);
+      stack.push(describeElementCandidate(node, "child", stack.length, customSelectors));
+    }
+  }
+
+  // 4. Ancestor chain walking up from validPrimary
+  let parent = getParentOrHostElement(validPrimary);
+  while (parent && stack.length < maxCandidates) {
+    if (!seen.has(parent) && isSelectableElement(parent, customSelectors)) {
+      seen.add(parent);
+      stack.push(describeElementCandidate(parent, "ancestor", stack.length, customSelectors));
+    }
+    parent = getParentOrHostElement(parent);
+  }
+
+  return stack;
 }
 
 export function captureElementSnapshot(
@@ -275,16 +430,7 @@ export function captureElementSnapshot(
     return null;
   }
 
-  const rect = typeof el.getBoundingClientRect === "function"
-    ? el.getBoundingClientRect()
-    : { x: 0, y: 0, width: 0, height: 0 };
-
-  const boundingRect: BoundingRectSnapshot = {
-    x: Math.round((rect.x ?? (rect as DOMRect).left ?? 0) * 100) / 100,
-    y: Math.round((rect.y ?? (rect as DOMRect).top ?? 0) * 100) / 100,
-    width: Math.round((rect.width ?? 0) * 100) / 100,
-    height: Math.round((rect.height ?? 0) * 100) / 100
-  };
+  const boundingRect = computeBoundingRect(el);
 
   const viewport: ViewportSnapshot = {
     width: typeof window !== "undefined" ? window.innerWidth || 1024 : 1024,

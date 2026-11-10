@@ -25,6 +25,19 @@ export interface ElementReferenceSnapshot {
   captured_at: string;
 }
 
+export type ElementCandidateRelation = "target" | "overlap" | "ancestor" | "child";
+
+export interface ElementCandidateInfo {
+  element: Element;
+  tagName: string;
+  selector: string;
+  domPath: string;
+  textPreview: string | null;
+  rect: BoundingRectSnapshot;
+  relation: ElementCandidateRelation;
+  depth: number;
+}
+
 export interface PendingAttachmentItem {
   id: string;
   attachment_type: "image" | "screenshot";
@@ -36,6 +49,19 @@ export interface PendingAttachmentItem {
   filename: string;
   element_reference_ref?: string;
   metadata: Record<string, unknown>;
+}
+
+export interface SessionFeedbackEntry {
+  id: number | string;
+  message: string;
+  createdAt: string;
+  elements: ElementReferenceSnapshot[];
+  attachments: Array<{
+    id: string;
+    label: string;
+    preview_url: string;
+    attachment_type: "image" | "screenshot";
+  }>;
 }
 
 export interface WidgetConfig {
