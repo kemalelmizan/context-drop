@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/images/context-drop-hero.svg" alt="ContextDrop — Self-hosted contextual feedback engine, tactile DOM pin-drop widget, and IDE MCP server for Ruby on Rails" width="100%" />
+  <img src="docs/images/context-drop-hero.svg" alt="ContextDrop, Self-hosted contextual feedback engine, tactile DOM pin-drop widget, and IDE MCP server for Ruby on Rails" width="100%" />
 </p>
 
 <p align="center">
-  <strong>Stop decoding vague bug reports! Let users pin where the exact problem on your Rails app</strong><br />
+  <strong>Stop decoding vague bug reports! Let users pin the problem with your Rails app</strong><br />
   Mountable Rails Engine · Shadow DOM Widget · Overlapping Layer Picker · Active Storage · MCP Server
 </p>
 
@@ -31,7 +31,7 @@
 
  When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
 
-**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI component—even underneath floating badges or cascading overlays—attach a privacy-redacted screenshot, and send.
+**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI componen (even underneath floating badges or cascading overlays) attach a privacy-redacted screenshot, and send.
 
 <p align="center">
   <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
@@ -194,7 +194,7 @@ Real-world Rails interfaces have sticky navbars, floating promo ribbons, translu
 1. **Top-Left Pin Selector & Freely Draggable Dock:** Click **Pin Element** in the top-left corner of the chatbox (or from the floating dock). The chatbox collapses into the **Compact Pinning Bar** so it never blocks the page.
 2. **Scroll-Wheel & Keyboard Depth Cycling:** While hovering any coordinate, roll your mouse wheel (`wheel`) or press `ArrowUp` / `ArrowDown` (`[` / `]`) to cycle through overlapping sibling layers (`document.elementsFromPoint`), child nodes, and parent containers while keeping a dashed ghost outline on the original leaf node.
 3. **Click-to-Pick Layer Stack Popover:** Clicking a multi-layer spot anchors the pin and opens a Figma-style **Layer & Hierarchy Picker** displaying every candidate layer (`Topmost`, `Overlap`, `Child`, `Parent` badges with pixel dimensions) with live hover preview on the page. Hold `Shift+Click` or press `Enter` to pin immediately.
-4. **Interactive DOM Breadcrumb Bar:** Both the Compact Pinning Bar and the Layer Popover render an interactive ancestor trail (`main.demo-shell > section#scenario > button`)—hover any segment to preview or click to pin it directly.
+4. **Interactive DOM Breadcrumb Bar:** Both the Compact Pinning Bar and the Layer Popover render an interactive ancestor trail (`main.demo-shell > section#scenario > button`) hover any segment to preview or click to pin it directly.
 5. **Capture-Phase Host Protection:** All `pointerdown`, `mousedown`, `mouseup`, `click`, and `wheel` events are intercepted in the capture phase during Pin Mode so underlying links, forms, and buttons are never triggered by mistake.
 
 ---
@@ -261,13 +261,13 @@ ContextDrop is engineered for production environments where customer privacy and
 
 ---
 
-## Self-Hosted Triage Dashboard
+## Triage Dashboard
 
-ContextDrop includes a zero-dependency triage interface mounted inside your Rails application at `/context_drop/dashboard/feedbacks`:
+ContextDrop includes a triage interface mounted inside your Rails application at `/context_drop/dashboard/feedbacks`:
 
 - **Filter & Search:** Filter submissions by status (`new`, `reviewed`, `resolved`, `dismissed`), originating `page_url`, or free-text query across messages, CSS selectors, and DOM paths.
-- **Inspect Full Engineering Context:** View submitter attribution, browser/viewport metadata, inline Active Storage screenshot galleries, and structured `ElementReference` cards (`selector`, `dom_path`, `bounding_rect`, `attributes_snapshot`).
-- **One-Click Triage Actions:** Transition feedback status between `Mark Reviewed`, `Mark Resolved`, and `Dismiss`.
+- **Inspect Context:** View submitter attribution, browser/viewport metadata, inline Active Storage screenshot galleries, and structured `ElementReference` cards (`selector`, `dom_path`, `bounding_rect`, `attributes_snapshot`).
+- **Triage Actions:** Transition feedback status between `Mark Reviewed`, `Mark Resolved`, and `Dismiss`.
 
 ---
 
@@ -286,7 +286,7 @@ ContextDrop.configure do |config|
   # Allow unauthenticated visitors to submit feedback
   config.allow_anonymous = true
 
-  # Polymorphic submitter attribution — return any ActiveRecord model (User, Employee, AdminUser) or nil
+  # Polymorphic submitter attribution, return any ActiveRecord model (User, Employee, AdminUser) or nil
   config.current_submitter = ->(controller) { controller.try(:current_user) }
 
   # Authorization hooks
