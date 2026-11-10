@@ -18,7 +18,7 @@
 
 ---
 
-## See It in Action
+## Why
 
  When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
 
@@ -57,7 +57,7 @@
 
 ---
 
-## Why Rails Teams Choose ContextDrop
+## Why ContextDrop
 
 | Capability | Typical SaaS Feedback Widgets | Manual Slack / Issue Reports | **ContextDrop (`context_drop`)** |
 |---|---|---|---|
@@ -74,7 +74,7 @@
 
 ---
 
-## 60-Second Quickstart
+## Quickstart
 
 ### Requirements
 
@@ -125,7 +125,7 @@ Visit any page in your Rails app to use the floating widget, or open `/context_d
 
 ---
 
-## Try the Interactive Playground Right Now
+## Interactive Playground
 
 Want to test the floating Pin selector, overlapping-layer disambiguation, draggable chatbox, and live payload inspector before installing the gem into a Rails app? Run the standalone playground in this repository:
 
@@ -139,7 +139,7 @@ open demo/index.html
 
 ---
 
-## How the Feedback-to-Fix Loop Works
+## Feedback-to-Fix Loop
 
 ```mermaid
 flowchart LR
@@ -176,7 +176,7 @@ Every submission captures a rich, sanitized engineering payload:
 
 ---
 
-## Precision DOM Pinning & Layer Disambiguation
+## DOM Pinning & Layer Disambiguation
 
 Real-world Rails interfaces have sticky navbars, floating promo ribbons, translucent toast notifications, and deeply nested Flexbox/Grid containers. ContextDrop makes selecting the exact underlying element effortless:
 
@@ -188,7 +188,7 @@ Real-world Rails interfaces have sticky navbars, floating promo ribbons, translu
 
 ---
 
-## Connect Your IDE & AI Coding Agent (MCP)
+## MCP
 
 ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`ContextDrop::MCP::Server`) so you or your AI coding agent can pull bug reports, inspect exact CSS selectors and DOM paths, view multimodal screenshots, and mark issues resolved without leaving your editor.
 
