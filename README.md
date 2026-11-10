@@ -1,30 +1,88 @@
-# ContextDrop (`context_drop`)
+<p align="center">
+  <img src="docs/images/context-drop-hero.svg" alt="ContextDrop — Self-hosted contextual feedback engine, tactile DOM pin-drop widget, and IDE MCP server for Ruby on Rails" width="100%" />
+</p>
 
-**ContextDrop** is a self-hosted, open-source contextual feedback engine for Ruby on Rails applications (`Rails >= 7.1`, including `Rails 8+`).
+<p align="center">
+  <strong>Stop decoding vague bug reports. Let users and teammates pin the exact DOM element right on your Rails app.</strong><br />
+  Self-hosted Mountable Rails Engine · Shadow DOM Widget · Overlapping Layer Picker · Active Storage · Built-in MCP Server
+</p>
 
-It provides:
-- **Mountable Rails Engine (`isolate_namespace ContextDrop`)** with three engine-owned database tables (`context_drop_feedbacks`, `context_drop_attachments`, `context_drop_element_references`).
-- **Decoupled TypeScript Frontend Widget (`<context-drop-widget>`)** with **Shadow DOM** CSS isolation, a **draggable floating chatbox UI** with session message thread, a **pin-shaped selector in the top-left corner** (plus a freely draggable floating pin dock), a **minimize-to-compact-bar** mode during element pinning, **precision overlapping/cascading DOM element disambiguation** (scroll-wheel/arrow-key depth cycling, click-to-pick layer stack popover, and interactive DOM breadcrumb bar), and privacy-redacted viewport/element screenshot capture.
-- **Self-Hosted Feedback Triage Dashboard (`/context_drop/dashboard/feedbacks`)** rendered inside your Rails application.
-- **Built-in Model Context Protocol (MCP) Server** (`stdio` and Streamable HTTP) so developers and AI coding agents (Cursor, Claude Code, Antigravity, Windsurf, VS Code) can query feedback, inspect DOM selectors & multimodal screenshots, and resolve issues directly from their IDE.
-
-> **Core Design Principle:**  
-> **ContextDrop owns its domain. The host application owns its identity and infrastructure.**  
-> ContextDrop works seamlessly whether your Rails app uses Devise, Sorcery, Authlogic, Rails 8 built-in authentication, or custom session logic.
-
----
-
-## Requirements
-
-- Ruby `>= 3.1`
-- Ruby on Rails `>= 7.1` (`7.1`, `7.2`, `8.0+`)
-- **Active Storage** configured in the host application (`bin/rails active_storage:install`)
+<p align="center">
+  <a href="#60-second-quickstart">Quickstart</a> ·
+  <a href="#see-it-in-action">Live Demo</a> ·
+  <a href="#precision-dom-pinning--layer-disambiguation">Layer Picker</a> ·
+  <a href="#connect-your-ide--ai-coding-agent-mcp">MCP Server</a> ·
+  <a href="#zero-trust-privacy--redaction">Privacy &amp; Redaction</a> ·
+  <a href="#configuration">Configuration</a>
+</p>
 
 ---
 
-## Installation
+## See It in Action
 
-Add `context_drop` to your application's `Gemfile` and run the installer generator:
+ When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
+
+**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI component—even underneath floating badges or cascading overlays—attach a privacy-redacted screenshot, and send.
+
+<p align="center">
+  <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
+</p>
+
+> **Above:** Active **Pin Mode** on the live demo page. While hovering over a stacked UI card (`section #scenario-overlapping-layers · 681×350 · 1/6 layers`), ContextDrop frames the target in Inspector Cobalt, displays layer depth for mouse-wheel cycling, and collapses the chatbox into the **Compact Pinning Bar** (`Pinning`, live DOM ancestor breadcrumbs, Up/Down layer controls, and `Chat` toggle) so the host page stays completely unobstructed.
+
+<table>
+  <thead>
+    <tr>
+      <th width="50%" align="left">1. Open the Floating Composer or Pin Dock</th>
+      <th width="50%" align="left">2. Pin DOM Layers &amp; Capture Element Screenshots</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td valign="top">
+        <img src="docs/images/demo-chatbox-composer.jpg" alt="ContextDrop floating chatbox composer with top-left Pin Element trigger and toolbar" width="100%" />
+        <p>
+          Drop <code>&lt;%= context_drop_widget %&gt;</code> into your layout to render a draggable, Shadow DOM-isolated feedback composer. Click the top-left <strong>Pin Element</strong> button (or the freely floating pin dock) to start selecting elements on the page.
+        </p>
+      </td>
+      <td valign="top">
+        <img src="docs/images/demo-pinned-element-chip.png" alt="ContextDrop chatbox with a pinned DOM element chip, camera screenshot button, and confirmation banner" width="100%" />
+        <p>
+          Every pinned element is added to the context tray (`#scenario-overlapping-layers`) with a live count badge (`Pin Element 1`). Hover the chip to highlight the element on the page, click the camera icon to crop a screenshot of that exact node, and hit <strong>Send</strong>.
+        </p>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+## Why Rails Teams Choose ContextDrop
+
+| Capability | Typical SaaS Feedback Widgets | Manual Slack / Issue Reports | **ContextDrop (`context_drop`)** |
+|---|---|---|---|
+| **Data & Storage Ownership** | Exfiltrates DOM & screenshots to 3rd-party cloud servers | Scattered across chat threads | **100% self-hosted** in your Rails DB (`context_drop_*`) & **Active Storage** |
+| **Overlapping DOM Layers** | Gets stuck on topmost wrapper, modal backdrop, or toast | Requires reporter to open DevTools | **Scroll-wheel depth cycling**, **Click-to-Pick Layer Popover**, & **DOM Breadcrumbs** |
+| **Host Page Safety** | Injects global CSS; clicks can accidentally fire host buttons | N/A | **Strict Shadow DOM isolation** + capture-phase event suppression during Pin Mode |
+| **Sensitive Data Protection** | Captures raw DOM or requires complex PII scrubbing rules | Risk of unredacted screenshots | **Zero-trust redaction** before rasterization (`[data-feedback-sensitive]`, passwords, cards) |
+| **Authentication Model** | Separate vendor accounts & seats | Manual identity lookup | **Host-agnostic polymorphic `submitter`** (Devise, Rails 8 Auth, Sorcery, custom, or anonymous) |
+| **Developer Resolution Flow** | Copy-paste from external vendor dashboard | Back-and-forth reproduction questions | **Built-in Rails Triage Dashboard** + **Native MCP Server** (`stdio` & HTTP) for Cursor / Claude Code / Antigravity |
+
+> [!IMPORTANT]
+> **Core Architectural Principle: ContextDrop owns its domain. Your Rails app owns its identity and infrastructure.**  
+> ContextDrop mounts cleanly as an isolated Rails Engine (`isolate_namespace ContextDrop`) with zero mandatory frontend framework dependencies (no React, Vue, or Tailwind required).
+
+---
+
+## 60-Second Quickstart
+
+### Requirements
+
+- **Ruby** `>= 3.1`
+- **Ruby on Rails** `>= 7.1` (`7.1`, `7.2`, `8.0+`)
+- **Active Storage** installed in the host application (`bin/rails active_storage:install`)
+
+### 1. Install the Gem & Run the Generator
 
 ```bash
 bundle add context_drop
@@ -32,48 +90,186 @@ bin/rails generate context_drop:install
 bin/rails db:migrate
 ```
 
-What `bin/rails generate context_drop:install` does:
-1. Creates [`config/initializers/context_drop.rb`](file:///Users/kemal.elmizan/self/context-drop/lib/generators/context_drop/install/templates/initializer.rb.tt).
+What `bin/rails generate context_drop:install` sets up for you:
+1. Creates [`config/initializers/context_drop.rb`](lib/generators/context_drop/install/templates/initializer.rb.tt).
 2. Mounts `mount ContextDrop::Engine => "/context_drop"` in `config/routes.rb`.
-3. Copies engine-owned migrations (`context_drop_feedbacks`, `context_drop_element_references`, `context_drop_attachments`) into `db/migrate/`.
+3. Copies three engine-owned migrations (`context_drop_feedbacks`, `context_drop_element_references`, `context_drop_attachments`) into `db/migrate/`.
 4. Verifies that Active Storage migrations are present.
 
-### Rendering the Widget
+### 2. Render the Widget in Your Layout
 
-Render the floating widget in your layout (`app/views/layouts/application.html.erb`) before `</body>`:
+Add `<%= context_drop_widget %>` right before `</body>` in `app/views/layouts/application.html.erb`:
 
 ```erb
 <%= context_drop_widget %>
 ```
 
-You can also override widget options per page without mutating global configuration:
+Need page-specific copy or release metadata? Override options per view without mutating global configuration:
 
 ```erb
 <%= context_drop_widget(
   position: :bottom_left,
-  placeholder: "Spot an issue with checkout? Let us know...",
+  placeholder: "Spot an issue with checkout? Pin the element and let us know...",
   metadata: { release: ENV["GIT_COMMIT_SHA"], feature_flag: "checkout_v2" }
 ) %>
 ```
 
-Enable ContextDrop via environment variable:
+### 3. Enable & Launch
 
 ```bash
 export CONTEXT_DROP_ENABLED=true
+bin/rails server
 ```
+
+Visit any page in your Rails app to use the floating widget, or open `/context_drop/dashboard/feedbacks` to triage submissions.
+
+---
+
+## Try the Interactive Playground Right Now
+
+Want to test the floating Pin selector, overlapping-layer disambiguation, draggable chatbox, and live payload inspector before installing the gem into a Rails app? Run the standalone playground in this repository:
+
+```bash
+# Start the local interactive demo server at http://127.0.0.1:4173
+npm run demo
+
+# Or open demo/index.html directly in your browser (works offline via built-in payload interceptor)
+open demo/index.html
+```
+
+---
+
+## How the Feedback-to-Fix Loop Works
+
+```mermaid
+flowchart LR
+  subgraph Browser["Host Rails App (Browser)"]
+    Widget["<context-drop-widget>\n(Shadow DOM + Layer Picker)"]
+  end
+
+  subgraph Engine["ContextDrop::Engine (Self-Hosted in Your Rails App)"]
+    Controller["FeedbacksController\n+ MetadataSanitizer"]
+    DB[("context_drop_feedbacks\ncontext_drop_element_references\ncontext_drop_attachments")]
+    Storage[("Host Active Storage\n(Redacted Screenshots)")]
+    Dashboard["Triage Dashboard\n/context_drop/dashboard/feedbacks"]
+    MCP["ContextDrop::MCP::Server\n(stdio & Streamable HTTP)"]
+  end
+
+  subgraph IDE["Developer IDE / Coding Agent"]
+    Agent["Cursor · Claude Code · Antigravity\nWindsurf · VS Code"]
+  end
+
+  Widget -->|"POST /context_drop/feedback\n(CSRF + Rate Limit)"| Controller
+  Controller --> DB
+  Controller --> Storage
+  DB --> Dashboard
+  Storage --> Dashboard
+  DB --> MCP
+  Storage --> MCP
+  MCP -->|"list_feedbacks / get_feedback\n(Selectors + Multimodal Images)"| Agent
+```
+
+Every submission captures a rich, sanitized engineering payload:
+- **`ContextDrop::Feedback` (`context_drop_feedbacks`):** Polymorphic `submitter` (`User`, `Employee`, `AdminUser`, or anonymous), `message`, `page_url`, `user_agent`, `viewport` & custom `metadata`, and workflow `status` (`new`, `reviewed`, `resolved`, `dismissed`).
+- **`ContextDrop::ElementReference` (`context_drop_element_references`):** Point-in-time DOM snapshot including `tag_name`, best-effort CSS `selector`, structural `dom_path`, truncated `text_content`, allowlisted `attributes_snapshot` (`id`, `class`, `role`, `aria-*`, `data-testid`), and CSS pixel `bounding_rect` (`{ x, y, width, height }`).
+- **`ContextDrop::Attachment` (`context_drop_attachments`):** Viewport screenshots, element-cropped screenshots (linked via `element_reference_id`), and uploaded images stored in your app's **Active Storage**.
+
+---
+
+## Precision DOM Pinning & Layer Disambiguation
+
+Real-world Rails interfaces have sticky navbars, floating promo ribbons, translucent toast notifications, and deeply nested Flexbox/Grid containers. ContextDrop makes selecting the exact underlying element effortless:
+
+1. **Top-Left Pin Selector & Freely Draggable Dock:** Click **Pin Element** in the top-left corner of the chatbox (or from the floating dock). The chatbox collapses into the **Compact Pinning Bar** so it never blocks the page.
+2. **Scroll-Wheel & Keyboard Depth Cycling:** While hovering any coordinate, roll your mouse wheel (`wheel`) or press `ArrowUp` / `ArrowDown` (`[` / `]`) to cycle through overlapping sibling layers (`document.elementsFromPoint`), child nodes, and parent containers while keeping a dashed ghost outline on the original leaf node.
+3. **Click-to-Pick Layer Stack Popover:** Clicking a multi-layer spot anchors the pin and opens a Figma-style **Layer & Hierarchy Picker** displaying every candidate layer (`Topmost`, `Overlap`, `Child`, `Parent` badges with pixel dimensions) with live hover preview on the page. Hold `Shift+Click` or press `Enter` to pin immediately.
+4. **Interactive DOM Breadcrumb Bar:** Both the Compact Pinning Bar and the Layer Popover render an interactive ancestor trail (`main.demo-shell > section#scenario > button`)—hover any segment to preview or click to pin it directly.
+5. **Capture-Phase Host Protection:** All `pointerdown`, `mousedown`, `mouseup`, `click`, and `wheel` events are intercepted in the capture phase during Pin Mode so underlying links, forms, and buttons are never triggered by mistake.
+
+---
+
+## Connect Your IDE & AI Coding Agent (MCP)
+
+ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`ContextDrop::MCP::Server`) so you or your AI coding agent can pull bug reports, inspect exact CSS selectors and DOM paths, view multimodal screenshots, and mark issues resolved without leaving your editor.
+
+- **Exposed Tools:** `list_feedbacks`, `get_feedback` (includes base64 multimodal `image` content blocks), `get_feedback_attachment`, `update_feedback_status`
+- **Exposed Resources:** `contextdrop://feedbacks/new`, `contextdrop://feedbacks/{id}`
+- **Built-in Prompt:** `investigate_feedback`
+
+### Option 1: Local `stdio` Transport (Zero-Config Local Development)
+
+Add this to `.cursor/mcp.json`, `.mcp.json` (Claude Code), Antigravity `mcp_config.json`, Windsurf, or VS Code:
+
+```json
+{
+  "mcpServers": {
+    "context-drop": {
+      "command": "bin/rails",
+      "args": ["context_drop:mcp"]
+    }
+  }
+}
+```
+
+### Option 2: Remote Streamable HTTP Transport (Staging & Production)
+
+Enable MCP on your staging or production server with a bearer token (`CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>`) and point your IDE to `POST /context_drop/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "context-drop-staging": {
+      "url": "https://staging.example.com/context_drop/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-secret-token>"
+      }
+    }
+  }
+}
+```
+
+Once connected, prompt your coding agent directly in your IDE:
+> *"List the new ContextDrop feedbacks on `/checkout`, inspect the pinned element selector and screenshot for the overlapping button issue, fix the CSS in our Rails view, and mark the feedback resolved."*
+
+---
+
+## Zero-Trust Privacy & Redaction
+
+ContextDrop is engineered for production environments where customer privacy and credential safety are non-negotiable:
+
+- **Declarative Redaction Attributes:** Add `data-feedback-sensitive` or `data-feedback-ignore` to any HTML element. ContextDrop blocks the element (and **all of its descendants**) from being pinned and masks its bounding box with an opaque redaction block *before* any screenshot is rasterized:
+  ```html
+  <div data-feedback-sensitive>
+    <span>Account Balance: $42,100.00</span>
+    <span>Card ending in 4242</span>
+  </div>
+  ```
+- **Automatic Credential & Card Exclusions:** `input[type="password"]`, `input[type="hidden"]`, and `[autocomplete^="cc-"]` are always excluded and redacted automatically.
+- **No Raw DOM or Input Value Leaks:** Form control `value` properties and raw `outerHTML` are **never** serialized. Only allowlisted structural attributes (`id`, `class`, `role`, `aria-*`, `data-testid`, `name`, `type`, `href`) are stored.
+- **Server-Side Upload Hardening:** Binary attachments are verified via magic-byte MIME detection (`Marcel`), extension matching, byte-size limits, image dimension bounds, CSRF protection, and configurable rate limiting.
+
+---
+
+## Self-Hosted Triage Dashboard
+
+ContextDrop includes a zero-dependency triage interface mounted inside your Rails application at `/context_drop/dashboard/feedbacks`:
+
+- **Filter & Search:** Filter submissions by status (`new`, `reviewed`, `resolved`, `dismissed`), originating `page_url`, or free-text query across messages, CSS selectors, and DOM paths.
+- **Inspect Full Engineering Context:** View submitter attribution, browser/viewport metadata, inline Active Storage screenshot galleries, and structured `ElementReference` cards (`selector`, `dom_path`, `bounding_rect`, `attributes_snapshot`).
+- **One-Click Triage Actions:** Transition feedback status between `Mark Reviewed`, `Mark Resolved`, and `Dismiss`.
 
 ---
 
 ## Configuration
 
-Configure ContextDrop in `config/initializers/context_drop.rb`:
+Customize every aspect of ContextDrop in `config/initializers/context_drop.rb`:
 
 ```ruby
 ContextDrop.configure do |config|
   # Master switch (disables widget helper, dashboard, and HTTP ingestion endpoints when false)
   config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"
 
-  # Widget corner position: :bottom_right, :bottom_left, :top_right, :top_left
+  # Initial widget corner position: :bottom_right, :bottom_left, :top_right, :top_left
   config.position = :bottom_right
 
   # Allow unauthenticated visitors to submit feedback
@@ -84,9 +280,11 @@ ContextDrop.configure do |config|
 
   # Authorization hooks
   config.authorize_submission = ->(_controller) { true }
-  config.authorize_dashboard = ->(controller) { controller.try(:current_user)&.try(:admin?) || Rails.env.development? }
+  config.authorize_dashboard = ->(controller) {
+    controller.try(:current_user)&.try(:admin?) || Rails.env.development?
+  }
 
-  # Limits & validation
+  # Limits & upload validation
   config.max_attachments = 10
   config.max_element_references = 10
   config.max_attachment_size = 10.megabytes
@@ -102,7 +300,7 @@ ContextDrop.configure do |config|
     "[autocomplete^='cc-']"
   ]
 
-  # Optional callback invoked after feedback persistence
+  # Lifecycle callback invoked after feedback persistence (ideal for Slack, Linear, or GitHub webhooks)
   config.on_feedback_created = ->(feedback) {
     Rails.logger.info("New ContextDrop Feedback ##{feedback.id} on #{feedback.page_url}")
   }
@@ -116,98 +314,24 @@ end
 
 ---
 
-## Privacy & Redaction Attributes
-
-ContextDrop enforces zero-trust DOM sanitization and pre-capture screenshot redaction:
-- Add `data-feedback-ignore` or `data-feedback-sensitive` to any HTML container to prevent it (and all of its descendants) from being selected or captured in screenshots:
-  ```html
-  <div data-feedback-sensitive>
-    <span>Account Balance: $42,100.00</span>
-  </div>
-  ```
-- Password inputs (`input[type="password"]`), hidden inputs (`input[type="hidden"]`), and credit-card inputs (`[autocomplete^="cc-"]`) are automatically excluded.
-- Form control `value` properties and raw `outerHTML` are **never** captured.
-
----
-
-## Self-Hosted Feedback Dashboard
-
-Visit `/context_drop/dashboard/feedbacks` in your application to:
-- Filter feedback by workflow status (`new`, `reviewed`, `resolved`, `dismissed`), `page_url`, or free-text search query.
-- Inspect full feedback details, submitter attribution, viewport metadata, `ElementReference` cards (`selector`, `dom_path`, `bounding_rect`, `attributes_snapshot`), and Active Storage screenshots.
-- Transition feedback status (`Mark Reviewed`, `Mark Resolved`, `Dismiss`).
-
----
-
-## Model Context Protocol (MCP) Server for IDEs
-
-ContextDrop includes a built-in MCP server (`ContextDrop::MCP::Server`) exposing:
-- **Tools:** `list_feedbacks`, `get_feedback` (with multimodal base64 `image` blocks), `get_feedback_attachment`, `update_feedback_status`
-- **Resources:** `contextdrop://feedbacks/new`, `contextdrop://feedbacks/{id}`
-- **Prompt:** `investigate_feedback`
-
-### Option 1: Local `stdio` Transport (Zero-Config Local Development)
-
-Add the following to your IDE's MCP configuration (`.cursor/mcp.json`, `.mcp.json` for Claude Code, Antigravity `mcp_config.json`, VS Code, or Windsurf):
-
-```json
-{
-  "mcpServers": {
-    "context-drop": {
-      "command": "bin/rails",
-      "args": ["context_drop:mcp"]
-    }
-  }
-}
-```
-
-### Option 2: Remote Streamable HTTP Transport (Staging / Production)
-
-1. Set `CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>` on your server.
-2. Configure your IDE to connect to `POST /context_drop/mcp`:
-
-```json
-{
-  "mcpServers": {
-    "context-drop-staging": {
-      "url": "https://staging.example.com/context_drop/mcp",
-      "headers": {
-        "Authorization": "Bearer <your-secret-token>"
-      }
-    }
-  }
-}
-```
-
----
-
-## Interactive Playground Demo
-
-To try the floating Pin selector, cascading/overlapping layer disambiguation (scroll-wheel cycling, click-to-pick layer stack popover, and interactive DOM breadcrumb bar), draggable chatbox, and live payload inspector locally:
-
-```bash
-# Start the local interactive demo server at http://127.0.0.1:4173
-npm run demo
-
-# Or open demo/index.html directly in your browser (works offline via built-in payload interceptor)
-open demo/index.html
-```
-
----
-
-## Development & Testing
+## Contributing & Development
 
 ```bash
 # Build the decoupled TypeScript widget into app/assets/javascripts/context_drop/context_drop.js
 npm run build
 
-# Run frontend TypeScript tests
+# Run frontend TypeScript unit & interaction tests
 npm test
 
-# Run backend Ruby specs
+# Run backend Ruby engine & MCP specs
 ruby spec/run_all.rb
 ```
 
+Further architectural documentation:
+- [Technical Specification (`SPEC.md`)](SPEC.md)
+- [Design System (`DESIGN.md`)](DESIGN.md)
+- [Product Brief (`PRODUCT.md`)](PRODUCT.md)
+
 ## License
 
-Released under the [MIT License](file:///Users/kemal.elmizan/self/context-drop/MIT-LICENSE).
+Released under the [MIT License](MIT-LICENSE).
