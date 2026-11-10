@@ -11,6 +11,8 @@ import {
   resolveAncestorChain,
   resolveCandidateStack
 } from "../sanitizer.ts";
+import { ElementPicker } from "../element-picker.ts";
+import { ContextDropWidgetElement } from "../widget.ts";
 
 interface MockNodeInit {
   tagName?: string;
@@ -275,5 +277,43 @@ describe("ContextDrop Frontend DOM Sanitizer & Snapshot Capture", () => {
         { selector: "#checkout-section", relation: "ancestor" }
       ]
     );
+  });
+
+  it("manages pinned element references, compact bar minimization, and element picker lifecycle", () => {
+    const widget = new ContextDropWidgetElement();
+    assert.equal(widget.getElementReferences().length, 0);
+
+    const btn = new MockElement({
+      tagName: "BUTTON",
+      attributes: { id: "submit-order" },
+      children: [new MockTextNode("Place Order")]
+    });
+    const snap = captureElementSnapshot(btn as unknown as Element, [], "ref_pin_1");
+    assert.ok(snap);
+
+    const added = widget.addElementReference(snap, btn as unknown as Element);
+    assert.equal(added, true);
+    assert.equal(widget.getElementReferences().length, 1);
+    assert.equal(widget.getElementReferences()[0].selector, "#submit-order");
+
+    widget.minimizeToCompactBar();
+    widget.expandFromCompactBar();
+
+    widget.removeElementReference("ref_pin_1");
+    assert.equal(widget.getElementReferences().length, 0);
+
+    let selectedRef: string | null = null;
+    const picker = new ElementPicker({
+      onSelect: (s) => {
+        selectedRef = s.selector;
+      },
+      onExit: () => {},
+      canSelectMore: () => true,
+      getExcludedSelectors: () => []
+    });
+
+    assert.equal(picker.isActive(), false);
+    assert.equal(picker.selectElementDirectly(btn as unknown as Element), true);
+    assert.equal(selectedRef, "#submit-order");
   });
 });

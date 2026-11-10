@@ -1,11 +1,27 @@
 import type {
+  ElementCandidateInfo,
   ElementReferenceSnapshot,
   FeedbackSubmissionPayload,
   PendingAttachmentItem,
+  SessionFeedbackEntry,
   WidgetConfig,
   WidgetPosition
 } from "./types.ts";
-import { MANDATORY_EXCLUDED_SELECTORS } from "./sanitizer.ts";
+import { computeSelector, MANDATORY_EXCLUDED_SELECTORS } from "./sanitizer.ts";
+import {
+  ICON_CAMERA,
+  ICON_CHAT,
+  ICON_CHEVRON_DOWN,
+  ICON_CHEVRON_RIGHT,
+  ICON_CHEVRON_UP,
+  ICON_CLOSE,
+  ICON_EXPAND,
+  ICON_GRIP,
+  ICON_IMAGE,
+  ICON_MINIMIZE,
+  ICON_PIN,
+  ICON_SEND
+} from "./icons.ts";
 import { WIDGET_SHADOW_STYLES } from "./styles.ts";
 import { ContextDropApiClient } from "./api-client.ts";
 import { ElementPicker } from "./element-picker.ts";
@@ -13,8 +29,8 @@ import { captureElementScreenshot, captureViewportScreenshot } from "./screensho
 
 const DEFAULT_CONFIG: WidgetConfig = {
   enabled: true,
-  position: "bottom_right",
-  placeholder: "What would you like to tell us?",
+  position: "top_left",
+  placeholder: "Describe the issue or drop context from the page...",
   features: {
     element_selection: true,
     screenshot_capture: true,
@@ -45,14 +61,25 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private picker: ElementPicker | null = null;
 
   private isOpen: boolean = false;
+  private isMinimized: boolean = false;
   private isSubmitting: boolean = false;
+  private freePos: { left: number; top: number } | null = null;
+
   private elementReferences: ElementReferenceSnapshot[] = [];
   private elementDomNodes: Map<string, Element> = new Map();
   private attachments: PendingAttachmentItem[] = [];
+  private sessionHistory: SessionFeedbackEntry[] = [];
 
   private rootContainer: HTMLDivElement | null = null;
   private composerEl: HTMLDivElement | null = null;
+  private compactBarEl: HTMLDivElement | null = null;
+  private compactBreadcrumbEl: HTMLDivElement | null = null;
+  private compactPinBtn: HTMLButtonElement | null = null;
+  private pinDockEl: HTMLDivElement | null = null;
+  private floatingPinBtn: HTMLButtonElement | null = null;
   private triggerBtn: HTMLButtonElement | null = null;
+  private cornerPinBtn: HTMLButtonElement | null = null;
+  private chatThreadEl: HTMLDivElement | null = null;
   private textareaEl: HTMLTextAreaElement | null = null;
   private trayEl: HTMLDivElement | null = null;
   private statusEl: HTMLDivElement | null = null;
@@ -67,10 +94,24 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.renderShadowDom();
 
     this.picker = new ElementPicker({
-      onSelect: (snapshot, el) => this.addElementReference(snapshot, el),
-      onExit: () => this.openComposer(),
+      onSelect: (snapshot, el) => {
+        const added = this.addElementReference(snapshot, el);
+        if (added) {
+          this.showStatus(`Pinned ${snapshot.selector}`, "success");
+        }
+        this.syncUiStates();
+      },
+      onExit: () => {
+        this.isMinimized = false;
+        this.openComposer();
+        this.syncUiStates();
+      },
       canSelectMore: () => this.elementReferences.length < this.config.limits.max_element_references,
-      getExcludedSelectors: () => this.config.privacy.excluded_selectors
+      getExcludedSelectors: () => this.config.privacy.excluded_selectors,
+      onStateChange: (state) => {
+        this.renderCompactBreadcrumbs(state.activeCandidate, state.ancestors);
+        this.syncPinActiveIndicators(state.active);
+      }
     });
   }
 
@@ -78,6 +119,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     if (this.picker && this.picker.isActive()) {
       this.picker.stop();
     }
+    this.picker?.hideExternalPreview();
   }
 
   public getConfig(): WidgetConfig {
@@ -92,14 +134,14 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     return [...this.attachments];
   }
 
+  public getSessionHistory(): SessionFeedbackEntry[] {
+    return [...this.sessionHistory];
+  }
+
   public openComposer(): void {
     this.isOpen = true;
-    if (this.composerEl) {
-      this.composerEl.hidden = false;
-    }
-    if (this.triggerBtn) {
-      this.triggerBtn.setAttribute("aria-expanded", "true");
-    }
+    this.isMinimized = false;
+    this.syncUiStates();
     if (this.textareaEl) {
       this.textareaEl.focus();
     }
@@ -107,20 +149,70 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
   public closeComposer(): void {
     this.isOpen = false;
-    if (this.composerEl) {
-      this.composerEl.hidden = true;
+    this.isMinimized = false;
+    if (this.picker && this.picker.isActive()) {
+      this.picker.stop();
     }
-    if (this.triggerBtn) {
-      this.triggerBtn.setAttribute("aria-expanded", "false");
-    }
+    this.picker?.hideExternalPreview();
+    this.syncUiStates();
   }
 
   public toggleComposer(): void {
-    if (this.isOpen) {
+    if (this.isOpen && !this.isMinimized) {
       this.closeComposer();
     } else {
       this.openComposer();
     }
+  }
+
+  public minimizeToCompactBar(): void {
+    this.isOpen = true;
+    this.isMinimized = true;
+    this.syncUiStates();
+  }
+
+  public expandFromCompactBar(): void {
+    if (this.picker && this.picker.isActive()) {
+      this.picker.stop();
+    }
+    this.isMinimized = false;
+    this.openComposer();
+  }
+
+  public startPinSelection(): void {
+    if (!this.config.features.element_selection || !this.picker) return;
+    if (this.elementReferences.length >= this.config.limits.max_element_references) {
+      this.openComposer();
+      this.showStatus(
+        `Maximum of ${this.config.limits.max_element_references} pinned elements reached.`,
+        "error"
+      );
+      return;
+    }
+    this.minimizeToCompactBar();
+    this.picker.start();
+    this.syncUiStates();
+  }
+
+  public togglePinSelection(): void {
+    if (this.picker && this.picker.isActive()) {
+      this.picker.stop();
+    } else {
+      this.startPinSelection();
+    }
+  }
+
+  public setFreePosition(left: number, top: number): void {
+    if (!this.rootContainer) return;
+    const vw = typeof window !== "undefined" ? window.innerWidth || 1024 : 1024;
+    const vh = typeof window !== "undefined" ? window.innerHeight || 768 : 768;
+    const clampedLeft = Math.max(8, Math.min(left, vw - 72));
+    const clampedTop = Math.max(8, Math.min(top, vh - 48));
+
+    this.freePos = { left: clampedLeft, top: clampedTop };
+    this.rootContainer.classList.add("is-free-positioned");
+    this.rootContainer.style.left = `${clampedLeft}px`;
+    this.rootContainer.style.top = `${clampedTop}px`;
   }
 
   public addElementReference(snapshot: ElementReferenceSnapshot, elementNode?: Element): boolean {
@@ -136,18 +228,22 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.elementDomNodes.set(snapshot.client_ref, elementNode);
     }
     this.renderTray();
+    this.syncUiStates();
     return true;
   }
 
   public removeElementReference(clientRef: string): void {
     this.elementReferences = this.elementReferences.filter((el) => el.client_ref !== clientRef);
     this.elementDomNodes.delete(clientRef);
+    this.picker?.hideExternalPreview();
     this.renderTray();
+    this.syncUiStates();
   }
 
   public removeAttachment(attachmentId: string): void {
     this.attachments = this.attachments.filter((att) => att.id !== attachmentId);
     this.renderTray();
+    this.syncUiStates();
   }
 
   private readDataAttributes(): void {
@@ -193,6 +289,64 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
   }
 
+  private attachDragHandle(handleEl: HTMLElement, onClickFallback?: () => void): void {
+    let startX = 0;
+    let startY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
+    let dragging = false;
+    let moved = false;
+
+    const onPointerMove = (ev: PointerEvent): void => {
+      if (!dragging) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) > 5) {
+        moved = true;
+        this.pinDockEl?.classList.add("is-dragging");
+      }
+      if (moved) {
+        this.setFreePosition(initialLeft + dx, initialTop + dy);
+      }
+    };
+
+    const onPointerUp = (): void => {
+      if (!dragging) return;
+      dragging = false;
+      this.pinDockEl?.classList.remove("is-dragging");
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      if (!moved && onClickFallback) {
+        onClickFallback();
+      }
+    };
+
+    handleEl.addEventListener("pointerdown", (ev: PointerEvent) => {
+      // Only primary mouse button or touch
+      if (ev.button !== 0) return;
+      const targetEl = ev.target instanceof Element ? ev.target : null;
+      if (
+        targetEl &&
+        handleEl !== this.pinDockEl &&
+        targetEl.closest("button")
+      ) {
+        return;
+      }
+
+      if (!this.rootContainer) return;
+      const rect = this.rootContainer.getBoundingClientRect();
+      startX = ev.clientX;
+      startY = ev.clientY;
+      initialLeft = this.freePos ? this.freePos.left : rect.left;
+      initialTop = this.freePos ? this.freePos.top : rect.top;
+      dragging = true;
+      moved = false;
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+    });
+  }
+
   private renderShadowDom(): void {
     if (!this.shadow) return;
     this.shadow.innerHTML = "";
@@ -205,49 +359,148 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     root.className = `cd-root pos-${this.config.position}`;
     this.rootContainer = root;
 
-    // Composer card
+    // 1. Compact Minimized Pinning Bar (visible while pinning elements on the page or minimized)
+    const compactBar = document.createElement("div");
+    compactBar.className = "cd-compact-bar";
+    compactBar.setAttribute("role", "region");
+    compactBar.setAttribute("aria-label", "ContextDrop Pinning Bar");
+    compactBar.hidden = true;
+    this.compactBarEl = compactBar;
+
+    const compactGrip = document.createElement("span");
+    compactGrip.className = "cd-pin-dock-grip";
+    compactGrip.title = "Drag to move pinning bar";
+    compactGrip.innerHTML = ICON_GRIP;
+    this.attachDragHandle(compactBar);
+    compactBar.appendChild(compactGrip);
+
+    const compactPinBtn = document.createElement("button");
+    compactPinBtn.type = "button";
+    compactPinBtn.className = "cd-pin-corner-btn is-active";
+    compactPinBtn.setAttribute("aria-label", "Toggle element pin mode");
+    compactPinBtn.innerHTML = `${ICON_PIN}<span>Pinning</span>`;
+    compactPinBtn.addEventListener("click", () => this.togglePinSelection());
+    this.compactPinBtn = compactPinBtn;
+    compactBar.appendChild(compactPinBtn);
+
+    const compactStatus = document.createElement("div");
+    compactStatus.className = "cd-compact-status";
+    const breadcrumbScroll = document.createElement("div");
+    breadcrumbScroll.className = "cd-breadcrumb-scroll";
+    this.compactBreadcrumbEl = breadcrumbScroll;
+    compactStatus.appendChild(breadcrumbScroll);
+    compactBar.appendChild(compactStatus);
+
+    const compactLayerUp = document.createElement("button");
+    compactLayerUp.type = "button";
+    compactLayerUp.className = "cd-icon-btn";
+    compactLayerUp.title = "Step to outer/parent element (Up arrow)";
+    compactLayerUp.setAttribute("aria-label", "Step to parent element");
+    compactLayerUp.innerHTML = ICON_CHEVRON_UP;
+    compactLayerUp.addEventListener("click", () => this.picker?.cycleDepth(1));
+    compactBar.appendChild(compactLayerUp);
+
+    const compactLayerDown = document.createElement("button");
+    compactLayerDown.type = "button";
+    compactLayerDown.className = "cd-icon-btn";
+    compactLayerDown.title = "Step to inner/child element (Down arrow)";
+    compactLayerDown.setAttribute("aria-label", "Step to child element");
+    compactLayerDown.innerHTML = ICON_CHEVRON_DOWN;
+    compactLayerDown.addEventListener("click", () => this.picker?.cycleDepth(-1));
+    compactBar.appendChild(compactLayerDown);
+
+    const expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.className = "cd-btn cd-btn-primary";
+    expandBtn.setAttribute("aria-label", "Return to chatbox");
+    expandBtn.innerHTML = `${ICON_EXPAND}<span>Chat</span>`;
+    expandBtn.addEventListener("click", () => this.expandFromCompactBar());
+    compactBar.appendChild(expandBtn);
+
+    // 2. Main Floating Chatbox Composer Window
     const composer = document.createElement("div");
     composer.className = "cd-composer";
     composer.setAttribute("role", "dialog");
-    composer.setAttribute("aria-label", "Feedback Composer");
+    composer.setAttribute("aria-label", "ContextDrop Feedback Chatbox");
     composer.hidden = !this.isOpen;
     this.composerEl = composer;
 
-    // Header
+    // Drag-and-drop image support on the chatbox
+    composer.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      composer.classList.add("is-dragging-over");
+    });
+    composer.addEventListener("dragleave", () => {
+      composer.classList.remove("is-dragging-over");
+    });
+    composer.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      composer.classList.remove("is-dragging-over");
+      const files = ev.dataTransfer?.files;
+      if (files && files.length > 0) {
+        void this.handleFilesSelected(Array.from(files));
+      }
+    });
+
+    // Header with Top-Left Pin-Shaped Selector & Drag Handle
     const header = document.createElement("div");
     header.className = "cd-composer-header";
+    this.attachDragHandle(header);
+
+    const headerLeft = document.createElement("div");
+    headerLeft.className = "cd-header-left";
+
+    if (this.config.features.element_selection) {
+      const cornerPinBtn = document.createElement("button");
+      cornerPinBtn.type = "button";
+      cornerPinBtn.className = "cd-pin-corner-btn";
+      cornerPinBtn.title = "Pin any HTML element on the page as context";
+      cornerPinBtn.setAttribute("aria-label", "Select DOM element on page");
+      cornerPinBtn.innerHTML = `${ICON_PIN}<span>Pin Element</span>`;
+      cornerPinBtn.addEventListener("click", () => this.startPinSelection());
+      this.cornerPinBtn = cornerPinBtn;
+      headerLeft.appendChild(cornerPinBtn);
+    }
+
     const title = document.createElement("h2");
     title.className = "cd-composer-title";
-    title.textContent = "Send Feedback";
+    title.textContent = "ContextDrop";
+    headerLeft.appendChild(title);
+
+    const headerActions = document.createElement("div");
+    headerActions.className = "cd-header-actions";
+
+    const minBtn = document.createElement("button");
+    minBtn.type = "button";
+    minBtn.className = "cd-icon-btn";
+    minBtn.title = "Minimize to compact bar";
+    minBtn.setAttribute("aria-label", "Minimize chatbox to compact bar");
+    minBtn.innerHTML = ICON_MINIMIZE;
+    minBtn.addEventListener("click", () => this.minimizeToCompactBar());
+
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "cd-icon-btn";
+    closeBtn.title = "Close chatbox (Esc)";
     closeBtn.setAttribute("aria-label", "Close feedback composer");
-    closeBtn.textContent = "✕";
+    closeBtn.innerHTML = ICON_CLOSE;
     closeBtn.addEventListener("click", () => this.closeComposer());
-    header.appendChild(title);
-    header.appendChild(closeBtn);
+
+    headerActions.appendChild(minBtn);
+    headerActions.appendChild(closeBtn);
+    header.appendChild(headerLeft);
+    header.appendChild(headerActions);
     composer.appendChild(header);
 
-    // Multiline prompt textarea
-    const textarea = document.createElement("textarea");
-    textarea.className = "cd-textarea";
-    textarea.placeholder = this.config.placeholder;
-    textarea.setAttribute("aria-label", "Feedback description");
-    textarea.addEventListener("keydown", (ev) => {
-      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
-        ev.preventDefault();
-        void this.handleSubmit();
-      } else if (ev.key === "Escape") {
-        ev.preventDefault();
-        this.closeComposer();
-      }
-    });
-    textarea.addEventListener("paste", (ev) => this.handlePaste(ev));
-    this.textareaEl = textarea;
-    composer.appendChild(textarea);
+    // Conversational Chat Thread
+    const chatThread = document.createElement("div");
+    chatThread.className = "cd-chat-thread";
+    chatThread.setAttribute("aria-live", "polite");
+    this.chatThreadEl = chatThread;
+    composer.appendChild(chatThread);
+    this.renderChatThread();
 
-    // Attachment & Element chip tray
+    // Pinned Elements & Attachments Chip Tray
     const tray = document.createElement("div");
     tray.className = "cd-tray";
     tray.setAttribute("aria-label", "Attached context items");
@@ -277,31 +530,41 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.fileInputEl = fileInput;
     composer.appendChild(fileInput);
 
-    // Toolbar
+    // Chatbox Prompt Input Shell
+    const promptShell = document.createElement("div");
+    promptShell.className = "cd-prompt-shell";
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "cd-textarea";
+    textarea.placeholder = this.config.placeholder;
+    textarea.setAttribute("aria-label", "Feedback description");
+    textarea.addEventListener("keydown", (ev) => {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
+        ev.preventDefault();
+        void this.handleSubmit();
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        this.closeComposer();
+      }
+    });
+    textarea.addEventListener("paste", (ev) => this.handlePaste(ev));
+    this.textareaEl = textarea;
+    promptShell.appendChild(textarea);
+
+    // Toolbar inside prompt shell
     const toolbar = document.createElement("div");
     toolbar.className = "cd-toolbar";
 
     const actions = document.createElement("div");
     actions.className = "cd-toolbar-actions";
 
-    const uploadBtn = document.createElement("button");
-    uploadBtn.type = "button";
-    uploadBtn.className = "cd-btn";
-    uploadBtn.setAttribute("aria-label", "Upload image attachment");
-    uploadBtn.textContent = "Image";
-    uploadBtn.addEventListener("click", () => this.fileInputEl?.click());
-    actions.appendChild(uploadBtn);
-
     if (this.config.features.element_selection) {
       const pickBtn = document.createElement("button");
       pickBtn.type = "button";
       pickBtn.className = "cd-btn";
-      pickBtn.setAttribute("aria-label", "Select DOM element on page");
-      pickBtn.textContent = "Select Element";
-      pickBtn.addEventListener("click", () => {
-        this.closeComposer();
-        this.picker?.start();
-      });
+      pickBtn.setAttribute("aria-label", "Pin HTML element as context");
+      pickBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
+      pickBtn.addEventListener("click", () => this.startPinSelection());
       actions.appendChild(pickBtn);
     }
 
@@ -310,18 +573,26 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       screenshotBtn.type = "button";
       screenshotBtn.className = "cd-btn";
       screenshotBtn.setAttribute("aria-label", "Capture viewport screenshot");
-      screenshotBtn.textContent = "Screenshot";
+      screenshotBtn.innerHTML = `${ICON_CAMERA}<span>Screenshot</span>`;
       screenshotBtn.addEventListener("click", () => {
         void this.handleViewportScreenshot();
       });
       actions.appendChild(screenshotBtn);
     }
 
+    const uploadBtn = document.createElement("button");
+    uploadBtn.type = "button";
+    uploadBtn.className = "cd-btn";
+    uploadBtn.setAttribute("aria-label", "Upload image attachment");
+    uploadBtn.innerHTML = `${ICON_IMAGE}<span>Image</span>`;
+    uploadBtn.addEventListener("click", () => this.fileInputEl?.click());
+    actions.appendChild(uploadBtn);
+
     const submitBtn = document.createElement("button");
     submitBtn.type = "button";
     submitBtn.className = "cd-btn cd-btn-primary";
     submitBtn.setAttribute("aria-label", "Submit feedback");
-    submitBtn.textContent = "Send";
+    submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
     submitBtn.addEventListener("click", () => {
       void this.handleSubmit();
     });
@@ -329,21 +600,210 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
     toolbar.appendChild(actions);
     toolbar.appendChild(submitBtn);
-    composer.appendChild(toolbar);
+    promptShell.appendChild(toolbar);
+    composer.appendChild(promptShell);
 
-    // Floating trigger button
+    // 3. Freely Draggable Floating Pin Dock (visible when chatbox is closed, or draggable launcher)
+    const pinDock = document.createElement("div");
+    pinDock.className = "cd-pin-dock";
+    this.pinDockEl = pinDock;
+
+    const dockGrip = document.createElement("span");
+    dockGrip.className = "cd-pin-dock-grip";
+    dockGrip.title = "Drag to float anywhere on screen";
+    dockGrip.innerHTML = ICON_GRIP;
+    this.attachDragHandle(dockGrip);
+    pinDock.appendChild(dockGrip);
+
+    if (this.config.features.element_selection) {
+      const floatingPinBtn = document.createElement("button");
+      floatingPinBtn.type = "button";
+      floatingPinBtn.className = "cd-floating-pin-btn";
+      floatingPinBtn.title = "Pin an element on the page (or drag to move)";
+      floatingPinBtn.setAttribute("aria-label", "Pin element on page");
+      floatingPinBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
+      this.attachDragHandle(floatingPinBtn, () => this.startPinSelection());
+      this.floatingPinBtn = floatingPinBtn;
+      pinDock.appendChild(floatingPinBtn);
+    }
+
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.className = "cd-trigger";
     trigger.setAttribute("aria-label", "Open feedback composer");
     trigger.setAttribute("aria-expanded", String(this.isOpen));
-    trigger.textContent = "Feedback";
-    trigger.addEventListener("click", () => this.toggleComposer());
+    trigger.innerHTML = `${ICON_CHAT}<span>ContextDrop</span>`;
+    this.attachDragHandle(trigger, () => this.toggleComposer());
     this.triggerBtn = trigger;
+    pinDock.appendChild(trigger);
 
+    root.appendChild(compactBar);
     root.appendChild(composer);
-    root.appendChild(trigger);
+    root.appendChild(pinDock);
     this.shadow.appendChild(root);
+
+    this.renderCompactBreadcrumbs(null, []);
+    this.syncUiStates();
+  }
+
+  private syncPinActiveIndicators(pickerActive: boolean): void {
+    if (this.cornerPinBtn) {
+      this.cornerPinBtn.classList.toggle("is-active", pickerActive);
+      this.cornerPinBtn.setAttribute("aria-pressed", String(pickerActive));
+    }
+    if (this.floatingPinBtn) {
+      this.floatingPinBtn.classList.toggle("is-active", pickerActive);
+      this.floatingPinBtn.setAttribute("aria-pressed", String(pickerActive));
+    }
+    if (this.compactPinBtn) {
+      this.compactPinBtn.classList.toggle("is-active", pickerActive);
+      this.compactPinBtn.innerHTML = pickerActive
+        ? `${ICON_PIN}<span>Pinning</span>`
+        : `${ICON_PIN}<span>Pin Element</span>`;
+    }
+  }
+
+  private syncUiStates(): void {
+    const pickerActive = this.picker ? this.picker.isActive() : false;
+    const totalContextCount = this.elementReferences.length + this.attachments.length;
+
+    if (this.composerEl) {
+      this.composerEl.hidden = !this.isOpen || this.isMinimized;
+    }
+    if (this.compactBarEl) {
+      this.compactBarEl.hidden = !(this.isOpen && this.isMinimized);
+    }
+    if (this.pinDockEl) {
+      this.pinDockEl.hidden = this.isOpen;
+    }
+
+    if (this.triggerBtn) {
+      this.triggerBtn.setAttribute("aria-expanded", String(this.isOpen && !this.isMinimized));
+      const countBadge =
+        totalContextCount > 0 ? `<span class="cd-count-pill">${totalContextCount}</span>` : "";
+      this.triggerBtn.innerHTML = `${ICON_CHAT}<span>ContextDrop</span>${countBadge}`;
+    }
+
+    if (this.cornerPinBtn) {
+      const pinCount =
+        this.elementReferences.length > 0
+          ? `<span class="cd-count-pill">${this.elementReferences.length}</span>`
+          : "";
+      this.cornerPinBtn.innerHTML = `${ICON_PIN}<span>Pin Element</span>${pinCount}`;
+    }
+
+    this.syncPinActiveIndicators(pickerActive);
+  }
+
+  private renderCompactBreadcrumbs(
+    activeCandidate: ElementCandidateInfo | null,
+    ancestors: Element[]
+  ): void {
+    if (!this.compactBreadcrumbEl) return;
+    this.compactBreadcrumbEl.innerHTML = "";
+
+    if (!activeCandidate || ancestors.length === 0) {
+      const hint = document.createElement("span");
+      hint.style.cssText = "font-size: 11.5px; color: #4b5262;";
+      hint.textContent =
+        this.elementReferences.length > 0
+          ? `${this.elementReferences.length} pinned · Hover or click any element (scroll ↕ for layers)`
+          : "Hover any element · Scroll ↕ for layers · Click to inspect stack";
+      this.compactBreadcrumbEl.appendChild(hint);
+      return;
+    }
+
+    ancestors.forEach((ancEl, idx) => {
+      if (idx > 0) {
+        const sep = document.createElement("span");
+        sep.className = "cd-crumb-sep";
+        sep.innerHTML = ICON_CHEVRON_RIGHT;
+        this.compactBreadcrumbEl?.appendChild(sep);
+      }
+
+      const isCurrent = ancEl === activeCandidate.element;
+      const crumb = document.createElement("button");
+      crumb.type = "button";
+      crumb.className = `cd-crumb-btn${isCurrent ? " is-current" : ""}`;
+      crumb.textContent = computeSelector(ancEl);
+      crumb.title = "Click to pin this element directly";
+      crumb.addEventListener("mouseenter", () => {
+        this.picker?.focusCandidateElement(ancEl);
+      });
+      crumb.addEventListener("click", () => {
+        this.picker?.selectElementDirectly(ancEl);
+      });
+      this.compactBreadcrumbEl?.appendChild(crumb);
+    });
+  }
+
+  private renderChatThread(): void {
+    if (!this.chatThreadEl) return;
+    this.chatThreadEl.innerHTML = "";
+
+    if (this.sessionHistory.length === 0) {
+      const emptyBox = document.createElement("div");
+      emptyBox.className = "cd-chat-empty";
+
+      const p1 = document.createElement("p");
+      p1.className = "cd-chat-empty-text";
+      p1.textContent = "Drop context directly from this page.";
+
+      const p2 = document.createElement("p");
+      p2.className = "cd-chat-empty-hint";
+      p2.textContent =
+        "Use the top-left Pin selector to pick specific HTML elements (scroll or click to disambiguate overlapping layers), attach screenshots, and send your note.";
+
+      emptyBox.appendChild(p1);
+      emptyBox.appendChild(p2);
+      this.chatThreadEl.appendChild(emptyBox);
+      return;
+    }
+
+    for (const entry of this.sessionHistory) {
+      const msgCard = document.createElement("div");
+      msgCard.className = "cd-chat-msg";
+
+      if (entry.elements.length > 0 || entry.attachments.length > 0) {
+        const pills = document.createElement("div");
+        pills.className = "cd-chat-msg-pills";
+
+        for (const el of entry.elements) {
+          const pill = document.createElement("span");
+          pill.className = "cd-chat-msg-pill";
+          pill.textContent = el.selector;
+          pills.appendChild(pill);
+        }
+        for (const att of entry.attachments) {
+          const pill = document.createElement("span");
+          pill.className = "cd-chat-msg-pill";
+          pill.textContent = att.label;
+          pills.appendChild(pill);
+        }
+        msgCard.appendChild(pills);
+      }
+
+      if (entry.message) {
+        const textP = document.createElement("p");
+        textP.className = "cd-chat-msg-text";
+        textP.textContent = entry.message;
+        msgCard.appendChild(textP);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "cd-chat-msg-meta";
+      const idSpan = document.createElement("span");
+      idSpan.textContent = `Dropped #${entry.id}`;
+      const timeSpan = document.createElement("span");
+      timeSpan.textContent = entry.createdAt;
+      meta.appendChild(idSpan);
+      meta.appendChild(timeSpan);
+      msgCard.appendChild(meta);
+
+      this.chatThreadEl.appendChild(msgCard);
+    }
+
+    this.chatThreadEl.scrollTop = this.chatThreadEl.scrollHeight;
   }
 
   private renderTray(): void {
@@ -356,9 +816,15 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       chip.className = "cd-chip";
       chip.setAttribute("data-chip-type", "element");
 
+      const domNode = this.elementDomNodes.get(elRef.client_ref);
+      if (domNode) {
+        chip.addEventListener("mouseenter", () => this.picker?.showExternalPreview(domNode));
+        chip.addEventListener("mouseleave", () => this.picker?.hideExternalPreview());
+      }
+
       const badge = document.createElement("span");
       badge.className = "cd-chip-badge";
-      badge.textContent = "Element";
+      badge.innerHTML = `${ICON_PIN}<span>Pin</span>`;
 
       const label = document.createElement("span");
       label.className = "cd-chip-label";
@@ -370,19 +836,16 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
       if (
         this.config.features.screenshot_capture &&
-        this.elementDomNodes.has(elRef.client_ref)
+        domNode
       ) {
         const snapBtn = document.createElement("button");
         snapBtn.type = "button";
-        snapBtn.className = "cd-chip-remove";
+        snapBtn.className = "cd-chip-action";
         snapBtn.title = "Capture element screenshot";
         snapBtn.setAttribute("aria-label", `Capture screenshot of ${elRef.selector}`);
-        snapBtn.textContent = "📷";
+        snapBtn.innerHTML = ICON_CAMERA;
         snapBtn.addEventListener("click", () => {
-          const domNode = this.elementDomNodes.get(elRef.client_ref);
-          if (domNode) {
-            void this.handleElementScreenshot(domNode, elRef.client_ref, elRef.selector);
-          }
+          void this.handleElementScreenshot(domNode, elRef.client_ref, elRef.selector);
         });
         chip.appendChild(snapBtn);
       }
@@ -391,7 +854,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       removeBtn.type = "button";
       removeBtn.className = "cd-chip-remove";
       removeBtn.setAttribute("aria-label", `Remove ${elRef.selector}`);
-      removeBtn.textContent = "×";
+      removeBtn.innerHTML = ICON_CLOSE;
       removeBtn.addEventListener("click", () => this.removeElementReference(elRef.client_ref));
 
       chip.appendChild(removeBtn);
@@ -414,7 +877,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
       const badge = document.createElement("span");
       badge.className = "cd-chip-badge";
-      badge.textContent = att.attachment_type === "screenshot" ? "Screenshot" : "Image";
+      badge.textContent = att.attachment_type === "screenshot" ? "Shot" : "Image";
 
       const label = document.createElement("span");
       label.className = "cd-chip-label";
@@ -424,7 +887,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       removeBtn.type = "button";
       removeBtn.className = "cd-chip-remove";
       removeBtn.setAttribute("aria-label", `Remove ${att.label}`);
-      removeBtn.textContent = "×";
+      removeBtn.innerHTML = ICON_CLOSE;
       removeBtn.addEventListener("click", () => this.removeAttachment(att.id));
 
       chip.appendChild(badge);
@@ -465,6 +928,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       });
     }
     this.renderTray();
+    this.syncUiStates();
   }
 
   private handlePaste(event: ClipboardEvent): void {
@@ -512,6 +976,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         metadata: result.metadata
       });
       this.renderTray();
+      this.syncUiStates();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Screenshot capture unavailable.";
       this.showStatus(message, "error");
@@ -547,6 +1012,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         metadata: result.metadata
       });
       this.renderTray();
+      this.syncUiStates();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Element screenshot failed.";
       this.showStatus(message, "error");
@@ -562,17 +1028,25 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.attachments.length === 0 &&
       this.elementReferences.length === 0
     ) {
-      this.showStatus("Please enter a message, attach an image, or select a DOM element.", "error");
+      this.showStatus("Enter a note, pin an element, or attach a screenshot first.", "error");
       return;
     }
 
     this.isSubmitting = true;
     if (this.submitBtn) {
       this.submitBtn.disabled = true;
-      this.submitBtn.textContent = "Sending...";
+      this.submitBtn.innerHTML = `<span>Sending...</span>`;
     }
 
     try {
+      const submittedElements = [...this.elementReferences];
+      const submittedAttachments = this.attachments.map((att) => ({
+        id: att.id,
+        label: att.label,
+        preview_url: att.preview_url,
+        attachment_type: att.attachment_type
+      }));
+
       const payload: FeedbackSubmissionPayload = {
         message,
         page_url: typeof window !== "undefined" ? window.location.href : "/",
@@ -596,7 +1070,17 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         }))
       };
 
-      await this.apiClient.submitFeedback(payload);
+      const res = await this.apiClient.submitFeedback(payload);
+
+      const now = new Date();
+      const timeLabel = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      this.sessionHistory.push({
+        id: res?.id ?? this.sessionHistory.length + 1,
+        message: message || "(Context drop without text)",
+        createdAt: timeLabel,
+        elements: submittedElements,
+        attachments: submittedAttachments
+      });
 
       if (this.textareaEl) {
         this.textareaEl.value = "";
@@ -604,8 +1088,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.elementReferences = [];
       this.elementDomNodes.clear();
       this.attachments = [];
+      this.picker?.hideExternalPreview();
       this.renderTray();
-      this.showStatus("Thank you! Your feedback has been submitted.", "success");
+      this.renderChatThread();
+      this.syncUiStates();
+      this.showStatus("Context drop saved.", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to submit feedback.";
       this.showStatus(msg, "error");
@@ -613,7 +1100,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.isSubmitting = false;
       if (this.submitBtn) {
         this.submitBtn.disabled = false;
-        this.submitBtn.textContent = "Send";
+        this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
       }
     }
   }
