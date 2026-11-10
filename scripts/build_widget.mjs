@@ -16,6 +16,7 @@ const outDir = path.dirname(outFile);
 const MODULE_ORDER = [
   "types.ts",
   "sanitizer.ts",
+  "icons.ts",
   "styles.ts",
   "api-client.ts",
   "screenshot.ts",
