@@ -68,39 +68,42 @@ The host application remains responsible for deciding whether authentication is 
 
 ## 4. User Experience
 
-### 4.1 Floating Feedback Button
+### 4.1 Freely Floating Pin Dock & Draggable Chatbox
 
-ContextDrop provides a floating trigger button on configured application pages:
-- **Default Position:** `:bottom_right` (configurable to `:bottom_left`, `:top_right`, `:top_left`).
-- **Positioning:** `position: fixed` relative to the viewport.
-- **Behavior:** Opens the feedback composer when clicked or activated via keyboard; can be dismissed without submitting (`Escape` or close button); does not interfere with the host application's existing interactions.
+ContextDrop provides a freely draggable floating Pin dock and chatbox on configured application pages:
+- **Positioning:** `position: fixed` relative to the viewport, starting at the configured corner (`:top_left`, `:bottom_right`, `:bottom_left`, `:top_right`) and freely draggable anywhere within viewport bounds.
+- **Pin-Shaped Selector:** Available both on the floating dock (`.cd-floating-pin-btn`) and anchored at the **top-left corner of the chatbox header** (`.cd-pin-corner-btn`) with an asymmetric pushpin silhouette (`11px 11px 11px 3px`).
+- **Minimize to Compact Bar:** While pinning elements on the page (or when clicking the header minimize button), the chatbox collapses into a compact floating bar (`.cd-compact-bar`) with live DOM breadcrumbs, layer Up/Down buttons, and an expand-to-chat toggle so the host page remains unobstructed.
 
-### 4.2 Feedback Composer
+### 4.2 Chatbox Feedback Composer
 
-The composer uses a prompt-style interface containing:
-- A multiline text input (default placeholder: `"What would you like to tell us?"`).
-- An image attachment control (file picker, drag-and-drop, clipboard paste).
-- A visual DOM element selection control.
-- A screenshot capture control.
-- A submission action (`Cmd/Ctrl+Enter` or click).
+The chatbox uses a conversational prompt interface containing:
+- A top-left Pin-shaped element selector button and draggable header bar.
+- A scrollable session chat thread displaying submitted feedback drops in the current session with element pills and timestamps.
+- A context chip tray where hovering a pinned element chip highlights the live DOM node on the page.
+- A multiline text input (with clipboard image paste and drag-and-drop image upload).
+- Toolbar controls for Pin Element, Viewport Screenshot, Image Upload, and Send (`Cmd/Ctrl+Enter` or click).
 
 Supports text-only feedback, feedback with uploaded images, feedback with screenshots, feedback with selected DOM elements, and multiple attachments + multiple DOM elements in a single submission. Users can review and remove any item before submitting.
 
 ### 4.3 Attachment & Element Reference Interaction
 
 Attached items are represented as individual chips/cards within the composer tray:
-- **Visual Preview:** Image thumbnail for uploaded images and screenshots; `<tag#id.class>` badge for DOM element references.
-- **Type Indicator:** Clearly distinguishes `Image`, `Screenshot`, and `Element`.
+- **Visual Preview:** Image thumbnail for uploaded images and screenshots; `<tag#id.class>` Pin badge for DOM element references (hovering highlights the element on the page, and clicking the camera icon captures an element-cropped screenshot).
+- **Type Indicator:** Clearly distinguishes `Pin`, `Shot`, and `Image`.
 - **Removable:** Each item can be removed prior to submission.
 
-### 4.4 DOM Element Selection
+### 4.4 Precision DOM Element Selection (Overlapping & Cascading Disambiguation)
 
-1. User activates the element selection control in the composer.
-2. ContextDrop enters selection mode and changes the cursor (`crosshair`) with a floating status banner.
-3. Hovering over an element displays a visual highlight overlay matching its bounding box.
-4. Clicking an element captures a sanitized point-in-time snapshot (`ElementReference`) and attaches it to the current feedback.
-5. Selection mode remains active so additional elements can be selected in one session.
-6. Users can exit selection mode explicitly (`Escape` or `"Done"` button).
+1. User activates the Pin-shaped selector in the top-left corner of the chatbox or on the floating pin dock.
+2. ContextDrop collapses the chatbox into the Compact Pinning Bar and enters selection mode (`crosshair` cursor with a cursor-following pushpin marker).
+3. Hovering over an element displays a primary bounding-box highlight overlay and a live HUD showing `<tag#selector>`, pixel dimensions, and layer depth (`1/5 layers · ↕ scroll`).
+4. **Disambiguating Overlapping & Cascading Elements:**
+   - **Scroll-Wheel & `↑`/`↓` Arrow Key Depth Cycling:** Scrolling the mouse wheel (`wheel`) or pressing `ArrowUp`/`ArrowDown` (`[`/`]`) smoothly cycles through the candidate stack at that point (`target`, overlapping sibling elements via `document.elementsFromPoint`, direct children, and DOM ancestors) while rendering a dashed ghost outline around the original leaf element.
+   - **Click-to-Pick Layer Popover:** Clicking a location with multiple cascading or overlapping layers anchors the floating pin and opens a floating Layer & Hierarchy Picker Popover listing all candidate layers at that coordinate with live hover preview on the page (`Shift+Click` or `Enter` pins immediately).
+   - **Interactive DOM Breadcrumb Bar:** Both the Layer Popover and the Compact Pinning Bar render an interactive ancestor path (`section > div.card > button`) where hovering previews and clicking pins any ancestor or target element directly.
+5. Selection mode remains active so additional elements can be pinned in one session.
+6. Users can exit selection mode explicitly (`Escape` or returning to `Chat`).
 
 **Host Non-Interference:** Click and pointer events in selection mode MUST be intercepted in the capture phase (`preventDefault`, `stopPropagation`, `stopImmediatePropagation`) so underlying application links, buttons, and forms are never triggered.
 

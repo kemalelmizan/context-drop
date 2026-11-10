@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-10T11:32:00+07:00",
+  "title": "Design System: ContextDrop",
+  "extensions": {
+    "colorMeta": {
+      "pin-vermilion": {
+        "role": "primary",
+        "displayName": "Pin Vermilion",
+        "canonical": "#c2410c",
+        "tonalRamp": ["#431407", "#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fed7aa", "#ffedd5"]
+      },
+      "inspector-cobalt": {
+        "role": "secondary",
+        "displayName": "Inspector Cobalt",
+        "canonical": "#1d4ed8",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#dbeafe"]
+      },
+      "obsidian-ink": {
+        "role": "neutral",
+        "displayName": "Obsidian Ink",
+        "canonical": "#111318",
+        "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
+      },
+      "warm-paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#faf9f6",
+        "tonalRamp": ["#3a3834", "#57544e", "#78746c", "#a8a39a", "#d6d3cd", "#e4e1da", "#f1efea", "#faf9f6"]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Chatbox header and layer disambiguation popover headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Session chat messages, composer textarea, and status banners."
+      },
+      "label": {
+        "displayName": "Monospace Label",
+        "purpose": "CSS selectors, DOM ancestor paths, and tabular pixel geometry."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-float",
+        "value": "0 22px 44px -12px rgba(17, 19, 24, 0.22), 0 8px 18px -6px rgba(17, 19, 24, 0.10)",
+        "purpose": "Floating chatbox composer, compact pinning bar, and layer stack popover."
+      },
+      {
+        "name": "shadow-pin",
+        "value": "0 12px 24px -6px rgba(17, 19, 24, 0.24), 0 4px 10px -3px rgba(17, 19, 24, 0.12)",
+        "purpose": "Freely draggable floating pin trigger dock."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Smooth bounding-box morphing when cycling DOM layers and opening the chatbox."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Top-Left Pin Selector",
+      "kind": "button",
+      "refersTo": "button-pin-selector",
+      "description": "Asymmetric pushpin selector button in the top-left corner of the chatbox header.",
+      "html": "<button class=\"ds-pin-btn\"><svg viewBox=\"0 0 20 20\" width=\"15\" height=\"15\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M11.8 3.2l5 5-2.1 2.1-1.8-.6-3.2 3.2.6 2.5-1.6 1.6-3.1-3.1-3.1 3.1v-.1l3.1-3.1-3.1-3.1 1.6-1.6 2.5.6 3.2-3.2-.6-1.8 2.1-2.1z\"/></svg><span>Pin Element</span></button>",
+      "css": ".ds-pin-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 11px 11px 11px 3px; border: 1px solid rgba(194, 65, 12, 0.25); background: #c2410c; color: #faf9f6; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s cubic-bezier(0.22, 1, 0.36, 1); } .ds-pin-btn:hover { background: #9a3412; transform: translateY(-1px); } .ds-pin-btn:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }"
+    },
+    {
+      "name": "Primary Send Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary submission button in the chatbox composer toolbar.",
+      "html": "<button class=\"ds-btn-primary\"><svg viewBox=\"0 0 20 20\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.85\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 16V4\"/><polyline points=\"5 9 10 4 15 9\"/></svg><span>Send</span></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 7px; border: 1px solid #111318; background: #111318; color: #faf9f6; font-size: 12px; font-weight: 600; cursor: pointer; } .ds-btn-primary:hover { background: #252a34; } .ds-btn-primary:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }"
+    },
+    {
+      "name": "Pinned Element Chip",
+      "kind": "chip",
+      "refersTo": "chip-element",
+      "description": "Context tray chip representing a pinned DOM element with live hover highlight.",
+      "html": "<div class=\"ds-chip\"><span class=\"ds-chip-badge\">Pin</span><span class=\"ds-chip-label\">button#checkout-button</span></div>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; background: #ffffff; border: 1px solid #d6d3cd; border-radius: 7px; font-size: 11.5px; color: #111318; } .ds-chip:hover { border-color: #c2410c; } .ds-chip-badge { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: #ffedd5; color: #9a3412; } .ds-chip-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Tactile Field Pin & Loupe",
+    "overview": "ContextDrop lives overlaid on arbitrary host Ruby on Rails applications. Its aesthetic combines warm archival paper surfaces (#faf9f6) and deep obsidian ink (#111318) with two high-precision instrument accents: Pin Vermilion (#c2410c) for physical pin-drop affordances and Inspector Cobalt (#1d4ed8) for live DOM geometry and layer disambiguation.",
+    "keyCharacteristics": [
+      "Asymmetric Pushpin Silhouette (11px 11px 11px 3px)",
+      "Warm Paper over Arbitrary Grounds (#faf9f6 / #f1efea)",
+      "Authored 1.75px Stroke Iconography",
+      "Tabular Measurement Numerals"
+    ],
+    "rules": [
+      {
+        "name": "The Two-Signal Accent Rule",
+        "body": "Pin Vermilion (#c2410c) means 'pick or pin an element'; Inspector Cobalt (#1d4ed8) means 'active DOM geometry or layer selection.' Never swap them or use either for decorative backgrounds.",
+        "section": "colors"
+      },
+      {
+        "name": "The Earned Monospace Rule",
+        "body": "Monospace type is used exclusively for DOM tag names, CSS selectors, ancestor paths, and pixel dimensions—never as a decorative voice for prose or buttons.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do keep all widget styles strictly scoped inside the Shadow DOM (WIDGET_SHADOW_STYLES) or inline on [data-context-drop-ui] overlay elements so host application CSS is never mutated.",
+      "Do intercept pointerdown, mousedown, mouseup, click, and wheel in the capture phase during Pin Mode so underlying host links, buttons, and scroll containers are not triggered accidentally.",
+      "Do use the authored 1.75px stroke SVG icons from icons.ts for all actions."
+    ],
+    "donts": [
+      "Don't use Unicode glyphs or emojis as UI icons.",
+      "Don't place kickers or eyebrows above headings inside the chatbox or dashboard.",
+      "Don't allow selection or unredacted screenshot capture of elements matching [data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], or [autocomplete^='cc-']."
+    ]
+  }
+}

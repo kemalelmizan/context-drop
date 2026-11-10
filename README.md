@@ -4,7 +4,7 @@
 
 It provides:
 - **Mountable Rails Engine (`isolate_namespace ContextDrop`)** with three engine-owned database tables (`context_drop_feedbacks`, `context_drop_attachments`, `context_drop_element_references`).
-- **Decoupled TypeScript Frontend Widget (`<context-drop-widget>`)** with **Shadow DOM** CSS isolation, a prompt-style feedback composer, interactive multi-element DOM selection, and privacy-redacted viewport/element screenshot capture.
+- **Decoupled TypeScript Frontend Widget (`<context-drop-widget>`)** with **Shadow DOM** CSS isolation, a **draggable floating chatbox UI** with session message thread, a **pin-shaped selector in the top-left corner** (plus a freely draggable floating pin dock), a **minimize-to-compact-bar** mode during element pinning, **precision overlapping/cascading DOM element disambiguation** (scroll-wheel/arrow-key depth cycling, click-to-pick layer stack popover, and interactive DOM breadcrumb bar), and privacy-redacted viewport/element screenshot capture.
 - **Self-Hosted Feedback Triage Dashboard (`/context_drop/dashboard/feedbacks`)** rendered inside your Rails application.
 - **Built-in Model Context Protocol (MCP) Server** (`stdio` and Streamable HTTP) so developers and AI coding agents (Cursor, Claude Code, Antigravity, Windsurf, VS Code) can query feedback, inspect DOM selectors & multimodal screenshots, and resolve issues directly from their IDE.
 
