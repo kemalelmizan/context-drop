@@ -8,10 +8,19 @@
 </p>
 
 <p align="center">
-  <a href="#60-second-quickstart">Quickstart</a> ·
-  <a href="#see-it-in-action">Live Demo</a> ·
-  <a href="#precision-dom-pinning--layer-disambiguation">Layer Picker</a> ·
-  <a href="#connect-your-ide--ai-coding-agent-mcp">MCP Server</a> ·
+  <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/v/context_drop?label=RubyGems&color=2563eb" alt="Gem Version" /></a>
+  <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/dt/context_drop?label=Downloads&color=0f172a" alt="Gem Downloads" /></a>
+  <img src="https://img.shields.io/badge/Ruby-%3E%3D%203.1-CC342D?logo=ruby&logoColor=white" alt="Ruby >= 3.1" />
+  <img src="https://img.shields.io/badge/Rails-%3E%3D%207.1-D30001?logo=rubyonrails&logoColor=white" alt="Rails >= 7.1" />
+  <a href="MIT-LICENSE"><img src="https://img.shields.io/badge/License-MIT-16a34a" alt="MIT License" /></a>
+</p>
+
+<p align="center">
+  <a href="https://rubygems.org/gems/context_drop">RubyGems</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#interactive-playground">Live Demo</a> ·
+  <a href="#dom-pinning--layer-disambiguation">Layer Picker</a> ·
+  <a href="#mcp">MCP Server</a> ·
   <a href="#zero-trust-privacy--redaction">Privacy &amp; Redaction</a> ·
   <a href="#configuration">Configuration</a>
 </p>
@@ -83,6 +92,8 @@
 - **Active Storage** installed in the host application (`bin/rails active_storage:install`)
 
 ### 1. Install the Gem & Run the Generator
+
+Install [`context_drop` from RubyGems.org](https://rubygems.org/gems/context_drop) (or add `gem "context_drop"` to your `Gemfile`):
 
 ```bash
 bundle add context_drop
