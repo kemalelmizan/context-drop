@@ -52,3 +52,4 @@ Unlike external SaaS feedback widgets that store sensitive DOM data and screensh
 2. **Stay Out of the Host's Way:** Both the floating pin and the chatbox window must be freely movable, minimizable to a compact bar while inspecting the page, and strictly isolated via Shadow DOM and capture-phase event interception.
 3. **Zero-Trust Context Capture:** High-signal structural metadata and screenshots are captured without ever leaking sensitive inputs, credentials, or redacted DOM subtrees.
 4. **Agent-Ready by Default:** Every pinned element and screenshot captured in the chatbox translates directly into structured `ElementReference` and `Attachment` payloads that IDE coding agents can consume immediately.
+
