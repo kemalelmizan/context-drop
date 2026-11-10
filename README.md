@@ -31,7 +31,7 @@
 
  When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
 
-**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI componen (even underneath floating badges or cascading overlays) attach a privacy-redacted screenshot, and send.
+**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI component (even underneath floating badges or cascading overlays) attach a privacy-redacted screenshot, and send.
 
 <p align="center">
   <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
