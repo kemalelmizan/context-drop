@@ -181,6 +181,20 @@ Add the following to your IDE's MCP configuration (`.cursor/mcp.json`, `.mcp.jso
 
 ---
 
+## Interactive Playground Demo
+
+To try the floating Pin selector, cascading/overlapping layer disambiguation (scroll-wheel cycling, click-to-pick layer stack popover, and interactive DOM breadcrumb bar), draggable chatbox, and live payload inspector locally:
+
+```bash
+# Start the local interactive demo server at http://127.0.0.1:4173
+npm run demo
+
+# Or open demo/index.html directly in your browser (works offline via built-in payload interceptor)
+open demo/index.html
+```
+
+---
+
 ## Development & Testing
 
 ```bash

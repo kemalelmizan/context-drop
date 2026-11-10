@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContextDrop Interactive Playground — Meridian Checkout</title>
+  <style>
+    :root {
+      --bg-canvas: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-recessed: #e2e8f0;
+      --ink-primary: #111318;
+      --ink-secondary: #4b5262;
+      --ink-muted: #5c6478;
+      --border-hairline: #cbd5e1;
+      --accent-vermilion: #c2410c;
+      --accent-vermilion-deep: #9a3412;
+      --accent-cobalt: #1d4ed8;
+      --accent-emerald: #15803d;
+      --shadow-elevated: 0 18px 36px -12px rgba(17, 19, 24, 0.12), 0 4px 12px -3px rgba(17, 19, 24, 0.06);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    ::selection {
+      background: #ffedd5;
+      color: var(--ink-primary);
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--ink-primary);
+      background: var(--bg-canvas);
+      caret-color: var(--accent-vermilion);
+    }
+
+    /* Top App Bar */
+    .demo-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 32px 14px 190px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .demo-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      line-height: 1.3;
+    }
+
+    .demo-brand-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #ffedd5;
+      color: var(--accent-vermilion-deep);
+    }
+
+    .demo-quick-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .demo-btn {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+      color: var(--ink-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .demo-btn:hover {
+      background: var(--bg-recessed);
+    }
+
+    .demo-btn:focus-visible,
+    .demo-input:focus-visible {
+      outline: 2px solid var(--accent-cobalt);
+      outline-offset: 2px;
+    }
+
+    .demo-btn-pin {
+      background: var(--accent-vermilion);
+      border-color: var(--accent-vermilion);
+      color: #faf9f6;
+      border-radius: 10px;
+    }
+
+    .demo-btn-pin:hover {
+      background: var(--accent-vermilion-deep);
+    }
+
+    .demo-btn-primary {
+      background: var(--ink-primary);
+      border-color: var(--ink-primary);
+      color: #faf9f6;
+    }
+
+    .demo-btn-primary:hover {
+      background: #252a34;
+    }
+
+    /* Main Workspace Layout */
+    .demo-shell {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 32px 24px 96px;
+      display: grid;
+      grid-template-columns: 1.35fr 0.95fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .demo-column {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .demo-section {
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .demo-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .demo-section-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .demo-lead {
+      margin: 0 0 16px;
+      color: var(--ink-secondary);
+      font-size: 13.5px;
+      max-width: 68ch;
+    }
+
+    /* Scenario 1: Overlapping & Cascading Stack Stress Test */
+    .overlap-stage {
+      position: relative;
+      padding: 20px 0;
+      border-top: 1px solid var(--border-hairline);
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .overlap-header-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .overlap-plan-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .overlap-price {
+      font-size: 20px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .overlap-feature-list {
+      margin: 0 0 18px;
+      padding-left: 18px;
+      color: var(--ink-secondary);
+      font-size: 13.5px;
+    }
+
+    .overlap-cta-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    /* Intentional overlapping badge sitting right across the CTA button & card corner */
+    .floating-overlap-ribbon {
+      position: absolute;
+      top: -10px;
+      right: 14px;
+      z-index: 4;
+      padding: 6px 12px;
+      background: var(--accent-cobalt);
+      color: #faf9f6;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: var(--shadow-elevated);
+    }
+
+    .floating-translucent-banner {
+      position: absolute;
+      bottom: 8px;
+      right: 12px;
+      z-index: 3;
+      padding: 6px 12px;
+      background: var(--ink-primary);
+      color: #faf9f6;
+      border-radius: 6px;
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    /* Scenario 2: Deeply Nested Fulfillment Table */
+    .fulfillment-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      font-variant-numeric: tabular-nums;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .fulfillment-table th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-hairline);
+      color: var(--ink-secondary);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .fulfillment-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border-hairline);
+      vertical-align: middle;
+    }
+
+    .fulfillment-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .status-chip.delayed {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .status-chip.ready {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    /* Scenario 3: Privacy & Redaction Sandbox */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .form-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink-primary);
+    }
+
+    .demo-input {
+      padding: 9px 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+      color: var(--ink-primary);
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+    }
+
+    .sensitive-vault-box {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      border: 1px dashed #b91c1c;
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .code-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--bg-recessed);
+      color: var(--ink-primary);
+    }
+
+    /* Live Inspector Feed */
+    .inspector-empty {
+      padding: 20px 16px;
+      color: var(--ink-secondary);
+      border-top: 1px solid var(--border-hairline);
+      font-size: 13.5px;
+    }
+
+    .submission-log {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .submission-entry {
+      padding: 14px 0;
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    .submission-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: var(--ink-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .submission-json {
+      margin: 10px 0 0;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: var(--ink-primary);
+      color: #faf9f6;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.45;
+      overflow-x: auto;
+      max-height: 260px;
+    }
+
+    .shot-grid {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .shot-preview {
+      max-width: 160px;
+      max-height: 110px;
+      border-radius: 6px;
+      border: 1px solid var(--border-hairline);
+      object-fit: cover;
+    }
+
+    .guide-steps {
+      margin: 0;
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13.5px;
+      color: var(--ink-secondary);
+    }
+
+    .guide-steps strong {
+      color: var(--ink-primary);
+    }
+
+    @media (max-width: 920px) {
+      .demo-topbar {
+        padding-left: 24px;
+      }
+      .demo-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- ContextDrop Floating Widget (starts at top_left so the Pin selector is immediately accessible) -->
+  <context-drop-widget
+    id="demo-widget"
+    data-position="top_left"
+    data-endpoint="/context_drop"
+    data-placeholder="Describe what feels off with the pinned elements..."
+    data-metadata='{"environment":"demo-playground","release":"v0.2.0-pin-ui"}'
+  ></context-drop-widget>
+
+  <header class="demo-topbar" id="meridian-topbar">
+    <div class="demo-brand">
+      <span>Meridian Fulfillment Studio</span>
+      <span class="demo-brand-badge">ContextDrop Live Demo</span>
+    </div>
+    <div class="demo-quick-actions">
+      <button type="button" class="demo-btn demo-btn-pin" id="demo-trigger-pin">
+        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.8 3.2l5 5-2.1 2.1-1.8-.6-3.2 3.2.6 2.5-1.6 1.6-3.1-3.1-3.1 3.1v-.1l3.1-3.1-3.1-3.1 1.6-1.6 2.5.6 3.2-3.2-.6-1.8 2.1-2.1z"/></svg>
+        <span>Start Pinning Elements</span>
+      </button>
+      <button type="button" class="demo-btn demo-btn-primary" id="demo-trigger-chat">
+        Open ContextDrop Chatbox
+      </button>
+    </div>
+  </header>
+
+  <main class="demo-shell">
+    <!-- Left Column: Interactive Host Application Scenarios -->
+    <div class="demo-column">
+      <!-- Scenario 1: Overlapping & Cascading Elements -->
+      <section class="demo-section" id="scenario-overlapping-layers">
+        <div class="demo-section-header">
+          <h1 class="demo-section-title">1. Overlapping &amp; Cascading Layers Testbench</h1>
+          <span class="code-tag">Scroll ↕ or Click for Layer Stack</span>
+        </div>
+        <p class="demo-lead">
+          The checkout card below intentionally stacks a floating promo ribbon and a translucent stock badge directly over the container and primary button. Activate the <strong>Pin</strong> selector, hover over the overlapping corner, and either <strong>scroll your mouse wheel</strong> (or press <code class="code-tag">↑</code> / <code class="code-tag">↓</code>) or <strong>click once</strong> to open the Layer &amp; Hierarchy Popover.
+        </p>
+
+        <article class="overlap-stage" id="enterprise-plan-card" data-testid="plan-enterprise">
+          <div class="floating-overlap-ribbon" id="promo-ribbon-overlay" data-testid="floating-promo-ribbon">
+            Flash 20% Off — Overlaps Card Header
+          </div>
+
+          <div class="overlap-header-row" id="plan-header-row">
+            <h2 class="overlap-plan-title" id="plan-title-heading">Enterprise Multi-Region Cluster</h2>
+            <span class="overlap-price" id="plan-monthly-price">$1,290/mo</span>
+          </div>
+          <ul class="overlap-feature-list" id="plan-feature-list">
+            <li id="feature-sla">99.99% uptime SLA with dedicated failover routing</li>
+            <li id="feature-audit">Automated SOC2 audit stream and zero-trust redaction</li>
+          </ul>
+
+          <div class="overlap-cta-row" id="plan-cta-bar">
+            <span id="seat-allocation-label">Includes 25 operator seats</span>
+            <button type="button" class="demo-btn demo-btn-primary" id="upgrade-cluster-btn" data-testid="upgrade-cta">
+              <span id="upgrade-btn-inner-label">Provision Cluster Now</span>
+            </button>
+          </div>
+
+          <div class="floating-translucent-banner" id="overlapping-stock-toast" data-testid="translucent-toast">
+            Overlapping Toast Banner (Pin the button behind me!)
+          </div>
+        </article>
+      </section>
+
+      <!-- Scenario 2: Deeply Nested DOM Breadcrumb Hierarchy -->
+      <section class="demo-section" id="scenario-nested-hierarchy">
+        <div class="demo-section-header">
+          <h2 class="demo-section-title">2. Deeply Nested Fulfillment Queue</h2>
+          <span class="code-tag">6-Level DOM Ancestor Breadcrumbs</span>
+        </div>
+        <p class="demo-lead">
+          Pin any status badge or action button in the table below, then use the interactive <strong>DOM Breadcrumb Bar</strong> in the compact pinning bar or layer popover to step between <code class="code-tag">span</code>, <code class="code-tag">button</code>, <code class="code-tag">td</code>, <code class="code-tag">tr</code>, and <code class="code-tag">table</code>.
+        </p>
+
+        <table class="fulfillment-table" id="orders-fulfillment-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Destination</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr id="order-row-8841">
+              <td><code class="code-tag">#ORD-8841</code></td>
+              <td id="order-8841-dest">Jakarta Warehouse B2</td>
+              <td>
+                <span class="status-chip delayed" id="status-badge-8841" data-testid="Customs Hold">
+                  Customs Hold (48h)
+                </span>
+              </td>
+              <td>$14,200.00</td>
+              <td>
+                <button type="button" class="demo-btn" id="expedite-order-8841">
+                  <span id="expedite-label-8841">Expedite Clearance</span>
+                </button>
+              </td>
+            </tr>
+            <tr id="order-row-8842">
+              <td><code class="code-tag">#ORD-8842</code></td>
+              <td id="order-8842-dest">Singapore Hub East</td>
+              <td>
+                <span class="status-chip ready" id="status-badge-8842">
+                  Ready to Dispatch
+                </span>
+              </td>
+              <td>$6,850.00</td>
+              <td>
+                <button type="button" class="demo-btn" id="release-manifest-8842">
+                  <span id="release-label-8842">Release Manifest</span>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Scenario 3: Privacy Exclusion & Redaction Sandbox -->
+      <section class="demo-section" id="scenario-privacy-redaction">
+        <div class="demo-section-header">
+          <h2 class="demo-section-title">3. Zero-Trust Privacy &amp; Screenshot Redaction</h2>
+          <span class="code-tag">data-feedback-sensitive</span>
+        </div>
+        <p class="demo-lead">
+          Password fields, credit-card inputs, and <code class="code-tag">[data-feedback-sensitive]</code> containers are automatically excluded from Pin selection and masked with <code class="code-tag">[REDACTED]</code> boxes when you capture a Viewport or Element Screenshot.
+        </p>
+
+        <form class="form-grid" id="billing-credentials-form" onsubmit="return false;">
+          <div class="form-field">
+            <label class="form-label" for="billing-company-input">Organization Name (Selectable)</label>
+            <input class="demo-input" id="billing-company-input" type="text" value="Meridian Logistics Pte. Ltd.">
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="billing-card-input">Card Number (Auto-Excluded cc-number)</label>
+            <input class="demo-input" id="billing-card-input" type="text" autocomplete="cc-number" value="4532 •••• •••• 8891">
+          </div>
+          <div class="form-field full">
+            <label class="form-label" for="production-api-secret">Webhook Signing Secret (Auto-Excluded password)</label>
+            <input class="demo-input" id="production-api-secret" type="password" value="whsec_live_98a7s6d87f6a8s7d6f">
+          </div>
+        </form>
+
+        <div class="sensitive-vault-box" data-feedback-sensitive="true" id="sensitive-treasury-balance">
+          <span><strong>Sensitive Treasury Balance:</strong> $482,910.45 USD</span>
+          <span class="code-tag">Protected by data-feedback-sensitive</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Interactive Guide & Live Captured ContextDrop Inspector -->
+    <div class="demo-column">
+      <section class="demo-section" id="demo-walkthrough-panel">
+        <div class="demo-section-header">
+          <h2 class="demo-section-title">Things to Try Right Now</h2>
+        </div>
+        <ol class="guide-steps">
+          <li>
+            <strong>Drag the Floating Pin Anywhere:</strong> Grab the grip or pin dock at the top-left corner and drag it anywhere on the screen.
+          </li>
+          <li>
+            <strong>Pin Overlapping Elements:</strong> Click <strong>Pin</strong>, hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> (or press <code class="code-tag">↑</code> / <code class="code-tag">↓</code>) to cycle through the underlying button and card.
+          </li>
+          <li>
+            <strong>Click-to-Pick Layer Popover:</strong> Click any multi-layer spot on the page to anchor the pin and open the Figma-style Layer &amp; Hierarchy Picker with live hover preview and clickable DOM breadcrumbs.
+          </li>
+          <li>
+            <strong>Minimize &amp; Drag the Chatbox:</strong> Drag the chatbox by its header bar, hover over pinned element chips in the tray to highlight them on the page, or click the camera icon on a chip to capture an element screenshot.
+          </li>
+        </ol>
+      </section>
+
+      <section class="demo-section" id="live-payload-inspector" data-feedback-ignore="true">
+        <div class="demo-section-header">
+          <h2 class="demo-section-title">Live Submitted ContextDrops</h2>
+          <span class="code-tag" id="submission-counter-badge">0 submissions</span>
+        </div>
+        <div id="submissions-container">
+          <div class="inspector-empty">
+            No ContextDrops submitted yet. Pin a few elements on the left, optionally snap a screenshot, and click <strong>Send</strong> in the chatbox to inspect the captured payload here!
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../app/assets/javascripts/context_drop/context_drop.js"></script>
+  <script>
+    (function () {
+      const submissions = [];
+      const container = document.getElementById("submissions-container");
+      const counterBadge = document.getElementById("submission-counter-badge");
+      const widget = document.getElementById("demo-widget");
+
+      document.getElementById("demo-trigger-pin")?.addEventListener("click", () => {
+        if (widget && typeof widget.startPinSelection === "function") {
+          widget.startPinSelection();
+        }
+      });
+
+      document.getElementById("demo-trigger-chat")?.addEventListener("click", () => {
+        if (widget && typeof widget.openComposer === "function") {
+          widget.openComposer();
+        }
+      });
+
+      function renderSubmissions() {
+        if (!container || !counterBadge) return;
+        counterBadge.textContent = `${submissions.length} submission${submissions.length === 1 ? "" : "s"}`;
+
+        if (submissions.length === 0) return;
+        container.innerHTML = "";
+
+        const list = document.createElement("div");
+        list.className = "submission-log";
+
+        submissions.slice().reverse().forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "submission-entry";
+
+          const meta = document.createElement("div");
+          meta.className = "submission-meta";
+          meta.innerHTML = `<strong>ContextDrop #${item.id}</strong><span>${item.created_at} · ${item.payload.element_references.length} pinned · ${item.payload.attachments.length} shots</span>`;
+          card.appendChild(meta);
+
+          if (item.payload.message) {
+            const msg = document.createElement("p");
+            msg.style.cssText = "margin: 0 0 8px; font-weight: 500;";
+            msg.textContent = item.payload.message;
+            card.appendChild(msg);
+          }
+
+          if (item.payload.attachments && item.payload.attachments.length > 0) {
+            const shotGrid = document.createElement("div");
+            shotGrid.className = "shot-grid";
+            item.payload.attachments.forEach((att) => {
+              if (att.data_url) {
+                const img = document.createElement("img");
+                img.className = "shot-preview";
+                img.src = att.data_url;
+                img.alt = att.filename;
+                shotGrid.appendChild(img);
+              }
+            });
+            card.appendChild(shotGrid);
+          }
+
+          const sanitizedForDisplay = {
+            id: item.id,
+            message: item.payload.message,
+            page_url: item.payload.page_url,
+            metadata: item.payload.metadata,
+            element_references: item.payload.element_references,
+            attachments: (item.payload.attachments || []).map((a) => ({
+              attachment_type: a.attachment_type,
+              filename: a.filename,
+              element_reference_ref: a.element_reference_ref,
+              metadata: a.metadata
+            }))
+          };
+
+          const pre = document.createElement("pre");
+          pre.className = "submission-json";
+          pre.textContent = JSON.stringify(sanitizedForDisplay, null, 2);
+          card.appendChild(pre);
+
+          list.appendChild(card);
+        });
+
+        container.appendChild(list);
+      }
+
+      // Intercept /context_drop/feedback requests in the demo so submissions work both offline (file://)
+      // and with `npm run demo`, immediately displaying the captured payload in the right-hand inspector!
+      const originalFetch = window.fetch ? window.fetch.bind(window) : null;
+      window.fetch = async function (input, init) {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (url.endsWith("/context_drop/feedback") && init && init.method === "POST") {
+          const rawBody = typeof init.body === "string" ? JSON.parse(init.body) : {};
+          const payload = rawBody.feedback || rawBody;
+
+          let serverRecord = null;
+          if (originalFetch && window.location.protocol.startsWith("http")) {
+            try {
+              const res = await originalFetch(input, init);
+              if (res.ok) {
+                serverRecord = await res.clone().json();
+              }
+            } catch {
+              // Offline or static server fallback
+            }
+          }
+
+          const entry = {
+            id: (serverRecord && serverRecord.id) || submissions.length + 1,
+            status: "new",
+            attachments_count: (payload.attachments || []).length,
+            element_references_count: (payload.element_references || []).length,
+            created_at: new Date().toLocaleTimeString(),
+            payload
+          };
+          submissions.push(entry);
+          renderSubmissions();
+
+          return new Response(JSON.stringify(entry), {
+            status: 201,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        if (originalFetch) {
+          return originalFetch(input, init);
+        }
+        throw new Error("Fetch unavailable");
+      };
+    })();
+  </script>
+</body>
+</html>

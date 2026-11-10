@@ -8,6 +8,7 @@
   "module": "app/javascript/context_drop/index.ts",
   "scripts": {
     "build": "node scripts/build_widget.mjs",
+    "demo": "node scripts/build_widget.mjs && node scripts/serve_demo.mjs",
     "test": "node --test app/javascript/context_drop/__tests__/*.test.ts"
   },
   "engines": {

@@ -9,15 +9,30 @@ colors:
   inspector-cobalt-deep: "#1e40af"
   inspector-cobalt-soft: "#dbeafe"
   obsidian-ink: "#111318"
+  obsidian-hover: "#252a34"
   slate-ink: "#4b5262"
   subtle-ink: "#5c6478"
+  cool-canvas: "#f1f5f9"
+  cool-recessed: "#e2e8f0"
   warm-paper: "#faf9f6"
   recessed-stone: "#f1efea"
   elevated-white: "#ffffff"
-  hairline-stone: "#d6d3cd"
+  hairline-stone: "#cbd5e1"
   danger-crimson: "#b91c1c"
+  danger-soft: "#fee2e2"
   success-emerald: "#15803d"
+  success-soft: "#dcfce7"
 typography:
+  display:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "20px"
+    fontWeight: 700
+    lineHeight: 1.25
+  headline:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "16px"
+    fontWeight: 700
+    lineHeight: 1.3
   title:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
     fontSize: "13px"
