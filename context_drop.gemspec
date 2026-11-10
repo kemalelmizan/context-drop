@@ -5,8 +5,8 @@ require_relative "lib/context_drop/version"
 Gem::Specification.new do |spec|
   spec.name        = "context_drop"
   spec.version     = ContextDrop::VERSION
-  spec.authors     = ["ContextDrop Contributors"]
-  spec.email       = ["opensource@contextdrop.dev"]
+  spec.authors     = ["Kemal Elmizan"]
+  spec.email       = ["kemal@elmizan.com"]
   spec.homepage    = "https://github.com/kemalelmizan/context-drop"
   spec.summary     = "Self-hosted contextual feedback engine, Shadow DOM widget, and MCP server for Ruby on Rails."
   spec.description = <<~DESC
