@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop decoding vague bug reports. Let users and teammates pin the exact DOM element right on your Rails app.</strong><br />
-  Self-hosted Mountable Rails Engine · Shadow DOM Widget · Overlapping Layer Picker · Active Storage · Built-in MCP Server
+  <strong>Stop decoding vague bug reports! Let users pin where the exact problem on your Rails app</strong><br />
+  Mountable Rails Engine · Shadow DOM Widget · Overlapping Layer Picker · Active Storage · MCP Server
 </p>
 
 <p align="center">
