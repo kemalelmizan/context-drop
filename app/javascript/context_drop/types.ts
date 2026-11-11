@@ -68,6 +68,7 @@ export interface WidgetConfig {
   enabled: boolean;
   position: WidgetPosition;
   placeholder: string;
+  csrf_token?: string | null;
   features: {
     element_selection: boolean;
     screenshot_capture: boolean;

@@ -48,6 +48,7 @@ const server = http.createServer((req, res) => {
         enabled: true,
         position: "top_left",
         placeholder: "Describe what feels off with the pinned elements...",
+        csrf_token: "demo_csrf_token_test",
         features: {
           element_selection: true,
           screenshot_capture: true,

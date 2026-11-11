@@ -261,6 +261,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
           limits: { ...this.config.limits, ...(parsed.limits || {}) },
           privacy: { ...this.config.privacy, ...(parsed.privacy || {}) }
         };
+        if (parsed.csrf_token) {
+          this.apiClient.setCsrfToken(parsed.csrf_token);
+        }
       } catch {
         // Ignore malformed JSON attribute
       }

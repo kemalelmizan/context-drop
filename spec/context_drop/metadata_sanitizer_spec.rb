@@ -48,7 +48,7 @@ RSpec.describe "ContextDrop::MetadataSanitizer" do
         attributes_snapshot: { "type" => "password" },
         bounding_rect: { x: 0, y: 0, width: 100, height: 30 }
       )
-    end.to_raise_error(ContextDrop::MetadataSanitizer::SensitiveElementError)
+    end.to raise_error(ContextDrop::MetadataSanitizer::SensitiveElementError)
 
     expect do
       ContextDrop::MetadataSanitizer.sanitize_element_reference(
@@ -57,7 +57,7 @@ RSpec.describe "ContextDrop::MetadataSanitizer" do
         attributes_snapshot: { "data-feedback-ignore" => "true" },
         bounding_rect: { x: 0, y: 0, width: 100, height: 30 }
       )
-    end.to_raise_error(ContextDrop::MetadataSanitizer::SensitiveElementError)
+    end.to raise_error(ContextDrop::MetadataSanitizer::SensitiveElementError)
   end
 
   it "strips forbidden keys from feedback and attachment metadata" do

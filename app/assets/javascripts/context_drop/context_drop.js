@@ -1157,83 +1157,188 @@
   // --- Module: api-client.ts ---
   class ContextDropApiClient {
             baseUrl        ;
+            cachedCsrfToken                = null;
+            inFlightConfigPromise                               = null;
   
     constructor(baseUrl         = "/context_drop") {
       this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
     }
   
            getCsrfToken()                {
+      const metaToken = this.getMetaCsrfToken();
+      if (metaToken) {
+        return metaToken;
+      }
+      return this.cachedCsrfToken;
+    }
+  
+           setCsrfToken(token               )       {
+      this.cachedCsrfToken = token ? token.trim() : null;
+    }
+  
+            getMetaCsrfToken()                {
       if (typeof document === "undefined") return null;
       const meta = document.querySelector('meta[name="csrf-token"]');
-      return meta ? meta.getAttribute("content") : null;
+      const content = meta ? meta.getAttribute("content") : null;
+      return content && content.trim().length > 0 ? content.trim() : null;
     }
   
            async fetchConfig()                        {
-      const response = await fetch(`${this.baseUrl}/config`, {
-        method: "GET",
-        credentials: "same-origin",
-        headers: {
-          Accept: "application/json"
-        }
-      });
-  
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ContextDrop config (${response.status})`);
+      if (this.inFlightConfigPromise) {
+        return this.inFlightConfigPromise;
       }
   
-      return (await response.json())                ;
+      this.inFlightConfigPromise = (async () => {
+        try {
+          const response = await fetch(`${this.baseUrl}/config`, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+              Accept: "application/json"
+            }
+          });
+  
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ContextDrop config (${response.status})`);
+          }
+  
+          const config = (await response.json())                ;
+          if (config && typeof config.csrf_token === "string" && config.csrf_token.trim().length > 0) {
+            this.cachedCsrfToken = config.csrf_token.trim();
+            if (typeof document !== "undefined") {
+              const meta = document.querySelector('meta[name="csrf-token"]');
+              if (meta) {
+                meta.setAttribute("content", this.cachedCsrfToken);
+              }
+            }
+          }
+          return config;
+        } finally {
+          this.inFlightConfigPromise = null;
+        }
+      })();
+  
+      return this.inFlightConfigPromise;
+    }
+  
+           async resolveCsrfToken(forceRefresh = false)                         {
+      if (!forceRefresh) {
+        const metaToken = this.getMetaCsrfToken();
+        if (metaToken) {
+          return metaToken;
+        }
+        if (this.cachedCsrfToken) {
+          return this.cachedCsrfToken;
+        }
+      }
+  
+      try {
+        const config = await this.fetchConfig();
+        if (config && config.csrf_token) {
+          return config.csrf_token.trim();
+        }
+      } catch {
+        // Continue and fall back to current token or null
+      }
+  
+      return this.cachedCsrfToken || this.getMetaCsrfToken();
+    }
+  
+            isCsrfError(status        , message        )          {
+      if (status !== 422) return false;
+      return /csrf|authenticity/i.test(message);
+    }
+  
+            async executeWithCsrfRetry   (
+      requestFn                                                 ,
+      defaultErrorMessage        
+    )             {
+      let csrfToken = await this.resolveCsrfToken(false);
+      let response = await requestFn(csrfToken);
+  
+      if (response.ok) {
+        return (await response.json())     ;
+      }
+  
+      if (response.status === 422) {
+        const rawText = await response.text();
+        let parsedError                = null;
+        try {
+          const json = JSON.parse(rawText)                      ;
+          if (json && typeof json.error === "string") {
+            parsedError = json.error;
+          }
+        } catch {
+          // Not JSON
+        }
+  
+        const errorMessage = parsedError || rawText || "";
+        const shouldRetryCsrf =
+          this.isCsrfError(response.status, errorMessage) || (!csrfToken && response.status === 422);
+  
+        if (shouldRetryCsrf) {
+          csrfToken = await this.resolveCsrfToken(true);
+          response = await requestFn(csrfToken);
+          if (response.ok) {
+            return (await response.json())     ;
+          }
+          const retryErrBody = await response.json().catch(() => ({}));
+          throw new Error(
+            (retryErrBody                      ).error || `${defaultErrorMessage} (${response.status})`
+          );
+        }
+  
+        throw new Error(parsedError || errorMessage || `${defaultErrorMessage} (${response.status})`);
+      }
+  
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(
+        (errBody                      ).error || `${defaultErrorMessage} (${response.status})`
+      );
     }
   
            async uploadAttachment(file      , filename        )                                      {
-      const formData = new FormData();
-      formData.append("file", file, filename);
+      const makeRequest = async (csrfToken               ) => {
+        const formData = new FormData();
+        formData.append("file", file, filename);
   
-      const headers                         = {
-        Accept: "application/json"
+        const headers                         = {
+          Accept: "application/json"
+        };
+        if (csrfToken) {
+          headers["X-CSRF-Token"] = csrfToken;
+        }
+  
+        return fetch(`${this.baseUrl}/attachments`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers,
+          body: formData
+        });
       };
-      const csrf = this.getCsrfToken();
-      if (csrf) {
-        headers["X-CSRF-Token"] = csrf;
-      }
   
-      const response = await fetch(`${this.baseUrl}/attachments`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers,
-        body: formData
-      });
-  
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error((errBody                      ).error || `Upload failed (${response.status})`);
-      }
-  
-      return (await response.json())                              ;
+      return this.executeWithCsrfRetry(makeRequest, "Upload failed");
     }
   
            async submitFeedback(payload                           )                                      {
-      const headers                         = {
-        "Content-Type": "application/json",
-        Accept: "application/json"
+      const makeRequest = async (csrfToken               ) => {
+        const headers                         = {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        };
+        if (csrfToken) {
+          headers["X-CSRF-Token"] = csrfToken;
+        }
+  
+        return fetch(`${this.baseUrl}/feedback`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ feedback: payload })
+        });
       };
-      const csrf = this.getCsrfToken();
-      if (csrf) {
-        headers["X-CSRF-Token"] = csrf;
-      }
   
-      const response = await fetch(`${this.baseUrl}/feedback`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers,
-        body: JSON.stringify({ feedback: payload })
-      });
-  
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error((errBody                      ).error || `Submission failed (${response.status})`);
-      }
-  
-      return (await response.json())                              ;
+      return this.executeWithCsrfRetry(makeRequest, "Submission failed");
     }
   }
 
@@ -2646,6 +2751,9 @@
             limits: { ...this.config.limits, ...(parsed.limits || {}) },
             privacy: { ...this.config.privacy, ...(parsed.privacy || {}) }
           };
+          if (parsed.csrf_token) {
+            this.apiClient.setCsrfToken(parsed.csrf_token);
+          }
         } catch {
           // Ignore malformed JSON attribute
         }

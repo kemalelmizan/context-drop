@@ -2,10 +2,12 @@
 
 module ContextDrop
   class ConfigsController < ApplicationController
+    skip_forgery_protection only: [:widget_bundle] if respond_to?(:skip_forgery_protection)
     before_action :enforce_submission_authorization!, only: [:show]
 
     def show
-      render json: ContextDrop.config.public_widget_config, status: :ok
+      token = form_authenticity_token if respond_to?(:form_authenticity_token, true)
+      render json: ContextDrop.config.public_widget_config.merge(csrf_token: token), status: :ok
     end
 
     def widget_bundle

@@ -35,28 +35,50 @@ module MiniRSpec
     end
   end
 
+  class RaiseErrorMatcher
+    def initialize(err_class = StandardError, msg_matcher = nil)
+      @err_class = err_class
+      @msg_matcher = msg_matcher
+    end
+
+    def matches_block?(proc_obj)
+      raised = nil
+      begin
+        proc_obj.call
+      rescue StandardError => e
+        raised = e
+      end
+      if raised.nil?
+        raise ExpectationFailed, "Expected #{@err_class} to be raised, but nothing was raised"
+      end
+      unless raised.is_a?(@err_class)
+        raise ExpectationFailed, "Expected #{@err_class}, but got #{raised.class}: #{raised.message}"
+      end
+      if @msg_matcher
+        matched = if @msg_matcher.is_a?(Regexp)
+                    @msg_matcher.match?(raised.message)
+                  else
+                    raised.message.include?(@msg_matcher.to_s)
+                  end
+        unless matched
+          raise ExpectationFailed, "Expected error message #{raised.message.inspect} to match #{@msg_matcher.inspect}"
+        end
+      end
+      true
+    end
+  end
+
   class BlockTarget
     def initialize(proc_obj)
       @proc = proc_obj
     end
 
+    def to(matcher)
+      matcher.matches_block?(@proc)
+    end
+
     def to_raise_error(err_class = StandardError, msg_substring = nil)
-      raised = nil
-      begin
-        @proc.call
-      rescue StandardError => e
-        raised = e
-      end
-      if raised.nil?
-        raise ExpectationFailed, "Expected #{err_class} to be raised, but nothing was raised"
-      end
-      unless raised.is_a?(err_class)
-        raise ExpectationFailed, "Expected #{err_class}, but got #{raised.class}: #{raised.message}"
-      end
-      if msg_substring && !raised.message.include?(msg_substring)
-        raise ExpectationFailed, "Expected error message #{raised.message.inspect} to include #{msg_substring.inspect}"
-      end
-      true
+      RaiseErrorMatcher.new(err_class, msg_substring).matches_block?(@proc)
     end
   end
 
@@ -85,6 +107,7 @@ module MiniRSpec
       @name = name
       @parent = parent
       @before_hooks = []
+      @let_definitions = {}
       @examples = []
       @children = []
     end
@@ -100,6 +123,10 @@ module MiniRSpec
       @before_hooks << block
     end
 
+    def let(name, &block)
+      @let_definitions[name.to_sym] = block
+    end
+
     def it(desc, &block)
       @examples << [desc, block]
     end
@@ -108,13 +135,17 @@ module MiniRSpec
       (parent ? parent.all_before_hooks : []) + @before_hooks
     end
 
+    def all_let_definitions
+      (parent ? parent.all_let_definitions : {}).merge(@let_definitions)
+    end
+
     def full_name
       parent ? "#{parent.full_name} > #{name}" : name.to_s
     end
 
     def run(stats)
       @examples.each do |desc, block|
-        ctx = ExampleContext.new
+        ctx = ExampleContext.new(all_let_definitions)
         begin
           all_before_hooks.each { |h| ctx.instance_eval(&h) }
           ctx.instance_eval(&block)
@@ -131,6 +162,26 @@ module MiniRSpec
   end
 
   class ExampleContext
+    def initialize(let_defs = {})
+      @let_defs = let_defs
+      @let_memo = {}
+    end
+
+    def method_missing(name, *args, &block)
+      sym = name.to_sym
+      if @let_defs.key?(sym) && args.empty? && block.nil?
+        return @let_memo[sym] if @let_memo.key?(sym)
+
+        @let_memo[sym] = instance_eval(&@let_defs[sym])
+      else
+        super
+      end
+    end
+
+    def respond_to_missing?(name, include_private = false)
+      @let_defs.key?(name.to_sym) || super
+    end
+
     def expect(val = nil, &block)
       block ? BlockTarget.new(block) : ValueTarget.new(val)
     end
@@ -141,6 +192,7 @@ module MiniRSpec
     def be_falsy = Matcher.new(:be_falsy)
     def include(expected) = Matcher.new(:include, expected)
     def be_a(expected) = Matcher.new(:be_a, expected)
+    def raise_error(expected_class = StandardError, msg_matcher = nil) = RaiseErrorMatcher.new(expected_class, msg_matcher)
   end
 
   def self.groups

@@ -28,7 +28,7 @@ RSpec.describe "ContextDrop::Configuration" do
 
     expect do
       ContextDrop.config.position = :center_middle
-    end.to_raise_error(ArgumentError, "Invalid ContextDrop position")
+    end.to raise_error(ArgumentError, /Invalid ContextDrop position/)
   end
 
   it "always preserves mandatory excluded selectors alongside custom selectors" do

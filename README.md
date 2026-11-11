@@ -203,33 +203,88 @@ Real-world Rails interfaces have sticky navbars, floating promo ribbons, translu
 
 ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`ContextDrop::MCP::Server`) so you or your AI coding agent can pull bug reports, inspect exact CSS selectors and DOM paths, view multimodal screenshots, and mark issues resolved without leaving your editor.
 
-- **Exposed Tools:** `list_feedbacks`, `get_feedback` (includes base64 multimodal `image` content blocks), `get_feedback_attachment`, `update_feedback_status`
-- **Exposed Resources:** `contextdrop://feedbacks/new`, `contextdrop://feedbacks/{id}`
-- **Built-in Prompt:** `investigate_feedback`
+<p align="center">
+  <img src="docs/images/demo-mcp-agent.png" alt="ContextDrop MCP server tool calls (list_feedbacks and get_feedback) and root-cause diagnosis inside an AI coding agent" width="100%" />
+</p>
 
-### Option 1: Local `stdio` Transport (Zero-Config Local Development)
+> **Above:** Triage flow inside an AI coding agent connected to the `context-drop` MCP server on the live playground. The agent invokes `list_feedbacks` (`{ status: "new" }`) and `get_feedback` (`{ id: 12, include_images: true }`), inspects both the structured `ElementReference` geometry (`button#upgrade-cluster-btn`, `169.1×33px`) and the redacted multimodal `image/png` screenshot block, and pinpoints the exact overlapping CSS rule in `demo/index.html`.
 
-Add this to `.cursor/mcp.json`, `.mcp.json` (Claude Code), Antigravity `mcp_config.json`, Windsurf, or VS Code:
+### Exposed MCP Capabilities
+
+| Type | Name / URI | Description |
+|---|---|---|
+| **Tool** | `list_feedbacks` | Filter & paginate submissions by `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url`, or free-text `query` across messages, selectors, and DOM paths. |
+| **Tool** | `get_feedback` | Fetch full `Feedback`, all `ElementReference` DOM snapshots, and inline base64 `image` blocks (`include_images: true` by default). |
+| **Tool** | `get_feedback_attachment` | Retrieve an individual `Attachment` record and its binary screenshot/image as an MCP `image` content block. |
+| **Tool** | `update_feedback_status` | Transition a feedback record between `new`, `reviewed`, `resolved`, and `dismissed`. |
+| **Resource** | `contextdrop://feedbacks/new` | Live JSON feed of unresolved `new` feedback records (up to 50 most recent). |
+| **Resource** | `contextdrop://feedbacks/{id}` | Full JSON snapshot of a specific feedback submission, its pinned elements, and attachment metadata. |
+| **Prompt** | `investigate_feedback` | Generates a structured root-cause investigation brief (with attached screenshots) for a given `feedback_id`. |
+
+---
+
+### Option 1: Project-Scoped Local `stdio` (Inherited Shell Environment)
+
+When using a workspace-scoped MCP file (e.g., `.mcp.json` in Claude Code or `.cursor/mcp.json` launched from a terminal) where your IDE already runs inside the Rails root and inherits your Ruby shell `PATH`:
 
 ```json
 {
   "mcpServers": {
     "context-drop": {
-      "command": "bin/rails",
-      "args": ["context_drop:mcp"]
+      "command": "bundle",
+      "args": ["exec", "./bin/rails", "context_drop:mcp"]
     }
   }
 }
 ```
 
-### Option 2: Remote Streamable HTTP Transport (Staging & Production)
+### Option 2: Strict Sandboxes, Global IDE Configs & Ruby Version Managers (`rbenv`, `mise`, `asdf`, `rvm`)
 
-Enable MCP on your staging or production server with a bearer token (`CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>`) and point your IDE to `POST /context_drop/mcp`:
+Strict sandboxed coding agents and GUI-launched desktop IDEs (such as **Antigravity** `mcp_config.json`, **Claude Desktop**, global `~/.cursor/mcp.json`, **Windsurf**, or VS Code launched from macOS Finder / Linux desktop) typically spawn MCP subprocesses with:
+1. **A non-project working directory** (often `/` or `$HOME`, causing relative `./bin/rails` or `Gemfile` lookup to fail), and
+2. **A stripped minimal `PATH`** (`/usr/bin:/bin:/usr/sbin:/sbin`) without sourcing `~/.zshrc` or `~/.bashrc`—causing `/usr/bin/env ruby` inside `bin/rails` to hit an outdated system Ruby (e.g., macOS Ruby `2.6`) or fail to locate `bundle` and Homebrew native libraries (`libpq`, `sqlite3`, `vips`).
+
+To make `stdio` work reliably in strict sandboxes, wrap the launch command with `/bin/zsh -c` (or `/bin/bash -c` on Linux), `cd` into your Rails application root, `exec` your version manager's `bundle` binary directly, and declare an explicit absolute `PATH`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop-staging": {
+    "context-drop": {
+      "command": "/bin/zsh",
+      "args": [
+        "-c",
+        "cd /absolute/path/to/your-rails-app && exec /Users/<you>/.rbenv/shims/bundle exec ./bin/rails context_drop:mcp"
+      ],
+      "env": {
+        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    }
+  }
+}
+```
+
+> [!TIP]
+> **Adapting Option 2 to any machine or Ruby version manager:**
+> - **Use literal absolute paths (avoid `~` or `$HOME` inside JSON `env`):** MCP hosts pass `env` directly to `execve` without shell expansion. Run `pwd`, `which bundle`, and `echo $PATH` in your Rails app terminal to get your exact paths.
+> - **Keep `exec` before `bundle`:** `exec` replaces the `zsh`/`bash` wrapper in-place so `stdin`/`stdout` JSON-RPC frames remain unbuffered and IDE shutdown signals (`SIGTERM`) cleanly terminate the Ruby process without leaving orphans.
+> - **Debug `stdio` boot issues:** Set `"CONTEXT_DROP_MCP_DEBUG": "1"` inside `"env"` to stream verbose Rails/ActiveRecord boot diagnostics to `stderr` (MCP `stdout` always stays strictly reserved for JSON-RPC frames).
+
+| Ruby Environment / OS | `<bundle-path>` for `exec` | Directories to Prepend to `env.PATH` |
+|---|---|---|
+| **`rbenv`** (macOS / Linux) | `/Users/<you>/.rbenv/shims/bundle` | `/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin` |
+| **`mise`** (macOS / Linux) | `/Users/<you>/.local/share/mise/shims/bundle` | `/Users/<you>/.local/share/mise/shims` |
+| **`asdf`** (macOS / Linux) | `/Users/<you>/.asdf/shims/bundle` | `/Users/<you>/.asdf/shims:/Users/<you>/.asdf/bin` |
+| **`rvm`** (macOS / Linux) | `/Users/<you>/.rvm/wrappers/default/bundle` | `/Users/<you>/.rvm/gems/default/bin:/Users/<you>/.rvm/bin` |
+| **Homebrew / Linux `/usr/local`** | `/opt/homebrew/opt/ruby/bin/bundle` or `/usr/local/bin/bundle` | `/opt/homebrew/opt/ruby/bin:/opt/homebrew/bin:/usr/local/bin` |
+
+### Option 3: Streamable HTTP Transport (Docker, Isolated Sandboxes, Staging & Production)
+
+If your Rails app runs inside **Docker / Devcontainers**, if your agent sandbox blocks host binary execution outside the workspace, or if you want to triage feedback directly from **staging or production**, enable the HTTP endpoint with a bearer token (`CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>`) and point your MCP client to `POST /context_drop/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "context-drop-http": {
       "url": "https://staging.example.com/context_drop/mcp",
       "headers": {
         "Authorization": "Bearer <your-secret-token>"
@@ -239,8 +294,10 @@ Enable MCP on your staging or production server with a bearer token (`CONTEXT_DR
 }
 ```
 
+*(For local Docker or strict-sandbox setups, use `"url": "http://localhost:3000/context_drop/mcp"` against your running `bin/rails server`.)*
+
 Once connected, prompt your coding agent directly in your IDE:
-> *"List the new ContextDrop feedbacks on `/checkout`, inspect the pinned element selector and screenshot for the overlapping button issue, fix the CSS in our Rails view, and mark the feedback resolved."*
+> *"Check the `context-drop` MCP server for new feedbacks, inspect the pinned element selector and screenshot, diagnose the root cause in our Rails views/CSS, and mark the feedback resolved."*
 
 ---
 

@@ -35,7 +35,7 @@ RSpec.describe "ContextDrop::UploadValidator" do
 
     expect do
       ContextDrop::UploadValidator.validate!(disguised)
-    end.to_raise_error(ContextDrop::UploadValidator::ValidationError, "Unsupported or invalid file content type")
+    end.to raise_error(ContextDrop::UploadValidator::ValidationError, /Unsupported or invalid file content type/)
   end
 
   it "rejects uploads exceeding max_attachment_size" do
@@ -48,7 +48,7 @@ RSpec.describe "ContextDrop::UploadValidator" do
 
     expect do
       ContextDrop::UploadValidator.validate!(upload)
-    end.to_raise_error(ContextDrop::UploadValidator::ValidationError, "exceeds maximum allowed size")
+    end.to raise_error(ContextDrop::UploadValidator::ValidationError, /exceeds maximum allowed size/)
   end
 
   it "rejects images exceeding max_image_dimensions" do
@@ -65,6 +65,6 @@ RSpec.describe "ContextDrop::UploadValidator" do
 
     expect do
       ContextDrop::UploadValidator.validate!(upload)
-    end.to_raise_error(ContextDrop::UploadValidator::ValidationError, "exceed maximum allowed")
+    end.to raise_error(ContextDrop::UploadValidator::ValidationError, /exceed maximum allowed/)
   end
 end
