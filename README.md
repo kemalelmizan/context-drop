@@ -223,14 +223,109 @@ ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`Cont
 
 ---
 
-### Option 1: Project-Scoped Local `stdio` (Inherited Shell Environment)
+### Recommended Setup (Local + Remote)
+
+For day-to-day development, register **both** a local `stdio` server and a remote Streamable HTTP server side-by-side in your MCP configuration (`mcp_config.json` in **Antigravity**, `~/.cursor/mcp.json` in **Cursor**, **Claude Desktop** / `.mcp.json` in **Claude Code**, **Windsurf**, or **VS Code**):
+
+- **`context-drop-local` (`stdio`):** Runs `./bin/rails context_drop:mcp` directly against your local development database and Active Storage (no running `bin/rails server` required). Wrapped with `/bin/zsh -c`, `cd`, `exec`, and an explicit `PATH` so it boots reliably inside strict agent sandboxes and GUI-launched IDEs.
+- **`context-drop-remote` (`Streamable HTTP`):** Connects to your deployed staging or production Rails app (`POST <mount_path>/mcp` with `CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>` configured on the server) so your agent can pull real bug reports, pinned selectors, and screenshots submitted by QA or users, fix the code locally, and mark the remote feedback resolved.
+
+```json
+{
+  "mcpServers": {
+    "context-drop-local": {
+      "command": "/bin/zsh",
+      "args": [
+        "-c",
+        "cd /absolute/path/to/your-rails-app && exec /Users/<you>/.rbenv/shims/bundle exec ./bin/rails context_drop:mcp"
+      ],
+      "env": {
+        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    },
+    "context-drop-remote": {
+      "url": "https://staging.example.com/context_drop/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-secret-token>"
+      }
+    }
+  }
+}
+```
+
+> [!NOTE]
+> **Custom route prefixes:** Match the `context-drop-remote` URL to wherever `ContextDrop::Engine` is mounted in `config/routes.rb` plus `/mcp` (for example, `https://staging.example.com/rails/context_drop/mcp` when mounted under `/rails/context_drop`).
+
+Naming the servers `context-drop-local` and `context-drop-remote` lets you target either environment explicitly in your IDE prompts without toggling config files:
+- *"Check `context-drop-remote` for new feedbacks, inspect the pinned element selector and screenshot, diagnose the root cause in our local Rails views/CSS, and mark the feedback resolved."*
+- *"Inspect the latest feedback I just pinned on `context-drop-local` and verify the layout fix."*
+
+---
+
+### Multi-Environment & Multiple Remote Servers (`local` + `staging` + `production`)
+
+MCP clients support registering any number of ContextDrop servers simultaneously. If your team triages feedback across **Staging / QA** and **Production** (or across multiple Rails services), register each remote endpoint under an explicit environment-scoped key:
+
+```json
+{
+  "mcpServers": {
+    "context-drop-local": {
+      "command": "/bin/zsh",
+      "args": [
+        "-c",
+        "cd /absolute/path/to/your-rails-app && exec /Users/<you>/.rbenv/shims/bundle exec ./bin/rails context_drop:mcp"
+      ],
+      "env": {
+        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    },
+    "context-drop-staging": {
+      "url": "https://staging.example.com/context_drop/mcp",
+      "headers": {
+        "Authorization": "Bearer <staging-mcp-secret-token>"
+      }
+    },
+    "context-drop-production": {
+      "url": "https://app.example.com/context_drop/mcp",
+      "headers": {
+        "Authorization": "Bearer <production-mcp-secret-token>"
+      }
+    }
+  }
+}
+```
+
+#### Recommended Environment Matrix
+
+| Environment | MCP Transport | `CONTEXT_DROP_ENABLED` (Widget & Dashboard) | `CONTEXT_DROP_MCP_ENABLED` (HTTP `/mcp`) | Token & Access Strategy |
+|---|---|---|---|---|
+| **Local (`development`)** | `stdio` (`context_drop:mcp`) | `true` | `false` *(not needed for `stdio`)* | Direct local DB & Active Storage access; zero network exposure. |
+| **Staging / QA** | Streamable HTTP | `true` | `true` | Dedicated `staging` token (`bin/rails secret`); open to QA & preview testers. |
+| **Production** | Streamable HTTP | `true` *(or scoped via `authorize_submission`)* | `true` | Separate `production` token (rotated independently) + optional gateway headers / `authorize_mcp`. |
+
+#### Multi-Environment Best Practices
+
+- **Namespace server keys clearly (especially across multiple Rails apps):** In global IDE configs (`mcp_config.json` in Antigravity or `~/.cursor/mcp.json`), prefix keys by service and environment—such as `checkout-local`, `checkout-staging`, `checkout-prod`, and `admin-prod`—so your agent never confuses tools from different repositories or databases.
+- **Isolate secrets per environment:** Generate a distinct high-entropy `CONTEXT_DROP_MCP_API_KEY` (`bin/rails secret` or `openssl rand -hex 32`) in each environment's Rails encrypted credentials or secret manager. Never share a single Bearer token between staging and production.
+- **Keep live tokens out of version control:** Place configs containing live `Authorization` headers in user-level MCP files (e.g., Antigravity `mcp_config.json`, `~/.cursor/mcp.json`) or gitignore workspace `.mcp.json` overrides.
+- **Independent Widget vs. MCP switches:** `config.enabled` and `config.mcp_enabled` are decoupled—`ContextDrop::McpController` remains reachable whenever `CONTEXT_DROP_MCP_ENABLED=true`, even if you temporarily set `CONTEXT_DROP_ENABLED=false` in production to pause new widget submissions while finishing triage.
+- **Stamp environment & release SHA into widget metadata:** Pass `metadata: { env: Rails.env, release: ENV["GIT_COMMIT_SHA"] }` to `<%= context_drop_widget(...) %>` so every feedback record pulled by your agent explicitly carries the environment and commit SHA it came from.
+- **Layer zero-trust proxy headers when needed:** If your remote MCP endpoints sit behind Cloudflare Access, Google IAP, or an internal MCP gateway, pass additional proxy headers inside `"headers"` alongside `Authorization` (or validate custom JWT/header claims in `config.authorize_mcp`).
+
+---
+
+### Individual Transport Options & Environment Reference
+
+If you only need a single transport or use a different Ruby version manager (`mise`, `asdf`, `rvm`, Homebrew) or Docker setup, see the reference configurations below.
+
+#### Option 1: Project-Scoped Local `stdio` (Inherited Shell Environment)
 
 When using a workspace-scoped MCP file (e.g., `.mcp.json` in Claude Code or `.cursor/mcp.json` launched from a terminal) where your IDE already runs inside the Rails root and inherits your Ruby shell `PATH`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop": {
+    "context-drop-local": {
       "command": "bundle",
       "args": ["exec", "./bin/rails", "context_drop:mcp"]
     }
@@ -238,7 +333,7 @@ When using a workspace-scoped MCP file (e.g., `.mcp.json` in Claude Code or `.cu
 }
 ```
 
-### Option 2: Strict Sandboxes, Global IDE Configs & Ruby Version Managers (`rbenv`, `mise`, `asdf`, `rvm`)
+#### Option 2: Strict Sandboxes, Global IDE Configs & Ruby Version Managers (`rbenv`, `mise`, `asdf`, `rvm`)
 
 Strict sandboxed coding agents and GUI-launched desktop IDEs (such as **Antigravity** `mcp_config.json`, **Claude Desktop**, global `~/.cursor/mcp.json`, **Windsurf**, or VS Code launched from macOS Finder / Linux desktop) typically spawn MCP subprocesses with:
 1. **A non-project working directory** (often `/` or `$HOME`, causing relative `./bin/rails` or `Gemfile` lookup to fail), and
@@ -249,7 +344,7 @@ To make `stdio` work reliably in strict sandboxes, wrap the launch command with 
 ```json
 {
   "mcpServers": {
-    "context-drop": {
+    "context-drop-local": {
       "command": "/bin/zsh",
       "args": [
         "-c",
@@ -277,14 +372,14 @@ To make `stdio` work reliably in strict sandboxes, wrap the launch command with 
 | **`rvm`** (macOS / Linux) | `/Users/<you>/.rvm/wrappers/default/bundle` | `/Users/<you>/.rvm/gems/default/bin:/Users/<you>/.rvm/bin` |
 | **Homebrew / Linux `/usr/local`** | `/opt/homebrew/opt/ruby/bin/bundle` or `/usr/local/bin/bundle` | `/opt/homebrew/opt/ruby/bin:/opt/homebrew/bin:/usr/local/bin` |
 
-### Option 3: Streamable HTTP Transport (Docker, Isolated Sandboxes, Staging & Production)
+#### Option 3: Streamable HTTP Transport (Docker, Isolated Sandboxes, Staging & Production)
 
 If your Rails app runs inside **Docker / Devcontainers**, if your agent sandbox blocks host binary execution outside the workspace, or if you want to triage feedback directly from **staging or production**, enable the HTTP endpoint with a bearer token (`CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>`) and point your MCP client to `POST /context_drop/mcp`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop-http": {
+    "context-drop-remote": {
       "url": "https://staging.example.com/context_drop/mcp",
       "headers": {
         "Authorization": "Bearer <your-secret-token>"
@@ -295,9 +390,6 @@ If your Rails app runs inside **Docker / Devcontainers**, if your agent sandbox 
 ```
 
 *(For local Docker or strict-sandbox setups, use `"url": "http://localhost:3000/context_drop/mcp"` against your running `bin/rails server`.)*
-
-Once connected, prompt your coding agent directly in your IDE:
-> *"Check the `context-drop` MCP server for new feedbacks, inspect the pinned element selector and screenshot, diagnose the root cause in our Rails views/CSS, and mark the feedback resolved."*
 
 ---
 
