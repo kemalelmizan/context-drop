@@ -328,6 +328,13 @@ class MockUiEvent {
   public readonly button: number;
   public readonly clientX: number;
   public readonly clientY: number;
+  public readonly deltaY: number;
+  public readonly deltaMode: number;
+  public readonly key: string;
+  public readonly shiftKey: boolean;
+  public readonly altKey: boolean;
+  public readonly ctrlKey: boolean;
+  public readonly metaKey: boolean;
   public target: unknown = null;
   public currentTarget: unknown = null;
   public defaultPrevented: boolean = false;
@@ -335,12 +342,27 @@ class MockUiEvent {
 
   constructor(
     type: string,
-    init: { button?: number; clientX?: number; clientY?: number } = {}
+    init: {
+      button?: number;
+      clientX?: number;
+      clientY?: number;
+      deltaY?: number;
+      deltaMode?: number;
+      key?: string;
+      shiftKey?: boolean;
+    } = {}
   ) {
     this.type = type;
     this.button = init.button ?? 0;
     this.clientX = init.clientX ?? 0;
     this.clientY = init.clientY ?? 0;
+    this.deltaY = init.deltaY ?? 0;
+    this.deltaMode = init.deltaMode ?? 0;
+    this.key = init.key ?? "";
+    this.shiftKey = init.shiftKey ?? false;
+    this.altKey = false;
+    this.ctrlKey = false;
+    this.metaKey = false;
   }
 
   public preventDefault(): void {
@@ -348,6 +370,10 @@ class MockUiEvent {
   }
 
   public stopPropagation(): void {
+    this.propagationStopped = true;
+  }
+
+  public stopImmediatePropagation(): void {
     this.propagationStopped = true;
   }
 }
@@ -467,6 +493,14 @@ class MockDomElement {
 
   public hasAttribute(name: string): boolean {
     return this.attrs.has(name);
+  }
+
+  public getAttributeNames(): string[] {
+    return Array.from(this.attrs.keys());
+  }
+
+  public setRect(rect: { left: number; top: number; width: number; height: number }): void {
+    this.rect = { ...rect };
   }
 
   public appendChild(child: MockDomElement): MockDomElement {
@@ -614,6 +648,12 @@ function withMountedWidget(
   fn: (ctx: {
     widget: ContextDropWidgetElement;
     shadowRoot: MockDomElement;
+    mockBody: MockDomElement;
+    mockDocument: {
+      body: MockDomElement;
+      createElement: (tag: string) => MockDomElement;
+      elementsFromPoint?: (x: number, y: number) => MockDomElement[];
+    };
     mockWindow: MockDomElement & { innerWidth: number; innerHeight: number; location: { href: string } };
   }) => void | Promise<void>
 ): Promise<void> {
@@ -627,7 +667,11 @@ function withMountedWidget(
     location: { href: "http://localhost:3000/orders" }
   });
   const mockBody = new MockDomElement("body");
-  const mockDocument = {
+  const mockDocument: {
+    body: MockDomElement;
+    createElement: (tag: string) => MockDomElement;
+    elementsFromPoint?: (x: number, y: number) => MockDomElement[];
+  } = {
     body: mockBody,
     createElement: (tag: string) => new MockDomElement(tag)
   };
@@ -647,7 +691,7 @@ function withMountedWidget(
   widget.connectedCallback();
 
   return Promise.resolve()
-    .then(() => fn({ widget, shadowRoot, mockWindow }))
+    .then(() => fn({ widget, shadowRoot, mockBody, mockDocument, mockWindow }))
     .finally(() => {
       widget.disconnectedCallback();
       if (prevWindow === undefined) {
@@ -813,6 +857,117 @@ describe("ContextDrop Floating Dock & Drag Handle Interactions", () => {
       assert.equal(root.classList.contains("is-free-positioned"), true);
       assert.equal(root.style.left, "100px");
       assert.equal(root.style.top, "90px");
+    });
+  });
+
+  it("unifies wheel layer scrubbing with inline HUD list, 1-click pin, toggle-unpin, jitter lock, and Esc exit", async () => {
+    await withMountedWidget(({ widget, shadowRoot, mockBody, mockDocument, mockWindow }) => {
+      // Build a multi-layer DOM stack on the host page:
+      // section#checkout > div.card > button#pay-btn > (span.label-a, span.label-b), plus an overlapping toast
+      const section = new MockDomElement("section");
+      section.setAttribute("id", "checkout");
+      section.setRect({ left: 40, top: 80, width: 600, height: 360 });
+
+      const card = new MockDomElement("div");
+      card.setAttribute("class", "pricing-card");
+      card.setRect({ left: 60, top: 100, width: 320, height: 220 });
+
+      const button = new MockDomElement("button");
+      button.setAttribute("id", "pay-btn");
+      button.setRect({ left: 80, top: 180, width: 180, height: 42 });
+
+      const spanA = new MockDomElement("span");
+      spanA.setAttribute("class", "label-a");
+      spanA.setRect({ left: 88, top: 188, width: 80, height: 22 });
+
+      const spanB = new MockDomElement("span");
+      spanB.setAttribute("class", "label-b");
+      spanB.setRect({ left: 170, top: 188, width: 70, height: 22 });
+
+      const toast = new MockDomElement("div");
+      toast.setAttribute("id", "overlapping-toast");
+      toast.setRect({ left: 75, top: 175, width: 200, height: 36 });
+
+      button.appendChild(spanA);
+      button.appendChild(spanB);
+      card.appendChild(button);
+      section.appendChild(card);
+      section.appendChild(toast);
+      mockBody.appendChild(section);
+
+      let pointNodes: MockDomElement[] = [toast, spanA, button, card, section];
+      mockDocument.elementsFromPoint = () => pointNodes;
+
+      widget.startPinSelection();
+
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      assert.ok(compactBar && composer);
+      assert.equal(compactBar.hidden, false);
+      assert.equal(composer.hidden, true);
+
+      // Initial Compact Bar shows Cancel + Esc before any pins
+      const doneBtn = compactBar.querySelector("[aria-label='Cancel pinning and return to chatbox']");
+      assert.ok(doneBtn);
+
+      // 1. Hover over overlapping toast: HUD starts in compact hover mode (no layer list yet)
+      mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 120, clientY: 192 }));
+      const hud = mockBody.querySelector("[data-context-drop-ui='label']");
+      assert.ok(hud);
+      assert.equal(hud.style.display, "block");
+      assert.equal(hud.querySelector("[data-context-drop-ui='hud-layer-list']"), null);
+
+      // 2. Scroll the wheel once: inline layer list unfurls inside HUD & steps from #overlapping-toast (0) to #pay-btn / span.label-a (1)
+      const wheelEv = new MockUiEvent("wheel", { clientX: 120, clientY: 192, deltaY: 40, deltaMode: 0 });
+      mockWindow.dispatchEvent(wheelEv);
+      assert.equal(wheelEv.defaultPrevented, true);
+
+      const inlineList = hud.querySelector("[data-context-drop-ui='hud-layer-list']");
+      assert.ok(inlineList, "Expected wheel scroll to unfurl inline HUD layer list");
+
+      // Step once more via ArrowUp to reach button#pay-btn (index 2 in [toast, span.label-a, button#pay-btn, ...])
+      mockWindow.dispatchEvent(new MockUiEvent("keydown", { key: "ArrowUp" }));
+
+      // 3. Pointer-jitter lock: nudge mouse 12px onto sibling spanB inside button#pay-btn right before clicking
+      pointNodes = [spanB, button, card, section];
+      mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 132, clientY: 194 }));
+
+      // 4. Single Click immediately pins button#pay-btn (no second popover click required!)
+      const clickEv = new MockUiEvent("click", { clientX: 132, clientY: 194 });
+      mockWindow.dispatchEvent(clickEv);
+      assert.equal(clickEv.defaultPrevented, true);
+      assert.equal(widget.getElementReferences().length, 1);
+      assert.equal(widget.getElementReferences()[0].selector, "#pay-btn");
+
+      // On-page pinned marker badge & cursor confirmation toast appear while staying in Pin Mode
+      const pinnedBadge = mockBody.querySelector("[data-context-drop-ui='pinned-badge']");
+      const pinToast = mockBody.querySelector("[data-context-drop-ui='pin-toast']");
+      assert.ok(pinnedBadge);
+      assert.ok(pinToast);
+      assert.equal(pinToast.style.display, "inline-flex");
+
+      // Compact Bar updates to prominent Done (1) + Esc CTA and quick-undo pill
+      const finishBtn = compactBar.querySelector(
+        "[aria-label='Finish pinning elements and return to chatbox']"
+      );
+      assert.ok(finishBtn);
+      assert.ok(compactBar.querySelector(".cd-compact-pinned-pill"));
+
+      // 5. Clicking the already-pinned element again toggles/unpins it cleanly
+      mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 90, clientY: 185 }));
+      pointNodes = [button, card, section];
+      mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 90, clientY: 185 }));
+      mockWindow.dispatchEvent(new MockUiEvent("click", { clientX: 90, clientY: 185 }));
+      assert.equal(widget.getElementReferences().length, 0);
+
+      // Pin again, then press Escape once to exit Pin Mode and restore composer
+      mockWindow.dispatchEvent(new MockUiEvent("click", { clientX: 90, clientY: 185 }));
+      assert.equal(widget.getElementReferences().length, 1);
+
+      mockWindow.dispatchEvent(new MockUiEvent("keydown", { key: "Escape" }));
+      assert.equal(composer.hidden, false);
+      assert.equal(compactBar.hidden, true);
+      assert.equal(mockBody.querySelector("[data-context-drop-ui='pinned-badge']"), null);
     });
   });
 });

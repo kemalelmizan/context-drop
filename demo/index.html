@@ -469,10 +469,10 @@
       <section class="demo-section" id="scenario-overlapping-layers">
         <div class="demo-section-header">
           <h1 class="demo-section-title">1. Overlapping &amp; Cascading Layers Testbench</h1>
-          <span class="code-tag">Scroll ↕ or Click for Layer Stack</span>
+          <span class="code-tag">Scroll Wheel + 1-Click Pin</span>
         </div>
         <p class="demo-lead">
-          The checkout card below intentionally stacks a floating promo ribbon and a translucent stock badge directly over the container and primary button. Activate the <strong>Pin</strong> selector, hover over the overlapping corner, and either <strong>scroll your mouse wheel</strong> (or press <code class="code-tag">↑</code> / <code class="code-tag">↓</code>) or <strong>click once</strong> to open the Layer &amp; Hierarchy Popover.
+          The checkout card below intentionally stacks a floating promo ribbon and a translucent stock badge directly over the container and primary button. Activate the <strong>Pin</strong> selector, hover over the overlapping corner, <strong>scroll your mouse wheel</strong> (or press <code class="code-tag">ArrowUp</code> / <code class="code-tag">ArrowDown</code>) to scrub the live inline layer list, and <strong>click once</strong> to pin.
         </p>
 
         <article class="overlap-stage" id="enterprise-plan-card" data-testid="plan-enterprise">
@@ -506,10 +506,10 @@
       <section class="demo-section" id="scenario-nested-hierarchy">
         <div class="demo-section-header">
           <h2 class="demo-section-title">2. Deeply Nested Fulfillment Queue</h2>
-          <span class="code-tag">6-Level DOM Ancestor Breadcrumbs</span>
+          <span class="code-tag">Inline Parent Layer Scrubbing</span>
         </div>
         <p class="demo-lead">
-          Pin any status badge or action button in the table below, then use the interactive <strong>DOM Breadcrumb Bar</strong> in the compact pinning bar or layer popover to step between <code class="code-tag">span</code>, <code class="code-tag">button</code>, <code class="code-tag">td</code>, <code class="code-tag">tr</code>, and <code class="code-tag">table</code>.
+          Hover any status badge or action button in the table below during Pin Mode, then <strong>scroll your mouse wheel</strong> to unfurl the inline layer stack and step smoothly between <code class="code-tag">span</code>, <code class="code-tag">button</code>, <code class="code-tag">td</code>, <code class="code-tag">tr</code>, and <code class="code-tag">table</code> before clicking to pin.
         </p>
 
         <table class="fulfillment-table" id="orders-fulfillment-table">
@@ -600,10 +600,10 @@
             <strong>Drag the Floating Pin Anywhere:</strong> Grab the grip or pin dock at the top-left corner and drag it anywhere on the screen.
           </li>
           <li>
-            <strong>Pin Overlapping Elements:</strong> Click <strong>Pin</strong>, hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> (or press <code class="code-tag">↑</code> / <code class="code-tag">↓</code>) to cycle through the underlying button and card.
+            <strong>Scrub Overlapping Layers with the Wheel:</strong> Click <strong>Pin</strong>, hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> to unfurl the live layer HUD and select the underlying button or card.
           </li>
           <li>
-            <strong>Click-to-Pick Layer Popover:</strong> Click any multi-layer spot on the page to anchor the pin and open the Figma-style Layer &amp; Hierarchy Picker with live hover preview and clickable DOM breadcrumbs.
+            <strong>1-Click Pin &amp; Toggle:</strong> Click once to pin the highlighted layer immediately (click an already-pinned element again to unpin it), then press <code class="code-tag">Esc</code> or click <strong>Done</strong> on the Coach Bar to write your note.
           </li>
           <li>
             <strong>Minimize &amp; Drag the Chatbox:</strong> Drag the chatbox by its header bar, hover over pinned element chips in the tray to highlight them on the page, or click the camera icon on a chip to capture an element screenshot.

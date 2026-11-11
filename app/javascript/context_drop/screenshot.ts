@@ -119,7 +119,13 @@ export async function captureViewportScreenshot(
     // Paint visible non-excluded DOM elements approximation onto canvas
     const visibleNodes = document.body ? Array.from(document.body.querySelectorAll("*")) : [];
     for (const node of visibleNodes) {
-      if (node.closest("context-drop-widget") || node.hasAttribute("data-context-drop-ui")) continue;
+      if (
+        node.closest("context-drop-widget") ||
+        node.hasAttribute("data-context-drop-ui") ||
+        node.closest("[data-context-drop-ui]")
+      ) {
+        continue;
+      }
       if (isElementExcluded(node, customExcludedSelectors)) continue;
 
       const r = node.getBoundingClientRect();

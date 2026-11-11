@@ -92,21 +92,18 @@ textarea:focus-visible {
 
 /* Custom themed scrollbars */
 .cd-chat-thread::-webkit-scrollbar,
-.cd-tray::-webkit-scrollbar,
-.cd-breadcrumb-scroll::-webkit-scrollbar {
+.cd-tray::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .cd-chat-thread::-webkit-scrollbar-track,
-.cd-tray::-webkit-scrollbar-track,
-.cd-breadcrumb-scroll::-webkit-scrollbar-track {
+.cd-tray::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .cd-chat-thread::-webkit-scrollbar-thumb,
-.cd-tray::-webkit-scrollbar-thumb,
-.cd-breadcrumb-scroll::-webkit-scrollbar-thumb {
+.cd-tray::-webkit-scrollbar-thumb {
   background: var(--cd-border);
   border-radius: 9999px;
 }
@@ -211,14 +208,15 @@ textarea:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Compact Minimized Bar (active while pinning elements or minimized) */
+/* Compact Minimized Session Coach Bar (active while pinning elements or minimized) */
 .cd-compact-bar {
   pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 440px;
-  max-width: calc(100vw - 24px);
+  width: max-content;
+  min-width: 390px;
+  max-width: min(560px, calc(100vw - 24px));
   padding: 7px 10px;
   background: var(--cd-surface);
   color: var(--cd-ink);
@@ -237,52 +235,93 @@ textarea:focus-visible {
 .cd-compact-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
-.cd-breadcrumb-scroll {
-  display: flex;
+.cd-compact-coach-text {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  overflow-x: auto;
-  white-space: nowrap;
-  scrollbar-width: thin;
-  flex: 1;
-  min-width: 0;
-  padding: 2px 0;
-}
-
-.cd-crumb-btn {
-  appearance: none;
-  border: 1px solid transparent;
-  background: var(--cd-surface-recessed);
+  gap: 5px;
+  font-size: 12px;
   color: var(--cd-ink-secondary);
-  font-family: var(--cd-mono);
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  cursor: pointer;
-  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cd-crumb-btn:hover {
-  border-color: var(--cd-accent);
+.cd-compact-coach-text strong {
   color: var(--cd-ink);
-}
-
-.cd-crumb-btn.is-current {
-  background: var(--cd-accent-soft);
-  border-color: var(--cd-accent);
-  color: var(--cd-accent-hover);
   font-weight: 600;
 }
 
-.cd-crumb-sep {
+.cd-compact-wheel-icon {
   display: inline-flex;
-  color: var(--cd-ink-subtle);
+  align-items: center;
+  color: var(--cd-accent);
   flex-shrink: 0;
+}
+
+.cd-compact-pinned-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px 2px 6px;
+  background: var(--cd-surface-elevated);
+  border: 1px solid var(--cd-border);
+  border-radius: 7px;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.cd-compact-pinned-count {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--cd-pin-soft);
+  color: var(--cd-pin-hover);
+  flex-shrink: 0;
+}
+
+.cd-compact-pinned-selector {
+  font-family: var(--cd-mono);
+  font-size: 11px;
+  color: var(--cd-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-compact-step-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.cd-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--cd-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--cd-surface-recessed);
+  border: 1px solid var(--cd-border);
+  color: var(--cd-ink-secondary);
+}
+
+.cd-btn-primary .cd-kbd {
+  background: rgba(250, 249, 246, 0.16);
+  border-color: rgba(250, 249, 246, 0.26);
+  color: var(--cd-surface);
 }
 
 /* Main Floating Chatbox Composer Window */
@@ -395,9 +434,14 @@ textarea:focus-visible {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.cd-icon-btn:hover {
+.cd-icon-btn:hover:not(:disabled) {
   background: rgba(17, 19, 24, 0.06);
   color: var(--cd-ink);
+}
+
+.cd-icon-btn:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
 }
 
 /* Conversational Chat Thread */
@@ -681,10 +725,15 @@ textarea:focus-visible {
   border-color: #252a34;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   .cd-composer,
   .cd-compact-bar {
     width: calc(100vw - 20px);
+    min-width: 0;
+  }
+
+  .cd-compact-bar {
+    flex-wrap: wrap;
   }
 }
 `;

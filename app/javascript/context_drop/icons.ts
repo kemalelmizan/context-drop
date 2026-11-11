@@ -15,6 +15,8 @@ export const ICON_CHEVRON_DOWN = `<svg viewBox="0 0 16 16" width="12" height="12
 
 export const ICON_CHEVRON_RIGHT = `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 3.5 10.5 8 6 12.5"/></svg>`;
 
+export const ICON_SCROLL_VERTICAL = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5.25 5.75 8 3 10.75 5.75"/><polyline points="5.25 10.25 8 13 10.75 10.25"/></svg>`;
+
 export const ICON_CAMERA = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5h2.5l1.4-2h6.2l1.4 2H17a1.5 1.5 0 0 1 1.5 1.5v7.5A1.5 1.5 0 0 1 17 17H3a1.5 1.5 0 0 1-1.5-1.5V8A1.5 1.5 0 0 1 3 6.5z"/><circle cx="10" cy="11.5" r="2.75"/></svg>`;
 
 export const ICON_IMAGE = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="8" r="1.3"/><path d="M17.5 13.2l-3.8-3.7L6 16.5"/></svg>`;

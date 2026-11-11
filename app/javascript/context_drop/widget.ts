@@ -1,5 +1,4 @@
 import type {
-  ElementCandidateInfo,
   ElementReferenceSnapshot,
   FeedbackSubmissionPayload,
   PendingAttachmentItem,
@@ -7,12 +6,12 @@ import type {
   WidgetConfig,
   WidgetPosition
 } from "./types.ts";
-import { computeSelector, MANDATORY_EXCLUDED_SELECTORS } from "./sanitizer.ts";
+import { MANDATORY_EXCLUDED_SELECTORS } from "./sanitizer.ts";
 import {
   ICON_CAMERA,
   ICON_CHAT,
+  ICON_CHECK,
   ICON_CHEVRON_DOWN,
-  ICON_CHEVRON_RIGHT,
   ICON_CHEVRON_UP,
   ICON_CLOSE,
   ICON_EXPAND,
@@ -20,6 +19,7 @@ import {
   ICON_IMAGE,
   ICON_MINIMIZE,
   ICON_PIN,
+  ICON_SCROLL_VERTICAL,
   ICON_SEND
 } from "./icons.ts";
 import { WIDGET_SHADOW_STYLES } from "./styles.ts";
@@ -73,7 +73,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private rootContainer: HTMLDivElement | null = null;
   private composerEl: HTMLDivElement | null = null;
   private compactBarEl: HTMLDivElement | null = null;
-  private compactBreadcrumbEl: HTMLDivElement | null = null;
+  private compactStatusEl: HTMLDivElement | null = null;
+  private compactStepGroupEl: HTMLDivElement | null = null;
+  private compactLayerUpBtn: HTMLButtonElement | null = null;
+  private compactLayerDownBtn: HTMLButtonElement | null = null;
+  private compactDoneBtn: HTMLButtonElement | null = null;
   private compactPinBtn: HTMLButtonElement | null = null;
   private pinDockEl: HTMLDivElement | null = null;
   private floatingPinBtn: HTMLButtonElement | null = null;
@@ -97,9 +101,18 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       onSelect: (snapshot, el) => {
         const added = this.addElementReference(snapshot, el);
         if (added) {
-          this.showStatus(`Pinned ${snapshot.selector}`, "success");
+          const count = this.elementReferences.length;
+          this.showStatus(
+            count === 1
+              ? `Pinned ${snapshot.selector}`
+              : `Pinned ${count} elements (latest: ${snapshot.selector})`,
+            "success"
+          );
         }
         this.syncUiStates();
+      },
+      onUnselect: (clientRef) => {
+        this.removeElementReference(clientRef);
       },
       onExit: () => {
         this.isMinimized = false;
@@ -108,9 +121,21 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       },
       canSelectMore: () => this.elementReferences.length < this.config.limits.max_element_references,
       getExcludedSelectors: () => this.config.privacy.excluded_selectors,
+      getPinnedElements: () =>
+        this.elementReferences
+          .map((ref) => {
+            const node = this.elementDomNodes.get(ref.client_ref);
+            return node
+              ? { clientRef: ref.client_ref, selector: ref.selector, element: node }
+              : null;
+          })
+          .filter(
+            (item): item is { clientRef: string; selector: string; element: Element } =>
+              item !== null
+          ),
       onStateChange: (state) => {
-        this.renderCompactBreadcrumbs(state.activeCandidate, state.ancestors);
         this.syncPinActiveIndicators(state.active);
+        this.renderCompactCoachBar(state.active, state.candidateStack.length);
       }
     });
   }
@@ -227,6 +252,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     if (elementNode) {
       this.elementDomNodes.set(snapshot.client_ref, elementNode);
     }
+    this.picker?.refreshPinnedMarkers();
     this.renderTray();
     this.syncUiStates();
     return true;
@@ -236,6 +262,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.elementReferences = this.elementReferences.filter((el) => el.client_ref !== clientRef);
     this.elementDomNodes.delete(clientRef);
     this.picker?.hideExternalPreview();
+    this.picker?.refreshPinnedMarkers();
     this.renderTray();
     this.syncUiStates();
   }
@@ -430,20 +457,12 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
     const compactStatus = document.createElement("div");
     compactStatus.className = "cd-compact-status";
-    const breadcrumbScroll = document.createElement("div");
-    breadcrumbScroll.className = "cd-breadcrumb-scroll";
-    this.compactBreadcrumbEl = breadcrumbScroll;
-    compactStatus.appendChild(breadcrumbScroll);
+    this.compactStatusEl = compactStatus;
     compactBar.appendChild(compactStatus);
 
-    const compactLayerUp = document.createElement("button");
-    compactLayerUp.type = "button";
-    compactLayerUp.className = "cd-icon-btn";
-    compactLayerUp.title = "Step to outer/parent element (Up arrow)";
-    compactLayerUp.setAttribute("aria-label", "Step to parent element");
-    compactLayerUp.innerHTML = ICON_CHEVRON_UP;
-    compactLayerUp.addEventListener("click", () => this.picker?.cycleDepth(1));
-    compactBar.appendChild(compactLayerUp);
+    const compactStepGroup = document.createElement("div");
+    compactStepGroup.className = "cd-compact-step-group";
+    this.compactStepGroupEl = compactStepGroup;
 
     const compactLayerDown = document.createElement("button");
     compactLayerDown.type = "button";
@@ -451,15 +470,29 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     compactLayerDown.title = "Step to inner/child element (Down arrow)";
     compactLayerDown.setAttribute("aria-label", "Step to child element");
     compactLayerDown.innerHTML = ICON_CHEVRON_DOWN;
-    compactLayerDown.addEventListener("click", () => this.picker?.cycleDepth(-1));
-    compactBar.appendChild(compactLayerDown);
+    compactLayerDown.addEventListener("click", () => this.picker?.cycleDepth(-1, true));
+    this.compactLayerDownBtn = compactLayerDown;
+    compactStepGroup.appendChild(compactLayerDown);
+
+    const compactLayerUp = document.createElement("button");
+    compactLayerUp.type = "button";
+    compactLayerUp.className = "cd-icon-btn";
+    compactLayerUp.title = "Step to outer/parent element (Up arrow)";
+    compactLayerUp.setAttribute("aria-label", "Step to parent element");
+    compactLayerUp.innerHTML = ICON_CHEVRON_UP;
+    compactLayerUp.addEventListener("click", () => this.picker?.cycleDepth(1, true));
+    this.compactLayerUpBtn = compactLayerUp;
+    compactStepGroup.appendChild(compactLayerUp);
+
+    compactBar.appendChild(compactStepGroup);
 
     const expandBtn = document.createElement("button");
     expandBtn.type = "button";
-    expandBtn.className = "cd-btn cd-btn-primary";
-    expandBtn.setAttribute("aria-label", "Return to chatbox");
-    expandBtn.innerHTML = `${ICON_EXPAND}<span>Chat</span>`;
+    expandBtn.className = "cd-btn";
+    expandBtn.setAttribute("aria-label", "Cancel pinning and return to chatbox");
+    expandBtn.innerHTML = `<span>Cancel</span><kbd class="cd-kbd">Esc</kbd>`;
     expandBtn.addEventListener("click", () => this.expandFromCompactBar());
+    this.compactDoneBtn = expandBtn;
     compactBar.appendChild(expandBtn);
 
     // 2. Main Floating Chatbox Composer Window
@@ -687,7 +720,6 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     root.appendChild(pinDock);
     this.shadow.appendChild(root);
 
-    this.renderCompactBreadcrumbs(null, []);
     this.syncUiStates();
   }
 
@@ -738,48 +770,102 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
 
     this.syncPinActiveIndicators(pickerActive);
+    this.renderCompactCoachBar(
+      pickerActive,
+      this.picker ? this.picker.getCandidateStack().length : 0
+    );
   }
 
-  private renderCompactBreadcrumbs(
-    activeCandidate: ElementCandidateInfo | null,
-    ancestors: Element[]
-  ): void {
-    if (!this.compactBreadcrumbEl) return;
-    this.compactBreadcrumbEl.innerHTML = "";
+  private renderCompactCoachBar(pickerActive: boolean, candidateCount: number = 0): void {
+    if (!this.compactStatusEl) return;
+    this.compactStatusEl.innerHTML = "";
 
-    if (!activeCandidate || ancestors.length === 0) {
-      const hint = document.createElement("span");
-      hint.style.cssText = "font-size: 11.5px; color: #4b5262;";
-      hint.textContent =
-        this.elementReferences.length > 0
-          ? `${this.elementReferences.length} pinned · Hover or click any element (scroll ↕ for layers)`
-          : "Hover any element · Scroll ↕ for layers · Click to inspect stack";
-      this.compactBreadcrumbEl.appendChild(hint);
+    const pinnedCount = this.elementReferences.length;
+    const totalContextCount = pinnedCount + this.attachments.length;
+
+    if (this.compactStepGroupEl) {
+      this.compactStepGroupEl.hidden = !pickerActive;
+    }
+    if (this.compactLayerUpBtn) {
+      this.compactLayerUpBtn.disabled = candidateCount <= 1;
+    }
+    if (this.compactLayerDownBtn) {
+      this.compactLayerDownBtn.disabled = candidateCount <= 1;
+    }
+
+    if (pickerActive) {
+      if (pinnedCount === 0) {
+        const coach = document.createElement("span");
+        coach.className = "cd-compact-coach-text";
+        coach.innerHTML = `<strong>Click</strong><span>element to pin</span><span>·</span><span class="cd-compact-wheel-icon">${ICON_SCROLL_VERTICAL}</span><strong>Scroll</strong><span>layers</span>`;
+        this.compactStatusEl.appendChild(coach);
+      } else {
+        const latest = this.elementReferences[pinnedCount - 1];
+        const pill = document.createElement("div");
+        pill.className = "cd-compact-pinned-pill";
+
+        const countSpan = document.createElement("span");
+        countSpan.className = "cd-compact-pinned-count";
+        countSpan.textContent = `${pinnedCount} pinned`;
+
+        const selSpan = document.createElement("span");
+        selSpan.className = "cd-compact-pinned-selector";
+        selSpan.textContent = latest.selector;
+        selSpan.title = latest.dom_path || latest.selector;
+
+        const undoBtn = document.createElement("button");
+        undoBtn.type = "button";
+        undoBtn.className = "cd-chip-remove";
+        undoBtn.title = `Remove ${latest.selector}`;
+        undoBtn.setAttribute("aria-label", `Undo pin ${latest.selector}`);
+        undoBtn.innerHTML = ICON_CLOSE;
+        undoBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this.removeElementReference(latest.client_ref);
+        });
+
+        pill.appendChild(countSpan);
+        pill.appendChild(selSpan);
+        pill.appendChild(undoBtn);
+        this.compactStatusEl.appendChild(pill);
+
+        const addMore = document.createElement("span");
+        addMore.className = "cd-compact-coach-text";
+        addMore.textContent = "Click another to add";
+        this.compactStatusEl.appendChild(addMore);
+      }
+
+      if (this.compactDoneBtn) {
+        if (pinnedCount > 0) {
+          this.compactDoneBtn.className = "cd-btn cd-btn-primary";
+          this.compactDoneBtn.setAttribute(
+            "aria-label",
+            "Finish pinning elements and return to chatbox"
+          );
+          this.compactDoneBtn.innerHTML = `${ICON_CHECK}<span>Done (${pinnedCount})</span><kbd class="cd-kbd">Esc</kbd>`;
+        } else {
+          this.compactDoneBtn.className = "cd-btn";
+          this.compactDoneBtn.setAttribute("aria-label", "Cancel pinning and return to chatbox");
+          this.compactDoneBtn.innerHTML = `<span>Cancel</span><kbd class="cd-kbd">Esc</kbd>`;
+        }
+      }
       return;
     }
 
-    ancestors.forEach((ancEl, idx) => {
-      if (idx > 0) {
-        const sep = document.createElement("span");
-        sep.className = "cd-crumb-sep";
-        sep.innerHTML = ICON_CHEVRON_RIGHT;
-        this.compactBreadcrumbEl?.appendChild(sep);
-      }
+    // Minimized while not actively in Pin Mode
+    const summary = document.createElement("span");
+    summary.className = "cd-compact-coach-text";
+    summary.textContent =
+      totalContextCount > 0
+        ? `${totalContextCount} context item${totalContextCount > 1 ? "s" : ""} attached`
+        : "Chatbox minimized";
+    this.compactStatusEl.appendChild(summary);
 
-      const isCurrent = ancEl === activeCandidate.element;
-      const crumb = document.createElement("button");
-      crumb.type = "button";
-      crumb.className = `cd-crumb-btn${isCurrent ? " is-current" : ""}`;
-      crumb.textContent = computeSelector(ancEl);
-      crumb.title = "Click to pin this element directly";
-      crumb.addEventListener("mouseenter", () => {
-        this.picker?.focusCandidateElement(ancEl);
-      });
-      crumb.addEventListener("click", () => {
-        this.picker?.selectElementDirectly(ancEl);
-      });
-      this.compactBreadcrumbEl?.appendChild(crumb);
-    });
+    if (this.compactDoneBtn) {
+      this.compactDoneBtn.className = "cd-btn cd-btn-primary";
+      this.compactDoneBtn.setAttribute("aria-label", "Return to chatbox");
+      this.compactDoneBtn.innerHTML = `${ICON_EXPAND}<span>Chat</span>`;
+    }
   }
 
   private renderChatThread(): void {
@@ -797,7 +883,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       const p2 = document.createElement("p");
       p2.className = "cd-chat-empty-hint";
       p2.textContent =
-        "Use the top-left Pin selector to pick specific HTML elements (scroll or click to disambiguate overlapping layers), attach screenshots, and send your note.";
+        "Click Pin Element, scroll the wheel to step through overlapping layers, click once to pin, and press Esc when done.";
 
       emptyBox.appendChild(p1);
       emptyBox.appendChild(p2);
