@@ -2681,6 +2681,28 @@
       let initialTop = 0;
       let dragging = false;
       let moved = false;
+      let suppressNextClick = false;
+      let suppressClickTimer                                       = null;
+  
+      const clearSuppressClick = ()       => {
+        suppressNextClick = false;
+        if (suppressClickTimer !== null) {
+          clearTimeout(suppressClickTimer);
+          suppressClickTimer = null;
+        }
+      };
+  
+      if (onClickFallback) {
+        handleEl.addEventListener("click", (ev            ) => {
+          if (suppressNextClick) {
+            clearSuppressClick();
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
+          onClickFallback();
+        });
+      }
   
       const onPointerMove = (ev              )       => {
         if (!dragging) return;
@@ -2695,30 +2717,48 @@
         }
       };
   
-      const onPointerUp = ()       => {
-        if (!dragging) return;
+      const cleanupDrag = ()       => {
         dragging = false;
         this.pinDockEl?.classList.remove("is-dragging");
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerUp);
-        if (!moved && onClickFallback) {
-          onClickFallback();
+        window.removeEventListener("pointercancel", onPointerCancel);
+      };
+  
+      const onPointerUp = ()       => {
+        if (!dragging) return;
+        cleanupDrag();
+        if (moved && onClickFallback) {
+          suppressNextClick = true;
+          if (suppressClickTimer !== null) {
+            clearTimeout(suppressClickTimer);
+          }
+          suppressClickTimer = setTimeout(() => {
+            suppressNextClick = false;
+            suppressClickTimer = null;
+          }, 0);
         }
+      };
+  
+      const onPointerCancel = ()       => {
+        if (!dragging) return;
+        cleanupDrag();
+        clearSuppressClick();
       };
   
       handleEl.addEventListener("pointerdown", (ev              ) => {
         // Only primary mouse button or touch
         if (ev.button !== 0) return;
-        const targetEl = ev.target instanceof Element ? ev.target : null;
-        if (
-          targetEl &&
-          handleEl !== this.pinDockEl &&
-          targetEl.closest("button")
-        ) {
+        const targetEl =
+          ev.target && typeof (ev.target           ).closest === "function"
+            ? (ev.target           )
+            : null;
+        const closestBtn = targetEl?.closest("button");
+        if (closestBtn && closestBtn !== handleEl && handleEl.contains(closestBtn)) {
           return;
         }
   
-        if (!this.rootContainer) return;
+        if (!this.rootContainer || typeof window === "undefined") return;
         const rect = this.rootContainer.getBoundingClientRect();
         startX = ev.clientX;
         startY = ev.clientY;
@@ -2726,9 +2766,11 @@
         initialTop = this.freePos ? this.freePos.top : rect.top;
         dragging = true;
         moved = false;
+        clearSuppressClick();
   
         window.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp);
+        window.addEventListener("pointercancel", onPointerCancel);
       });
     }
   

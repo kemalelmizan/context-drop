@@ -317,3 +317,502 @@ describe("ContextDrop Frontend DOM Sanitizer & Snapshot Capture", () => {
     assert.equal(selectedRef, "#submit-order");
   });
 });
+
+interface MockListenerEntry {
+  listener: (ev: MockUiEvent) => void;
+  capture: boolean;
+}
+
+class MockUiEvent {
+  public readonly type: string;
+  public readonly button: number;
+  public readonly clientX: number;
+  public readonly clientY: number;
+  public target: unknown = null;
+  public currentTarget: unknown = null;
+  public defaultPrevented: boolean = false;
+  public propagationStopped: boolean = false;
+
+  constructor(
+    type: string,
+    init: { button?: number; clientX?: number; clientY?: number } = {}
+  ) {
+    this.type = type;
+    this.button = init.button ?? 0;
+    this.clientX = init.clientX ?? 0;
+    this.clientY = init.clientY ?? 0;
+  }
+
+  public preventDefault(): void {
+    this.defaultPrevented = true;
+  }
+
+  public stopPropagation(): void {
+    this.propagationStopped = true;
+  }
+}
+
+class MockClassList {
+  private classes: Set<string> = new Set();
+
+  public syncFromString(raw: string): void {
+    this.classes.clear();
+    for (const token of raw.split(/\s+/)) {
+      if (token) this.classes.add(token);
+    }
+  }
+
+  public toString(): string {
+    return Array.from(this.classes).join(" ");
+  }
+
+  public add(...tokens: string[]): void {
+    for (const token of tokens) {
+      if (token) this.classes.add(token);
+    }
+  }
+
+  public remove(...tokens: string[]): void {
+    for (const token of tokens) {
+      this.classes.delete(token);
+    }
+  }
+
+  public toggle(token: string, force?: boolean): boolean {
+    const shouldHave = force !== undefined ? force : !this.classes.has(token);
+    if (shouldHave) {
+      this.classes.add(token);
+    } else {
+      this.classes.delete(token);
+    }
+    return shouldHave;
+  }
+
+  public contains(token: string): boolean {
+    return this.classes.has(token);
+  }
+}
+
+class MockDomElement {
+  public readonly nodeType: number = 1;
+  public readonly tagName: string;
+  public readonly classList: MockClassList = new MockClassList();
+  public readonly style: Record<string, string> = { cssText: "", left: "", top: "", cursor: "" };
+  public parentElement: MockDomElement | null = null;
+  public parentNode: MockDomElement | null = null;
+  public childNodes: MockDomElement[] = [];
+  public hidden: boolean = false;
+  public type: string = "";
+  public title: string = "";
+  public textContent: string = "";
+  public placeholder: string = "";
+  public value: string = "";
+  public disabled: boolean = false;
+  public multiple: boolean = false;
+  public accept: string = "";
+  public scrollTop: number = 0;
+  public scrollHeight: number = 0;
+  private rawHtml: string = "";
+  private attrs: Map<string, string> = new Map();
+  private listeners: Map<string, MockListenerEntry[]> = new Map();
+  private rect: { left: number; top: number; width: number; height: number } = {
+    left: 20,
+    top: 20,
+    width: 220,
+    height: 40
+  };
+
+  constructor(tagName: string) {
+    this.tagName = tagName.toUpperCase();
+  }
+
+  public get className(): string {
+    return this.classList.toString();
+  }
+
+  public set className(val: string) {
+    this.classList.syncFromString(val);
+    this.attrs.set("class", val);
+  }
+
+  public get innerHTML(): string {
+    return this.rawHtml;
+  }
+
+  public set innerHTML(html: string) {
+    this.rawHtml = html;
+    this.childNodes = [];
+    if (html.includes("<svg")) {
+      this.appendChild(new MockDomElement("svg"));
+    }
+    const spanMatches = html.matchAll(/<span(?:\s+class="([^"]*)")?>([^<]*)<\/span>/g);
+    for (const match of spanMatches) {
+      const span = new MockDomElement("span");
+      if (match[1]) span.className = match[1];
+      span.textContent = match[2] || "";
+      this.appendChild(span);
+    }
+  }
+
+  public setAttribute(name: string, value: string): void {
+    this.attrs.set(name, value);
+    if (name === "class") {
+      this.classList.syncFromString(value);
+    }
+  }
+
+  public getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
+
+  public hasAttribute(name: string): boolean {
+    return this.attrs.has(name);
+  }
+
+  public appendChild(child: MockDomElement): MockDomElement {
+    child.parentElement = this;
+    child.parentNode = this;
+    this.childNodes.push(child);
+    return child;
+  }
+
+  public removeChild(child: MockDomElement): MockDomElement {
+    const idx = this.childNodes.indexOf(child);
+    if (idx !== -1) {
+      this.childNodes.splice(idx, 1);
+      child.parentElement = null;
+      child.parentNode = null;
+    }
+    return child;
+  }
+
+  public contains(other: unknown): boolean {
+    let cur = other as MockDomElement | null;
+    while (cur) {
+      if (cur === this) return true;
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+
+  public matches(selector: string): boolean {
+    if (selector.startsWith(".")) {
+      return this.classList.contains(selector.slice(1));
+    }
+    if (selector.startsWith("#")) {
+      return this.getAttribute("id") === selector.slice(1);
+    }
+    const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=['"]([^'"]*)['"])?\]$/);
+    if (attrMatch) {
+      if (!this.hasAttribute(attrMatch[1])) return false;
+      return attrMatch[2] === undefined || this.getAttribute(attrMatch[1]) === attrMatch[2];
+    }
+    return this.tagName.toLowerCase() === selector.toLowerCase();
+  }
+
+  public closest(selector: string): MockDomElement | null {
+    let cur: MockDomElement | null = this;
+    while (cur) {
+      if (cur.matches(selector)) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  public querySelector(selector: string): MockDomElement | null {
+    for (const child of this.childNodes) {
+      if (child.matches(selector)) return child;
+      const nested = child.querySelector(selector);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  public getBoundingClientRect(): {
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } {
+    const parsedLeft = this.style.left ? Number.parseFloat(this.style.left) : this.rect.left;
+    const parsedTop = this.style.top ? Number.parseFloat(this.style.top) : this.rect.top;
+    return {
+      x: parsedLeft,
+      y: parsedTop,
+      left: parsedLeft,
+      top: parsedTop,
+      width: this.rect.width,
+      height: this.rect.height
+    };
+  }
+
+  public focus(): void {}
+
+  public addEventListener(
+    type: string,
+    listener: (ev: MockUiEvent) => void,
+    options?: boolean | { capture?: boolean }
+  ): void {
+    const capture = typeof options === "boolean" ? options : Boolean(options?.capture);
+    const list = this.listeners.get(type) ?? [];
+    list.push({ listener, capture });
+    this.listeners.set(type, list);
+  }
+
+  public removeEventListener(
+    type: string,
+    listener: (ev: MockUiEvent) => void,
+    options?: boolean | { capture?: boolean }
+  ): void {
+    const capture = typeof options === "boolean" ? options : Boolean(options?.capture);
+    const list = this.listeners.get(type);
+    if (!list) return;
+    this.listeners.set(
+      type,
+      list.filter((entry) => !(entry.listener === listener && entry.capture === capture))
+    );
+  }
+
+  public dispatchEvent(ev: MockUiEvent): boolean {
+    if (!ev.target) {
+      ev.target = this;
+    }
+    const path: MockDomElement[] = [];
+    let cur: MockDomElement | null = this;
+    while (cur) {
+      path.push(cur);
+      cur = cur.parentElement;
+    }
+
+    for (let i = path.length - 1; i >= 0 && !ev.propagationStopped; i -= 1) {
+      const node = path[i];
+      ev.currentTarget = node;
+      for (const entry of [...(node.listeners.get(ev.type) ?? [])]) {
+        if (entry.capture) {
+          entry.listener(ev);
+        }
+      }
+    }
+
+    for (let i = 0; i < path.length && !ev.propagationStopped; i += 1) {
+      const node = path[i];
+      ev.currentTarget = node;
+      for (const entry of [...(node.listeners.get(ev.type) ?? [])]) {
+        if (!entry.capture) {
+          entry.listener(ev);
+        }
+      }
+    }
+
+    return !ev.defaultPrevented;
+  }
+}
+
+function withMountedWidget(
+  fn: (ctx: {
+    widget: ContextDropWidgetElement;
+    shadowRoot: MockDomElement;
+    mockWindow: MockDomElement & { innerWidth: number; innerHeight: number; location: { href: string } };
+  }) => void | Promise<void>
+): Promise<void> {
+  const g = globalThis as Record<string, unknown>;
+  const prevWindow = g.window;
+  const prevDocument = g.document;
+
+  const mockWindow = Object.assign(new MockDomElement("window"), {
+    innerWidth: 1280,
+    innerHeight: 800,
+    location: { href: "http://localhost:3000/orders" }
+  });
+  const mockBody = new MockDomElement("body");
+  const mockDocument = {
+    body: mockBody,
+    createElement: (tag: string) => new MockDomElement(tag)
+  };
+
+  g.window = mockWindow;
+  g.document = mockDocument;
+
+  const shadowRoot = new MockDomElement("shadow-root");
+  const widget = new ContextDropWidgetElement();
+  const hostShim = widget as unknown as {
+    attachShadow: () => ShadowRoot;
+    getAttribute: (name: string) => string | null;
+  };
+  hostShim.attachShadow = () => shadowRoot as unknown as ShadowRoot;
+  hostShim.getAttribute = () => null;
+
+  widget.connectedCallback();
+
+  return Promise.resolve()
+    .then(() => fn({ widget, shadowRoot, mockWindow }))
+    .finally(() => {
+      widget.disconnectedCallback();
+      if (prevWindow === undefined) {
+        delete g.window;
+      } else {
+        g.window = prevWindow;
+      }
+      if (prevDocument === undefined) {
+        delete g.document;
+      } else {
+        g.document = prevDocument;
+      }
+    });
+}
+
+describe("ContextDrop Floating Dock & Drag Handle Interactions", () => {
+  it("activates Pin and ContextDrop floating dock buttons on pointer click (including nested label spans)", async () => {
+    await withMountedWidget(({ shadowRoot, mockWindow }) => {
+      const pinDock = shadowRoot.querySelector(".cd-pin-dock");
+      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
+      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+
+      assert.ok(pinDock && floatingPinBtn && triggerBtn && composer && compactBar);
+      assert.equal(composer.hidden, true);
+      assert.equal(compactBar.hidden, true);
+      assert.equal(pinDock.hidden, false);
+
+      // Click nested <span>ContextDrop</span> inside .cd-trigger
+      const triggerSpan = triggerBtn.querySelector("span") ?? triggerBtn;
+      triggerSpan.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 40, clientY: 30 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 40, clientY: 30 }));
+      triggerSpan.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 40, clientY: 30 }));
+
+      assert.equal(composer.hidden, false);
+      assert.equal(pinDock.hidden, true);
+      assert.equal(triggerBtn.getAttribute("aria-expanded"), "true");
+
+      // Close composer to return to floating dock
+      const closeBtn = shadowRoot.querySelector("[aria-label='Close feedback composer']");
+      assert.ok(closeBtn);
+      closeBtn.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(composer.hidden, true);
+      assert.equal(pinDock.hidden, false);
+
+      // Click nested <span>Pin</span> inside .cd-floating-pin-btn
+      const pinSpan = floatingPinBtn.querySelector("span") ?? floatingPinBtn;
+      pinSpan.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 30, clientY: 30 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 30, clientY: 30 }));
+      pinSpan.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 30, clientY: 30 }));
+
+      assert.equal(compactBar.hidden, false);
+      assert.equal(floatingPinBtn.getAttribute("aria-pressed"), "true");
+    });
+  });
+
+  it("repositions the dock when dragging >5px from Pin or ContextDrop buttons and suppresses synthetic click", async () => {
+    await withMountedWidget(({ shadowRoot, mockWindow }) => {
+      const root = shadowRoot.querySelector(".cd-root");
+      const pinDock = shadowRoot.querySelector(".cd-pin-dock");
+      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
+      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+
+      assert.ok(root && pinDock && floatingPinBtn && triggerBtn && composer && compactBar);
+
+      // Drag >5px starting from .cd-floating-pin-btn
+      floatingPinBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 50, clientY: 50 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 150, clientY: 120 }));
+      assert.equal(pinDock.classList.contains("is-dragging"), true);
+      assert.equal(root.classList.contains("is-free-positioned"), true);
+      assert.equal(root.style.left, "120px");
+      assert.equal(root.style.top, "90px");
+
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 150, clientY: 120 }));
+      assert.equal(pinDock.classList.contains("is-dragging"), false);
+
+      // Browser dispatches synthetic click after pointerup over the dragged button
+      const syntheticClick = new MockUiEvent("click", { clientX: 150, clientY: 120 });
+      floatingPinBtn.dispatchEvent(syntheticClick);
+      assert.equal(syntheticClick.defaultPrevented, true);
+      assert.equal(compactBar.hidden, true);
+      assert.equal(composer.hidden, true);
+
+      // Drag >5px starting from .cd-trigger
+      triggerBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 150, clientY: 120 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 210, clientY: 180 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 210, clientY: 180 }));
+      const triggerSyntheticClick = new MockUiEvent("click", { clientX: 210, clientY: 180 });
+      triggerBtn.dispatchEvent(triggerSyntheticClick);
+      assert.equal(triggerSyntheticClick.defaultPrevented, true);
+      assert.equal(composer.hidden, true);
+      assert.equal(root.style.left, "180px");
+      assert.equal(root.style.top, "150px");
+
+      // Subsequent normal click on .cd-trigger opens composer as expected
+      triggerBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 210, clientY: 180 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 210, clientY: 180 }));
+      triggerBtn.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 210, clientY: 180 }));
+      assert.equal(composer.hidden, false);
+    });
+  });
+
+  it("supports keyboard activation (click without pointerdown/pointerup) on Pin and ContextDrop buttons", async () => {
+    await withMountedWidget(async ({ shadowRoot, mockWindow }) => {
+      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
+      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+
+      assert.ok(floatingPinBtn && triggerBtn && composer && compactBar);
+
+      // Keyboard Enter/Space dispatches click directly with no pointer events
+      triggerBtn.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(composer.hidden, false);
+
+      // Close via close button
+      const closeBtn = shadowRoot.querySelector("[aria-label='Close feedback composer']");
+      assert.ok(closeBtn);
+      closeBtn.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(composer.hidden, true);
+
+      // Simulate a drag where pointerup occurred outside the button (no synthetic click dispatched)
+      floatingPinBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 30, clientY: 30 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 90, clientY: 90 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 90, clientY: 90 }));
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      // Subsequent keyboard activation on floatingPinBtn still works
+      floatingPinBtn.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(compactBar.hidden, false);
+    });
+  });
+
+  it("ignores nested buttons inside container drag bars (.cd-composer-header, .cd-compact-bar)", async () => {
+    await withMountedWidget(({ widget, shadowRoot, mockWindow }) => {
+      widget.openComposer();
+
+      const root = shadowRoot.querySelector(".cd-root");
+      const header = shadowRoot.querySelector(".cd-composer-header");
+      const minBtn = shadowRoot.querySelector("[aria-label='Minimize chatbox to compact bar']");
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+
+      assert.ok(root && header && minBtn && compactBar);
+
+      // Pointerdown + move on nested minimize button must NOT drag .cd-root
+      minBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 100, clientY: 40 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 250, clientY: 160 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 250, clientY: 160 }));
+      assert.equal(root.classList.contains("is-free-positioned"), false);
+
+      // Clicking nested minimize button minimizes to compact bar
+      minBtn.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(compactBar.hidden, false);
+
+      // Dragging non-button area of .cd-compact-bar DOES reposition .cd-root
+      compactBar.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 60, clientY: 40 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 140, clientY: 110 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 140, clientY: 110 }));
+      assert.equal(root.classList.contains("is-free-positioned"), true);
+      assert.equal(root.style.left, "100px");
+      assert.equal(root.style.top, "90px");
+    });
+  });
+});
