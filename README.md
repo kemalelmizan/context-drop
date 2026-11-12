@@ -4,16 +4,13 @@
 
 <p align="center">
   <strong>Stop decoding vague bug reports! Let users pin the problem and fix it right beside your app</strong><br />
-  Next.js &amp; Rails · Pin Widget · Multi-Env MCP Hub
+  <a href="#nextjs--react-quickstart">Next.js</a> · <a href="#quickstart-ruby-on-rails">Rails</a> · <a href="#mcp">MCP</a>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/context-drop"><img src="https://img.shields.io/npm/v/context-drop?label=NPM&color=cb3837&logo=npm" alt="NPM Version" /></a>
   <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/v/context_drop?label=RubyGems&color=2563eb" alt="Gem Version" /></a>
   <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/dt/context_drop?label=Downloads&color=0f172a" alt="Gem Downloads" /></a>
-  <img src="https://img.shields.io/badge/Next.js-%3E%3D%2013.4-000000?logo=next.js&logoColor=white" alt="Next.js >= 13.4" />
-  <img src="https://img.shields.io/badge/Ruby-%3E%3D%203.1-CC342D?logo=ruby&logoColor=white" alt="Ruby >= 3.1" />
-  <img src="https://img.shields.io/badge/Rails-%3E%3D%207.1-D30001?logo=rubyonrails&logoColor=white" alt="Rails >= 7.1" />
   <a href="MIT-LICENSE"><img src="https://img.shields.io/badge/License-MIT-16a34a" alt="MIT License" /></a>
 </p>
 
