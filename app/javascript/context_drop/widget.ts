@@ -144,7 +144,7 @@ const BaseHTMLElement: typeof HTMLElement =
 
 export class ContextDropWidgetElement extends BaseHTMLElement {
   public static get observedAttributes(): string[] {
-    return ["data-position", "data-config", "data-theme"];
+    return ["data-position", "data-config", "data-theme", "data-cd-theme"];
   }
 
   public shadow: ShadowRoot | null = null;
@@ -256,7 +256,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
   public attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
-    if (name === "data-theme" && (newValue === "dark" || newValue === "light")) {
+    if ((name === "data-theme" || name === "data-cd-theme") && (newValue === "dark" || newValue === "light")) {
       this.applyTheme(newValue, false);
     } else if (name === "data-position" && newValue) {
       this.setCornerPosition(newValue as WidgetPosition);
@@ -602,7 +602,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       if (stored === "dark" || stored === "light") {
         theme = stored;
       } else {
-        const attr = this.getAttribute("data-theme");
+        const attr = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
         if (attr === "dark" || attr === "light") {
           theme = attr;
         } else if (
@@ -646,13 +646,19 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       }
     }
 
+    // Use namespaced `data-cd-theme` on the custom element host so host CSS frameworks
+    // (e.g. DaisyUI / Bootstrap `[data-theme="dark"]` or `body:has([data-theme="dark"])`)
+    // never alter the host page theme when toggling the widget theme.
     if (typeof this.setAttribute === "function") {
-      this.setAttribute("data-theme", theme);
+      this.setAttribute("data-cd-theme", theme);
     }
     this.rootContainer?.setAttribute("data-theme", theme);
     this.agentSidebarEl?.setAttribute("data-theme", theme);
     this.composerEl?.setAttribute("data-theme", theme);
     this.compactBarEl?.setAttribute("data-theme", theme);
+    this.bookCornerBtn?.setAttribute("data-theme", theme);
+    this.dragPinEl?.setAttribute("data-theme", theme);
+    this.cornerSnapGhostEl?.setAttribute("data-theme", theme);
 
     if (this.composerThemeToggleBtn) {
       this.updateThemeToggleBtn(this.composerThemeToggleBtn);
@@ -665,8 +671,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       try {
         this.dispatchEvent(
           new CustomEvent("contextdrop:themechange", {
-            bubbles: true,
-            composed: true,
+            bubbles: false,
+            composed: false,
             detail: { theme }
           })
         );
@@ -837,7 +843,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       }
     }
 
-    const themeOverride = this.getAttribute("data-theme");
+    const themeOverride = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
     if (themeOverride === "dark" || themeOverride === "light") {
       this.currentTheme = themeOverride;
     }

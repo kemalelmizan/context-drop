@@ -1068,11 +1068,15 @@
     z-index: 2147483640;
   }
   
+  :host([data-cd-theme="dark"]),
   :host([data-theme="dark"]),
   .cd-root[data-theme="dark"],
   .cd-composer[data-theme="dark"],
   .cd-agent-sidebar[data-theme="dark"],
-  .cd-compact-bar[data-theme="dark"] {
+  .cd-compact-bar[data-theme="dark"],
+  .cd-book-corner[data-theme="dark"],
+  .cd-drag-pin[data-theme="dark"],
+  .cd-corner-snap-ghost[data-theme="dark"] {
     --cd-ink: #f8fafc;
     --cd-ink-secondary: #94a3b8;
     --cd-ink-subtle: #64748b;
@@ -1096,32 +1100,49 @@
     --cd-shadow-sidebar: -16px 0 42px -10px rgba(0, 0, 0, 0.65);
   }
   
+  :host([data-cd-theme="dark"]) .cd-corner-flap,
   :host([data-theme="dark"]) .cd-corner-flap,
+  .cd-book-corner[data-theme="dark"] .cd-corner-flap,
   .cd-root[data-theme="dark"] .cd-corner-flap {
     fill: #181b22;
     stroke: #333947;
   }
   
+  :host([data-cd-theme="dark"]) .cd-icon-btn:hover:not(:disabled),
   :host([data-theme="dark"]) .cd-icon-btn:hover:not(:disabled),
   .cd-agent-sidebar[data-theme="dark"] .cd-icon-btn:hover:not(:disabled),
-  .cd-composer[data-theme="dark"] .cd-icon-btn:hover:not(:disabled) {
+  .cd-composer[data-theme="dark"] .cd-icon-btn:hover:not(:disabled),
+  .cd-compact-bar[data-theme="dark"] .cd-icon-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.09);
     color: var(--cd-ink);
   }
   
+  :host([data-cd-theme="dark"]) .cd-starter-btn:hover,
   :host([data-theme="dark"]) .cd-starter-btn:hover,
   .cd-agent-sidebar[data-theme="dark"] .cd-starter-btn:hover {
     background: #282f3d;
     border-color: var(--cd-accent);
   }
   
+  :host([data-cd-theme="dark"]) .cd-btn-primary:hover:not(:disabled),
   :host([data-theme="dark"]) .cd-btn-primary:hover:not(:disabled),
   .cd-agent-sidebar[data-theme="dark"] .cd-btn-primary:hover:not(:disabled),
-  .cd-composer[data-theme="dark"] .cd-btn-primary:hover:not(:disabled) {
+  .cd-composer[data-theme="dark"] .cd-btn-primary:hover:not(:disabled),
+  .cd-compact-bar[data-theme="dark"] .cd-btn-primary:hover:not(:disabled) {
     background: #e2e8f0;
     border-color: #e2e8f0;
   }
   
+  :host([data-cd-theme="dark"]) .cd-btn-primary .cd-kbd,
+  :host([data-theme="dark"]) .cd-btn-primary .cd-kbd,
+  .cd-agent-sidebar[data-theme="dark"] .cd-btn-primary .cd-kbd,
+  .cd-composer[data-theme="dark"] .cd-btn-primary .cd-kbd,
+  .cd-compact-bar[data-theme="dark"] .cd-btn-primary .cd-kbd {
+    background: rgba(15, 17, 23, 0.14);
+    border-color: rgba(15, 17, 23, 0.24);
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-md-pre,
   :host([data-theme="dark"]) .cd-md-pre,
   .cd-agent-sidebar[data-theme="dark"] .cd-md-pre,
   .cd-composer[data-theme="dark"] .cd-md-pre {
@@ -1130,6 +1151,7 @@
     border-color: #242935;
   }
   
+  :host([data-cd-theme="dark"]) .cd-mode-btn.is-active,
   :host([data-theme="dark"]) .cd-mode-btn.is-active,
   .cd-agent-sidebar[data-theme="dark"] .cd-mode-btn.is-active,
   .cd-composer[data-theme="dark"] .cd-mode-btn.is-active {
@@ -1481,13 +1503,13 @@
     55% {
       border-radius: 18px 18px 18px 3px;
       background: var(--cd-pin);
-      color: var(--cd-surface);
+      color: #ffffff;
       transform: translate3d(-6px, -30px, 0) rotate(-6deg) scale(1.08);
     }
     100% {
       border-radius: 9999px 9999px 9999px 3px;
       background: var(--cd-pin);
-      color: var(--cd-surface);
+      color: #ffffff;
       transform: translate3d(-6px, -28px, 0) rotate(0deg) scale(1);
     }
   }
@@ -1518,7 +1540,7 @@
     justify-content: center;
     border-radius: 9999px 9999px 9999px 3px;
     background: var(--cd-pin);
-    color: var(--cd-surface);
+    color: #ffffff;
     border: 2px solid var(--cd-surface);
     box-shadow: var(--cd-shadow-pin);
     transform: translate3d(-6px, -28px, 0);
@@ -1874,7 +1896,7 @@
     border-radius: 11px 11px 11px 3px;
     border: 1px solid rgba(194, 65, 12, 0.25);
     background: var(--cd-pin);
-    color: var(--cd-surface);
+    color: #ffffff;
     font-family: var(--cd-font);
     font-size: 12px;
     font-weight: 600;
@@ -5299,7 +5321,7 @@
       : (class {}                                 );
   class ContextDropWidgetElement extends BaseHTMLElement {
            static get observedAttributes()           {
-      return ["data-position", "data-config", "data-theme"];
+      return ["data-position", "data-config", "data-theme", "data-cd-theme"];
     }
   
            shadow                    = null;
@@ -5411,7 +5433,7 @@
   
            attributeChangedCallback(name        , oldValue               , newValue               )       {
       if (oldValue === newValue) return;
-      if (name === "data-theme" && (newValue === "dark" || newValue === "light")) {
+      if ((name === "data-theme" || name === "data-cd-theme") && (newValue === "dark" || newValue === "light")) {
         this.applyTheme(newValue, false);
       } else if (name === "data-position" && newValue) {
         this.setCornerPosition(newValue                  );
@@ -5757,7 +5779,7 @@
         if (stored === "dark" || stored === "light") {
           theme = stored;
         } else {
-          const attr = this.getAttribute("data-theme");
+          const attr = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
           if (attr === "dark" || attr === "light") {
             theme = attr;
           } else if (
@@ -5801,13 +5823,19 @@
         }
       }
   
+      // Use namespaced `data-cd-theme` on the custom element host so host CSS frameworks
+      // (e.g. DaisyUI / Bootstrap `[data-theme="dark"]` or `body:has([data-theme="dark"])`)
+      // never alter the host page theme when toggling the widget theme.
       if (typeof this.setAttribute === "function") {
-        this.setAttribute("data-theme", theme);
+        this.setAttribute("data-cd-theme", theme);
       }
       this.rootContainer?.setAttribute("data-theme", theme);
       this.agentSidebarEl?.setAttribute("data-theme", theme);
       this.composerEl?.setAttribute("data-theme", theme);
       this.compactBarEl?.setAttribute("data-theme", theme);
+      this.bookCornerBtn?.setAttribute("data-theme", theme);
+      this.dragPinEl?.setAttribute("data-theme", theme);
+      this.cornerSnapGhostEl?.setAttribute("data-theme", theme);
   
       if (this.composerThemeToggleBtn) {
         this.updateThemeToggleBtn(this.composerThemeToggleBtn);
@@ -5820,8 +5848,8 @@
         try {
           this.dispatchEvent(
             new CustomEvent("contextdrop:themechange", {
-              bubbles: true,
-              composed: true,
+              bubbles: false,
+              composed: false,
               detail: { theme }
             })
           );
@@ -5992,7 +6020,7 @@
         }
       }
   
-      const themeOverride = this.getAttribute("data-theme");
+      const themeOverride = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
       if (themeOverride === "dark" || themeOverride === "light") {
         this.currentTheme = themeOverride;
       }

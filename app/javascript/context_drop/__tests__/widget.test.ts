@@ -1464,9 +1464,9 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
     );
   });
 
-  it("supports dark theme toggle on top bar, syncs theme attribute, and persists preference", async () => {
+  it("supports dark theme toggle on top bar strictly scoped to widget without altering host page theme", async () => {
     await withMountedWidget(
-      ({ widget, shadowRoot }) => {
+      ({ widget, shadowRoot, mockHtml, mockBody }) => {
         // Initially light theme
         assert.equal(widget.getTheme(), "light");
 
@@ -1486,23 +1486,40 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
         };
         widget.addEventListener("contextdrop:themechange", onThemeChange);
 
+        const leakedWindowEvents: string[] = [];
+        const onWindowThemeChange = (ev: Event) => {
+          const detail = (ev as CustomEvent).detail;
+          if (detail?.theme) leakedWindowEvents.push(detail.theme);
+        };
+        window.addEventListener("contextdrop:themechange", onWindowThemeChange);
+
         // Click theme toggle in composer
         composerThemeToggle.dispatchEvent(new MockUiEvent("click"));
 
         assert.equal(widget.getTheme(), "dark");
-        assert.equal(widget.getAttribute("data-theme"), "dark");
+        assert.equal(widget.getAttribute("data-cd-theme"), "dark");
+        assert.equal(widget.getAttribute("data-theme"), null, "Does not set generic data-theme on light-DOM host");
+        assert.equal(mockHtml.getAttribute("data-theme"), null, "Never alters host <html> theme");
+        assert.equal(mockBody.getAttribute("data-theme"), null, "Never alters host <body> theme");
         assert.equal(shadowRoot.querySelector(".cd-root")?.getAttribute("data-theme"), "dark");
         assert.equal(shadowRoot.querySelector(".cd-composer")?.getAttribute("data-theme"), "dark");
         assert.equal(shadowRoot.querySelector(".cd-agent-sidebar")?.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-compact-bar")?.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-book-corner")?.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-drag-pin")?.getAttribute("data-theme"), "dark");
         assert.equal(composerThemeToggle.getAttribute("aria-label"), "Switch to light theme");
         assert.equal(themeChangeEvents.length, 1);
         assert.equal(themeChangeEvents[0], "dark");
+        assert.equal(leakedWindowEvents.length, 0, "Theme change event stays scoped to widget element");
 
         // Click theme toggle in sidebar to toggle back
         sidebarThemeToggle.dispatchEvent(new MockUiEvent("click"));
 
         assert.equal(widget.getTheme(), "light");
-        assert.equal(widget.getAttribute("data-theme"), "light");
+        assert.equal(widget.getAttribute("data-cd-theme"), "light");
+        assert.equal(widget.getAttribute("data-theme"), null);
+        assert.equal(mockHtml.getAttribute("data-theme"), null);
+        assert.equal(mockBody.getAttribute("data-theme"), null);
         assert.equal(composerThemeToggle.getAttribute("aria-label"), "Switch to dark theme");
         assert.equal(themeChangeEvents.length, 2);
         assert.equal(themeChangeEvents[1], "light");
@@ -1510,10 +1527,13 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
         // Programmatic setTheme
         widget.setTheme("dark");
         assert.equal(widget.getTheme(), "dark");
+        assert.equal(mockHtml.getAttribute("data-theme"), null);
+        assert.equal(mockBody.getAttribute("data-theme"), null);
         assert.equal(themeChangeEvents.length, 3);
         assert.equal(themeChangeEvents[2], "dark");
 
         widget.removeEventListener("contextdrop:themechange", onThemeChange);
+        window.removeEventListener("contextdrop:themechange", onWindowThemeChange);
       },
       {
         "data-config": JSON.stringify({
