@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-10T11:32:00+07:00",
+  "generatedAt": "2026-11-12T11:31:00+07:00",
   "title": "Design System: ContextDrop",
   "extensions": {
     "colorMeta": {
@@ -10,10 +10,34 @@
         "canonical": "#c2410c",
         "tonalRamp": ["#431407", "#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fed7aa", "#ffedd5"]
       },
+      "pin-vermilion-deep": {
+        "role": "primary",
+        "displayName": "Pin Vermilion Deep",
+        "canonical": "#9a3412",
+        "tonalRamp": ["#431407", "#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fed7aa", "#ffedd5"]
+      },
+      "pin-vermilion-soft": {
+        "role": "primary",
+        "displayName": "Pin Vermilion Soft",
+        "canonical": "#ffedd5",
+        "tonalRamp": ["#431407", "#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fed7aa", "#ffedd5"]
+      },
       "inspector-cobalt": {
         "role": "secondary",
         "displayName": "Inspector Cobalt",
         "canonical": "#1d4ed8",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#dbeafe"]
+      },
+      "inspector-cobalt-deep": {
+        "role": "secondary",
+        "displayName": "Inspector Cobalt Deep",
+        "canonical": "#1e40af",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#dbeafe"]
+      },
+      "inspector-cobalt-soft": {
+        "role": "secondary",
+        "displayName": "Inspector Cobalt Soft",
+        "canonical": "#dbeafe",
         "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#dbeafe"]
       },
       "obsidian-ink": {
@@ -22,14 +46,82 @@
         "canonical": "#111318",
         "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
       },
+      "obsidian-hover": {
+        "role": "neutral",
+        "displayName": "Obsidian Hover",
+        "canonical": "#252a34",
+        "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
+      },
+      "slate-ink": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "canonical": "#4b5262",
+        "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
+      },
+      "subtle-ink": {
+        "role": "neutral",
+        "displayName": "Subtle Ink",
+        "canonical": "#5c6478",
+        "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
+      },
       "warm-paper": {
         "role": "neutral",
         "displayName": "Warm Paper",
         "canonical": "#faf9f6",
         "tonalRamp": ["#3a3834", "#57544e", "#78746c", "#a8a39a", "#d6d3cd", "#e4e1da", "#f1efea", "#faf9f6"]
+      },
+      "recessed-stone": {
+        "role": "neutral",
+        "displayName": "Recessed Stone",
+        "canonical": "#f1efea",
+        "tonalRamp": ["#3a3834", "#57544e", "#78746c", "#a8a39a", "#d6d3cd", "#e4e1da", "#f1efea", "#faf9f6"]
+      },
+      "elevated-white": {
+        "role": "neutral",
+        "displayName": "Elevated White",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#3a3834", "#57544e", "#78746c", "#a8a39a", "#d6d3cd", "#e4e1da", "#f1efea", "#faf9f6"]
+      },
+      "hairline-stone": {
+        "role": "neutral",
+        "displayName": "Hairline Stone",
+        "canonical": "#cbd5e1",
+        "tonalRamp": ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f8fafc"]
+      },
+      "danger-crimson": {
+        "role": "tertiary",
+        "displayName": "Danger Crimson",
+        "canonical": "#b91c1c",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fca5a5", "#fee2e2"]
+      },
+      "danger-soft": {
+        "role": "tertiary",
+        "displayName": "Danger Soft",
+        "canonical": "#fee2e2",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#fca5a5", "#fee2e2"]
+      },
+      "success-emerald": {
+        "role": "tertiary",
+        "displayName": "Success Emerald",
+        "canonical": "#15803d",
+        "tonalRamp": ["#052e16", "#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#86efac", "#dcfce7"]
+      },
+      "success-soft": {
+        "role": "tertiary",
+        "displayName": "Success Soft",
+        "canonical": "#dcfce7",
+        "tonalRamp": ["#052e16", "#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#86efac", "#dcfce7"]
       }
     },
     "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero titles and high-impact stat readouts."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Major section headers."
+      },
       "title": {
         "displayName": "Title",
         "purpose": "Chatbox header and layer disambiguation popover headings."
@@ -38,9 +130,17 @@
         "displayName": "Body",
         "purpose": "Session chat messages, composer textarea, and status banners."
       },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Micro-hints and secondary card captions."
+      },
       "label": {
         "displayName": "Monospace Label",
         "purpose": "CSS selectors, DOM ancestor paths, and tabular pixel geometry."
+      },
+      "micro": {
+        "displayName": "Monospace Micro",
+        "purpose": "Compact badge counters and keyboard shortcuts."
       }
     },
     "shadows": [
@@ -50,16 +150,26 @@
         "purpose": "Floating chatbox composer, compact pinning bar, and layer stack popover."
       },
       {
+        "name": "shadow-sidebar",
+        "value": "-14px 0 36px -12px rgba(17, 19, 24, 0.16)",
+        "purpose": "Docked Local BYOK Agentic Sidebar."
+      },
+      {
         "name": "shadow-pin",
         "value": "0 12px 24px -6px rgba(17, 19, 24, 0.24), 0 4px 10px -3px rgba(17, 19, 24, 0.12)",
         "purpose": "Freely draggable floating pin trigger dock."
+      },
+      {
+        "name": "shadow-book-corner",
+        "value": "drop-shadow(-2px 3px 5px rgba(17, 19, 24, 0.24))",
+        "purpose": "Folded book-corner launcher flap."
       }
     ],
     "motion": [
       {
         "name": "ease-out-expo",
         "value": "cubic-bezier(0.22, 1, 0.36, 1)",
-        "purpose": "Smooth bounding-box morphing when cycling DOM layers and opening the chatbox."
+        "purpose": "Smooth bounding-box morphing when cycling DOM layers, peeling corner folds, and opening surfaces."
       }
     ],
     "breakpoints": [
@@ -70,6 +180,14 @@
     ]
   },
   "components": [
+    {
+      "name": "Book-Corner Launcher",
+      "kind": "custom",
+      "refersTo": "book-corner-launcher",
+      "description": "Compact 38x38px folded paper corner launcher that animates into a pushpin when dragged.",
+      "html": "<div class=\"ds-book-corner\"><svg viewBox=\"0 0 40 40\" width=\"40\" height=\"40\"><polygon points=\"0,0 40,0 0,40\" fill=\"#c2410c\"/><polygon points=\"0,40 40,0 40,40\" fill=\"#faf9f6\"/><line x1=\"0\" y1=\"40\" x2=\"40\" y2=\"0\" stroke=\"#d6d3cd\" stroke-width=\"1\"/></svg></div>",
+      "css": ".ds-book-corner { width: 40px; height: 40px; cursor: grab; transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1); filter: drop-shadow(0 3px 6px rgba(17, 19, 24, 0.20)); } .ds-book-corner:hover { transform: scale(1.12); filter: drop-shadow(0 6px 12px rgba(17, 19, 24, 0.28)); }"
+    },
     {
       "name": "Top-Left Pin Selector",
       "kind": "button",
@@ -90,19 +208,35 @@
       "name": "Pinned Element Chip",
       "kind": "chip",
       "refersTo": "chip-element",
-      "description": "Context tray chip representing a pinned DOM element with live hover highlight.",
+      "description": "Context tray chip representing a pinned DOM element in staging/verbose mode.",
       "html": "<div class=\"ds-chip\"><span class=\"ds-chip-badge\">Pin</span><span class=\"ds-chip-label\">button#checkout-button</span></div>",
       "css": ".ds-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; background: #ffffff; border: 1px solid #d6d3cd; border-radius: 7px; font-size: 11.5px; color: #111318; } .ds-chip:hover { border-color: #c2410c; } .ds-chip-badge { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: #ffedd5; color: #9a3412; } .ds-chip-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }"
+    },
+    {
+      "name": "Production Smart Context Card",
+      "kind": "card",
+      "refersTo": "card-smart-context",
+      "description": "Merged component label and auto surrounding-context thumbnail for production quick feedback.",
+      "html": "<div class=\"ds-smart-card\"><div class=\"ds-smart-thumb\"><div class=\"ds-smart-frame\"></div></div><div class=\"ds-smart-info\"><span class=\"ds-smart-title\">“Complete Order” button</span><span class=\"ds-smart-sub\">Surrounding area included</span></div></div>",
+      "css": ".ds-smart-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #ffffff; border: 1px solid #d6d3cd; border-radius: 10px; } .ds-smart-thumb { width: 48px; height: 36px; background: #f1efea; border-radius: 6px; border: 1px solid #cbd5e1; position: relative; overflow: hidden; } .ds-smart-frame { position: absolute; inset: 6px 8px; border: 1.5px solid #c2410c; border-radius: 2px; } .ds-smart-info { display: flex; flex-direction: column; gap: 2px; } .ds-smart-title { font-size: 12.5px; font-weight: 600; color: #111318; } .ds-smart-sub { font-size: 11px; color: #4b5262; }"
+    },
+    {
+      "name": "Agent Diff Approval Card",
+      "kind": "card",
+      "refersTo": "card-diff-approval",
+      "description": "Staged file edit proposal inside the Local Agentic Sidebar with Apply and Reject controls.",
+      "html": "<div class=\"ds-diff-card\"><div class=\"ds-diff-header\"><span class=\"ds-diff-path\">app/views/orders/show.html.erb</span><span class=\"ds-diff-badge-add\">+3</span><span class=\"ds-diff-badge-del\">-1</span></div><div class=\"ds-diff-actions\"><button class=\"ds-diff-btn-apply\">Apply Change</button></div></div>",
+      "css": ".ds-diff-card { border: 1px solid #d6d3cd; border-radius: 10px; background: #faf9f6; overflow: hidden; } .ds-diff-header { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #f1efea; border-bottom: 1px solid #d6d3cd; font-size: 11.5px; } .ds-diff-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #111318; font-weight: 600; flex: 1; } .ds-diff-badge-add { color: #15803d; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; } .ds-diff-badge-del { color: #b91c1c; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; } .ds-diff-actions { padding: 6px 10px; display: flex; justify-content: flex-end; } .ds-diff-btn-apply { padding: 4px 10px; font-size: 11.5px; font-weight: 600; border-radius: 6px; background: #111318; color: #faf9f6; border: 1px solid #111318; cursor: pointer; }"
     }
   ],
   "narrative": {
     "northStar": "The Tactile Field Pin & Loupe",
-    "overview": "ContextDrop lives overlaid on arbitrary host Ruby on Rails applications. Its aesthetic combines warm archival paper surfaces (#faf9f6) and deep obsidian ink (#111318) with two high-precision instrument accents: Pin Vermilion (#c2410c) for physical pin-drop affordances and Inspector Cobalt (#1d4ed8) for live DOM geometry and layer disambiguation.",
+    "overview": "ContextDrop lives overlaid on arbitrary host Ruby on Rails applications. Because it must remain unmistakably distinct from whatever host page lies beneath it without creating visual noise, its aesthetic combines warm archival paper surfaces (#faf9f6) and deep obsidian ink (#111318) with two high-precision instrument accents: Pin Vermilion (#c2410c) for physical pin-drop affordances and Inspector Cobalt (#1d4ed8) for live DOM geometry and layer disambiguation. Every control is compact, draggable, and responsive. When the user activates the top-left Pin selector, the chatbox collapses into a compact floating bar with live DOM breadcrumbs while a cursor-tracked pushpin and layer popover allow surgical disambiguation of overlapping and deeply nested HTML elements.",
     "keyCharacteristics": [
-      "Asymmetric Pushpin Silhouette (11px 11px 11px 3px)",
-      "Warm Paper over Arbitrary Grounds (#faf9f6 / #f1efea)",
-      "Authored 1.75px Stroke Iconography",
-      "Tabular Measurement Numerals"
+      "Asymmetric Pushpin Silhouette: Pin triggers and markers use a directional teardrop/corner radius (11px 11px 11px 3px) pointing toward the anchored coordinate.",
+      "Warm Paper over Arbitrary Grounds: Warm alabaster (#faf9f6) and recessed stone (#f1efea) prevent the widget from blending into standard cold-white (#ffffff) or slate SaaS backgrounds.",
+      "Authored 1.75px Stroke Iconography: All icons use inline SVG paths with 1.75px stroke width and round caps/joins—never Unicode symbols or emoji stand-ins.",
+      "Tabular Measurement Numerals: All bounding-box dimensions (200×44), layer counters (2/5 layers), and timestamps enforce font-variant-numeric: tabular-nums."
     ],
     "rules": [
       {
@@ -128,4 +262,3 @@
     ]
   }
 }
-

@@ -59,7 +59,9 @@ typography:
     fontWeight: 600
     lineHeight: 1.25
 rounded:
+  sharp: "3px"
   xs: "4px"
+  badge: "5px"
   sm: "6px"
   chip: "7px"
   row: "8px"
@@ -67,6 +69,7 @@ rounded:
   card: "12px"
   bar: "14px"
   lg: "16px"
+  pin-morph: "18px"
   pill: "9999px"
   pin: "11px 11px 11px 3px"
 spacing:
