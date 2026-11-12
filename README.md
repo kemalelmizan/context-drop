@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop decoding vague bug reports! Let users pin the problem—and fix it right beside your Next.js or Rails app</strong><br />
-  Next.js &amp; Rails Engines · Book-Corner Peel-to-Pin Widget · Local BYOK Agentic Sidebar · Unified Multi-Env MCP Hub
+  <strong>Stop decoding vague bug reports! Let users pin the problem and fix it right beside your app</strong><br />
+  Next.js &amp; Rails · Pin Widget · Multi-Env MCP Hub
 </p>
 
 <p align="center">
