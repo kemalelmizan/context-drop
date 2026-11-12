@@ -108,6 +108,7 @@ export class ElementPicker {
   private boundMouseMove: (e: MouseEvent) => void;
   private boundClickCapture: (e: MouseEvent) => void;
   private boundPointerCapture: (e: Event) => void;
+  private boundBlurSuppression: (e: Event) => void;
   private boundWheelCapture: (e: WheelEvent) => void;
   private boundKeyDown: (e: KeyboardEvent) => void;
   private boundScrollOrResize: () => void;
@@ -117,6 +118,7 @@ export class ElementPicker {
     this.boundMouseMove = this.handleMouseMove.bind(this);
     this.boundClickCapture = this.handleClickCapture.bind(this);
     this.boundPointerCapture = this.handlePointerSuppression.bind(this);
+    this.boundBlurSuppression = this.handleBlurSuppression.bind(this);
     this.boundWheelCapture = this.handleWheelCapture.bind(this);
     this.boundKeyDown = this.handleKeyDown.bind(this);
     this.boundScrollOrResize = this.handleViewportScrollOrResize.bind(this);
@@ -171,6 +173,8 @@ export class ElementPicker {
     window.addEventListener("mousedown", this.boundPointerCapture, { capture: true });
     window.addEventListener("mouseup", this.boundPointerCapture, { capture: true });
     window.addEventListener("click", this.boundClickCapture, { capture: true });
+    window.addEventListener("blur", this.boundBlurSuppression, { capture: true });
+    window.addEventListener("focusout", this.boundBlurSuppression, { capture: true });
     window.addEventListener("wheel", this.boundWheelCapture, { capture: true, passive: false });
     window.addEventListener("keydown", this.boundKeyDown, { capture: true });
     window.addEventListener("scroll", this.boundScrollOrResize, { capture: true, passive: true });
@@ -198,6 +202,8 @@ export class ElementPicker {
       window.removeEventListener("mousedown", this.boundPointerCapture, { capture: true });
       window.removeEventListener("mouseup", this.boundPointerCapture, { capture: true });
       window.removeEventListener("click", this.boundClickCapture, { capture: true });
+      window.removeEventListener("blur", this.boundBlurSuppression, { capture: true });
+      window.removeEventListener("focusout", this.boundBlurSuppression, { capture: true });
       window.removeEventListener("wheel", this.boundWheelCapture, { capture: true });
       window.removeEventListener("keydown", this.boundKeyDown, { capture: true });
       window.removeEventListener("scroll", this.boundScrollOrResize, { capture: true });
@@ -207,6 +213,13 @@ export class ElementPicker {
     this.unmountSelectionUi();
     this.notifyStateChange();
     this.callbacks.onExit();
+  }
+
+  public highlightAtPoint(x: number, y: number): void {
+    if (!this.active || typeof document === "undefined") return;
+    this.lastPointerX = x;
+    this.lastPointerY = y;
+    this.updateCandidatesFromPoint(x, y);
   }
 
   public focusCandidateElement(el: Element): void {
@@ -817,6 +830,9 @@ export class ElementPicker {
     ].join(";");
 
     const clickHint = document.createElement("span");
+    clickHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
+    clickHint.appendChild(this.createKbdEl("Space"));
+    clickHint.appendChild(this.createSpanEl("or"));
     const clickStrong = document.createElement("strong");
     clickStrong.style.cssText = pinnedInfo
       ? "color: #ffedd5; font-weight: 600;"
@@ -847,6 +863,8 @@ export class ElementPicker {
 
     const escHint = document.createElement("span");
     escHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
+    escHint.appendChild(this.createKbdEl("⌥⇧P"));
+    escHint.appendChild(this.createSpanEl("freeze · "));
     escHint.appendChild(this.createKbdEl("Esc"));
     escHint.appendChild(this.createSpanEl("done"));
     coachRow.appendChild(escHint);
@@ -1076,8 +1094,10 @@ export class ElementPicker {
 
     const keysHint = document.createElement("span");
     keysHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
-    keysHint.appendChild(this.createKbdEl("Enter"));
+    keysHint.appendChild(this.createKbdEl("Space"));
     keysHint.appendChild(this.createSpanEl("pin · "));
+    keysHint.appendChild(this.createKbdEl("⌥⇧P"));
+    keysHint.appendChild(this.createSpanEl("freeze · "));
     keysHint.appendChild(this.createKbdEl("Esc"));
     keysHint.appendChild(this.createSpanEl("done"));
 
@@ -1351,6 +1371,20 @@ export class ElementPicker {
     }
   }
 
+  private handleBlurSuppression(event: Event): void {
+    if (!this.active) return;
+    if (this.isInternalUiEvent(event)) {
+      return;
+    }
+
+    // Freeze DOM states: suppress blur / focusout on host elements while picker is active
+    // so transient popovers, tooltips, flyout menus, and modals remain open
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+  }
+
   private handleClickCapture(event: MouseEvent): void {
     if (!this.active) return;
     if (this.isInternalUiEvent(event)) {
@@ -1380,6 +1414,37 @@ export class ElementPicker {
       event.preventDefault();
       event.stopPropagation();
       this.stop();
+      return;
+    }
+
+    // Alt+Shift+P / Option+Shift+P toggle / exit Freeze & Pin mode
+    if (
+      event.altKey &&
+      event.shiftKey &&
+      (event.code === "KeyP" || event.key.toLowerCase() === "p")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.stop();
+      return;
+    }
+
+    // Space key freezes & pins the currently hovered element without triggering mouse clicks
+    if (event.key === " " || event.key === "Spacebar" || event.code === "Space") {
+      if (this.isInternalUiEvent(event)) return;
+      const candidate = this.getActiveCandidate();
+      if (candidate) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") {
+          event.stopImmediatePropagation();
+        }
+        this.commitCandidateSelection(
+          candidate.element,
+          this.lastPointerX || 80,
+          this.lastPointerY || 80
+        );
+      }
       return;
     }
 

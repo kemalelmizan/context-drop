@@ -89,6 +89,10 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private statusEl: HTMLDivElement | null = null;
   private fileInputEl: HTMLInputElement | null = null;
   private submitBtn: HTMLButtonElement | null = null;
+  private lastPointerX: number = 0;
+  private lastPointerY: number = 0;
+  private boundTrackPointer: (ev: MouseEvent) => void;
+  private boundGlobalKeyDown: (ev: KeyboardEvent) => void;
 
   public connectedCallback(): void {
     if (!this.shadow) {
@@ -96,6 +100,32 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
     this.readDataAttributes();
     this.renderShadowDom();
+
+    this.boundTrackPointer = (ev: MouseEvent) => {
+      this.lastPointerX = ev.clientX;
+      this.lastPointerY = ev.clientY;
+    };
+
+    this.boundGlobalKeyDown = (ev: KeyboardEvent) => {
+      // Alt+Shift+P / Option+Shift+P toggles Freeze & Pin mode from anywhere on the host page
+      if (
+        ev.altKey &&
+        ev.shiftKey &&
+        (ev.code === "KeyP" || (typeof ev.key === "string" && ev.key.toLowerCase() === "p"))
+      ) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof ev.stopImmediatePropagation === "function") {
+          ev.stopImmediatePropagation();
+        }
+        this.togglePinSelection();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("mousemove", this.boundTrackPointer, { capture: true, passive: true });
+      window.addEventListener("keydown", this.boundGlobalKeyDown, { capture: true });
+    }
 
     this.picker = new ElementPicker({
       onSelect: (snapshot, el) => {
@@ -145,6 +175,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.picker.stop();
     }
     this.picker?.hideExternalPreview();
+
+    if (typeof window !== "undefined") {
+      window.removeEventListener("mousemove", this.boundTrackPointer, { capture: true });
+      window.removeEventListener("keydown", this.boundGlobalKeyDown, { capture: true });
+    }
   }
 
   public getConfig(): WidgetConfig {
@@ -216,6 +251,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
     this.minimizeToCompactBar();
     this.picker.start();
+    if (this.lastPointerX > 0 && this.lastPointerY > 0) {
+      this.picker.highlightAtPoint(this.lastPointerX, this.lastPointerY);
+    }
     this.syncUiStates();
   }
 
@@ -449,7 +487,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const compactPinBtn = document.createElement("button");
     compactPinBtn.type = "button";
     compactPinBtn.className = "cd-pin-corner-btn is-active";
-    compactPinBtn.setAttribute("aria-label", "Toggle element pin mode");
+    compactPinBtn.title = "Toggle Freeze & Pin (⌥⇧P)";
+    compactPinBtn.setAttribute("aria-label", "Toggle element pin mode (Option+Shift+P)");
     compactPinBtn.innerHTML = `${ICON_PIN}<span>Pinning</span>`;
     compactPinBtn.addEventListener("click", () => this.togglePinSelection());
     this.compactPinBtn = compactPinBtn;
@@ -532,8 +571,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       const cornerPinBtn = document.createElement("button");
       cornerPinBtn.type = "button";
       cornerPinBtn.className = "cd-pin-corner-btn";
-      cornerPinBtn.title = "Pin any HTML element on the page as context";
-      cornerPinBtn.setAttribute("aria-label", "Select DOM element on page");
+      cornerPinBtn.title = "Freeze & Pin element (⌥⇧P)";
+      cornerPinBtn.setAttribute("aria-label", "Select DOM element on page (Option+Shift+P)");
       cornerPinBtn.innerHTML = `${ICON_PIN}<span>Pin Element</span>`;
       cornerPinBtn.addEventListener("click", () => this.startPinSelection());
       this.cornerPinBtn = cornerPinBtn;
@@ -640,8 +679,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       const pickBtn = document.createElement("button");
       pickBtn.type = "button";
       pickBtn.className = "cd-btn";
-      pickBtn.setAttribute("aria-label", "Pin HTML element as context");
-      pickBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
+      pickBtn.title = "Freeze & Pin element (⌥⇧P)";
+      pickBtn.setAttribute("aria-label", "Pin HTML element as context (Option+Shift+P)");
+      pickBtn.innerHTML = `${ICON_PIN}<span>Pin</span><kbd class="cd-kbd">⌥⇧P</kbd>`;
       pickBtn.addEventListener("click", () => this.startPinSelection());
       actions.appendChild(pickBtn);
     }
@@ -697,8 +737,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       const floatingPinBtn = document.createElement("button");
       floatingPinBtn.type = "button";
       floatingPinBtn.className = "cd-floating-pin-btn";
-      floatingPinBtn.title = "Pin an element on the page (or drag to move)";
-      floatingPinBtn.setAttribute("aria-label", "Pin element on page");
+      floatingPinBtn.title = "Freeze & Pin element (⌥⇧P, or drag to move)";
+      floatingPinBtn.setAttribute("aria-label", "Freeze & Pin element on page (Option+Shift+P)");
       floatingPinBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
       this.attachDragHandle(floatingPinBtn, () => this.startPinSelection());
       this.floatingPinBtn = floatingPinBtn;
@@ -797,7 +837,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       if (pinnedCount === 0) {
         const coach = document.createElement("span");
         coach.className = "cd-compact-coach-text";
-        coach.innerHTML = `<strong>Click</strong><span>element to pin</span><span>·</span><span class="cd-compact-wheel-icon">${ICON_SCROLL_VERTICAL}</span><strong>Scroll</strong><span>layers</span>`;
+        coach.innerHTML = `<strong>Space</strong><span>or click to pin</span><span>·</span><span class="cd-compact-wheel-icon">${ICON_SCROLL_VERTICAL}</span><strong>Scroll</strong><span>layers</span><span>·</span><kbd class="cd-kbd">⌥⇧P</kbd><span>freeze</span>`;
         this.compactStatusEl.appendChild(coach);
       } else {
         const latest = this.elementReferences[pinnedCount - 1];
@@ -831,7 +871,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
         const addMore = document.createElement("span");
         addMore.className = "cd-compact-coach-text";
-        addMore.textContent = "Click another to add";
+        addMore.innerHTML = `<strong>Space</strong><span>or click to add more</span>`;
         this.compactStatusEl.appendChild(addMore);
       }
 
@@ -882,8 +922,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
       const p2 = document.createElement("p");
       p2.className = "cd-chat-empty-hint";
-      p2.textContent =
-        "Click Pin Element, scroll the wheel to step through overlapping layers, click once to pin, and press Esc when done.";
+      p2.innerHTML =
+        "Press <kbd class=\"cd-kbd\">⌥⇧P</kbd> anywhere or click Pin to freeze &amp; pin, scroll to cycle layers, and press <kbd class=\"cd-kbd\">Space</kbd> to pin instantly.";
 
       emptyBox.appendChild(p1);
       emptyBox.appendChild(p2);

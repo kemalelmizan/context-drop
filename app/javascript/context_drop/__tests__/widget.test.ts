@@ -349,7 +349,11 @@ class MockUiEvent {
       deltaY?: number;
       deltaMode?: number;
       key?: string;
+      code?: string;
       shiftKey?: boolean;
+      altKey?: boolean;
+      ctrlKey?: boolean;
+      metaKey?: boolean;
     } = {}
   ) {
     this.type = type;
@@ -359,10 +363,11 @@ class MockUiEvent {
     this.deltaY = init.deltaY ?? 0;
     this.deltaMode = init.deltaMode ?? 0;
     this.key = init.key ?? "";
+    this.code = init.code ?? "";
     this.shiftKey = init.shiftKey ?? false;
-    this.altKey = false;
-    this.ctrlKey = false;
-    this.metaKey = false;
+    this.altKey = init.altKey ?? false;
+    this.ctrlKey = init.ctrlKey ?? false;
+    this.metaKey = init.metaKey ?? false;
   }
 
   public preventDefault(): void {
@@ -968,6 +973,68 @@ describe("ContextDrop Floating Dock & Drag Handle Interactions", () => {
       assert.equal(composer.hidden, false);
       assert.equal(compactBar.hidden, true);
       assert.equal(mockBody.querySelector("[data-context-drop-ui='pinned-badge']"), null);
+    });
+  });
+
+  it("activates Freeze & Pin via Alt+Shift+P, pins candidate on Space, and suppresses blur events", async () => {
+    await withMountedWidget(({ widget, shadowRoot, mockBody, mockDocument, mockWindow }) => {
+      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      assert.ok(compactBar && composer);
+
+      const navMenu = new MockDomElement("nav");
+      navMenu.setAttribute("id", "transient-dropdown");
+      const menuItem = new MockDomElement("a");
+      menuItem.setAttribute("id", "dimensions-link");
+      menuItem.textContent = "Dimensions";
+      menuItem.setRect({ left: 100, top: 60, width: 140, height: 32 });
+      navMenu.appendChild(menuItem);
+      mockBody.appendChild(navMenu);
+
+      const pointNodes = [menuItem, navMenu];
+      mockDocument.elementsFromPoint = () => pointNodes;
+
+      // Track pointer at (150, 80)
+      mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 150, clientY: 80 }));
+
+      // Press Alt+Shift+P to trigger Freeze & Pin globally
+      const freezeKeyEv = new MockUiEvent("keydown", {
+        key: "p",
+        code: "KeyP",
+        altKey: true,
+        shiftKey: true
+      });
+      mockWindow.dispatchEvent(freezeKeyEv);
+      assert.equal(freezeKeyEv.defaultPrevented, true);
+      assert.equal(compactBar.hidden, false);
+
+      // Verify blur event suppression: blur on host element should be stopped
+      const blurEv = new MockUiEvent("blur", {});
+      mockWindow.dispatchEvent(blurEv);
+      assert.equal(blurEv.propagationStopped, true);
+
+      // Verify Spacebar commits the candidate without firing mouse click
+      const spaceKeyEv = new MockUiEvent("keydown", {
+        key: " ",
+        code: "Space"
+      });
+      mockWindow.dispatchEvent(spaceKeyEv);
+      assert.equal(spaceKeyEv.defaultPrevented, true);
+
+      // Pinned elements list should now contain the candidate
+      assert.equal(widget.getElementReferences().length, 1);
+      assert.equal(widget.getElementReferences()[0].selector, "#dimensions-link");
+
+      // Press Alt+Shift+P again to exit Freeze & Pin mode
+      const exitKeyEv = new MockUiEvent("keydown", {
+        key: "p",
+        code: "KeyP",
+        altKey: true,
+        shiftKey: true
+      });
+      mockWindow.dispatchEvent(exitKeyEv);
+      assert.equal(compactBar.hidden, true);
+      assert.equal(composer.hidden, false);
     });
   });
 });

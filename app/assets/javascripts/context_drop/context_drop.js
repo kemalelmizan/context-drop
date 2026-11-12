@@ -1666,6 +1666,7 @@
             boundMouseMove                         ;
             boundClickCapture                         ;
             boundPointerCapture                    ;
+            boundBlurSuppression                    ;
             boundWheelCapture                         ;
             boundKeyDown                            ;
             boundScrollOrResize            ;
@@ -1675,6 +1676,7 @@
       this.boundMouseMove = this.handleMouseMove.bind(this);
       this.boundClickCapture = this.handleClickCapture.bind(this);
       this.boundPointerCapture = this.handlePointerSuppression.bind(this);
+      this.boundBlurSuppression = this.handleBlurSuppression.bind(this);
       this.boundWheelCapture = this.handleWheelCapture.bind(this);
       this.boundKeyDown = this.handleKeyDown.bind(this);
       this.boundScrollOrResize = this.handleViewportScrollOrResize.bind(this);
@@ -1729,6 +1731,8 @@
       window.addEventListener("mousedown", this.boundPointerCapture, { capture: true });
       window.addEventListener("mouseup", this.boundPointerCapture, { capture: true });
       window.addEventListener("click", this.boundClickCapture, { capture: true });
+      window.addEventListener("blur", this.boundBlurSuppression, { capture: true });
+      window.addEventListener("focusout", this.boundBlurSuppression, { capture: true });
       window.addEventListener("wheel", this.boundWheelCapture, { capture: true, passive: false });
       window.addEventListener("keydown", this.boundKeyDown, { capture: true });
       window.addEventListener("scroll", this.boundScrollOrResize, { capture: true, passive: true });
@@ -1756,6 +1760,8 @@
         window.removeEventListener("mousedown", this.boundPointerCapture, { capture: true });
         window.removeEventListener("mouseup", this.boundPointerCapture, { capture: true });
         window.removeEventListener("click", this.boundClickCapture, { capture: true });
+        window.removeEventListener("blur", this.boundBlurSuppression, { capture: true });
+        window.removeEventListener("focusout", this.boundBlurSuppression, { capture: true });
         window.removeEventListener("wheel", this.boundWheelCapture, { capture: true });
         window.removeEventListener("keydown", this.boundKeyDown, { capture: true });
         window.removeEventListener("scroll", this.boundScrollOrResize, { capture: true });
@@ -1765,6 +1771,13 @@
       this.unmountSelectionUi();
       this.notifyStateChange();
       this.callbacks.onExit();
+    }
+  
+           highlightAtPoint(x        , y        )       {
+      if (!this.active || typeof document === "undefined") return;
+      this.lastPointerX = x;
+      this.lastPointerY = y;
+      this.updateCandidatesFromPoint(x, y);
     }
   
            focusCandidateElement(el         )       {
@@ -2375,6 +2388,9 @@
       ].join(";");
   
       const clickHint = document.createElement("span");
+      clickHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
+      clickHint.appendChild(this.createKbdEl("Space"));
+      clickHint.appendChild(this.createSpanEl("or"));
       const clickStrong = document.createElement("strong");
       clickStrong.style.cssText = pinnedInfo
         ? "color: #ffedd5; font-weight: 600;"
@@ -2405,6 +2421,8 @@
   
       const escHint = document.createElement("span");
       escHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
+      escHint.appendChild(this.createKbdEl("⌥⇧P"));
+      escHint.appendChild(this.createSpanEl("freeze · "));
       escHint.appendChild(this.createKbdEl("Esc"));
       escHint.appendChild(this.createSpanEl("done"));
       coachRow.appendChild(escHint);
@@ -2634,8 +2652,10 @@
   
       const keysHint = document.createElement("span");
       keysHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
-      keysHint.appendChild(this.createKbdEl("Enter"));
+      keysHint.appendChild(this.createKbdEl("Space"));
       keysHint.appendChild(this.createSpanEl("pin · "));
+      keysHint.appendChild(this.createKbdEl("⌥⇧P"));
+      keysHint.appendChild(this.createSpanEl("freeze · "));
       keysHint.appendChild(this.createKbdEl("Esc"));
       keysHint.appendChild(this.createSpanEl("done"));
   
@@ -2909,6 +2929,20 @@
       }
     }
   
+            handleBlurSuppression(event       )       {
+      if (!this.active) return;
+      if (this.isInternalUiEvent(event)) {
+        return;
+      }
+  
+      // Freeze DOM states: suppress blur / focusout on host elements while picker is active
+      // so transient popovers, tooltips, flyout menus, and modals remain open
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+    }
+  
             handleClickCapture(event            )       {
       if (!this.active) return;
       if (this.isInternalUiEvent(event)) {
@@ -2938,6 +2972,37 @@
         event.preventDefault();
         event.stopPropagation();
         this.stop();
+        return;
+      }
+  
+      // Alt+Shift+P / Option+Shift+P toggle / exit Freeze & Pin mode
+      if (
+        event.altKey &&
+        event.shiftKey &&
+        (event.code === "KeyP" || event.key.toLowerCase() === "p")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.stop();
+        return;
+      }
+  
+      // Space key freezes & pins the currently hovered element without triggering mouse clicks
+      if (event.key === " " || event.key === "Spacebar" || event.code === "Space") {
+        if (this.isInternalUiEvent(event)) return;
+        const candidate = this.getActiveCandidate();
+        if (candidate) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === "function") {
+            event.stopImmediatePropagation();
+          }
+          this.commitCandidateSelection(
+            candidate.element,
+            this.lastPointerX || 80,
+            this.lastPointerY || 80
+          );
+        }
         return;
       }
   
@@ -3032,6 +3097,10 @@
             statusEl                        = null;
             fileInputEl                          = null;
             submitBtn                           = null;
+            lastPointerX         = 0;
+            lastPointerY         = 0;
+            boundTrackPointer                          ;
+            boundGlobalKeyDown                             ;
   
            connectedCallback()       {
       if (!this.shadow) {
@@ -3039,6 +3108,32 @@
       }
       this.readDataAttributes();
       this.renderShadowDom();
+  
+      this.boundTrackPointer = (ev            ) => {
+        this.lastPointerX = ev.clientX;
+        this.lastPointerY = ev.clientY;
+      };
+  
+      this.boundGlobalKeyDown = (ev               ) => {
+        // Alt+Shift+P / Option+Shift+P toggles Freeze & Pin mode from anywhere on the host page
+        if (
+          ev.altKey &&
+          ev.shiftKey &&
+          (ev.code === "KeyP" || (typeof ev.key === "string" && ev.key.toLowerCase() === "p"))
+        ) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (typeof ev.stopImmediatePropagation === "function") {
+            ev.stopImmediatePropagation();
+          }
+          this.togglePinSelection();
+        }
+      };
+  
+      if (typeof window !== "undefined") {
+        window.addEventListener("mousemove", this.boundTrackPointer, { capture: true, passive: true });
+        window.addEventListener("keydown", this.boundGlobalKeyDown, { capture: true });
+      }
   
       this.picker = new ElementPicker({
         onSelect: (snapshot, el) => {
@@ -3088,6 +3183,11 @@
         this.picker.stop();
       }
       this.picker?.hideExternalPreview();
+  
+      if (typeof window !== "undefined") {
+        window.removeEventListener("mousemove", this.boundTrackPointer, { capture: true });
+        window.removeEventListener("keydown", this.boundGlobalKeyDown, { capture: true });
+      }
     }
   
            getConfig()               {
@@ -3159,6 +3259,9 @@
       }
       this.minimizeToCompactBar();
       this.picker.start();
+      if (this.lastPointerX > 0 && this.lastPointerY > 0) {
+        this.picker.highlightAtPoint(this.lastPointerX, this.lastPointerY);
+      }
       this.syncUiStates();
     }
   
@@ -3392,7 +3495,8 @@
       const compactPinBtn = document.createElement("button");
       compactPinBtn.type = "button";
       compactPinBtn.className = "cd-pin-corner-btn is-active";
-      compactPinBtn.setAttribute("aria-label", "Toggle element pin mode");
+      compactPinBtn.title = "Toggle Freeze & Pin (⌥⇧P)";
+      compactPinBtn.setAttribute("aria-label", "Toggle element pin mode (Option+Shift+P)");
       compactPinBtn.innerHTML = `${ICON_PIN}<span>Pinning</span>`;
       compactPinBtn.addEventListener("click", () => this.togglePinSelection());
       this.compactPinBtn = compactPinBtn;
@@ -3475,8 +3579,8 @@
         const cornerPinBtn = document.createElement("button");
         cornerPinBtn.type = "button";
         cornerPinBtn.className = "cd-pin-corner-btn";
-        cornerPinBtn.title = "Pin any HTML element on the page as context";
-        cornerPinBtn.setAttribute("aria-label", "Select DOM element on page");
+        cornerPinBtn.title = "Freeze & Pin element (⌥⇧P)";
+        cornerPinBtn.setAttribute("aria-label", "Select DOM element on page (Option+Shift+P)");
         cornerPinBtn.innerHTML = `${ICON_PIN}<span>Pin Element</span>`;
         cornerPinBtn.addEventListener("click", () => this.startPinSelection());
         this.cornerPinBtn = cornerPinBtn;
@@ -3583,8 +3687,9 @@
         const pickBtn = document.createElement("button");
         pickBtn.type = "button";
         pickBtn.className = "cd-btn";
-        pickBtn.setAttribute("aria-label", "Pin HTML element as context");
-        pickBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
+        pickBtn.title = "Freeze & Pin element (⌥⇧P)";
+        pickBtn.setAttribute("aria-label", "Pin HTML element as context (Option+Shift+P)");
+        pickBtn.innerHTML = `${ICON_PIN}<span>Pin</span><kbd class="cd-kbd">⌥⇧P</kbd>`;
         pickBtn.addEventListener("click", () => this.startPinSelection());
         actions.appendChild(pickBtn);
       }
@@ -3640,8 +3745,8 @@
         const floatingPinBtn = document.createElement("button");
         floatingPinBtn.type = "button";
         floatingPinBtn.className = "cd-floating-pin-btn";
-        floatingPinBtn.title = "Pin an element on the page (or drag to move)";
-        floatingPinBtn.setAttribute("aria-label", "Pin element on page");
+        floatingPinBtn.title = "Freeze & Pin element (⌥⇧P, or drag to move)";
+        floatingPinBtn.setAttribute("aria-label", "Freeze & Pin element on page (Option+Shift+P)");
         floatingPinBtn.innerHTML = `${ICON_PIN}<span>Pin</span>`;
         this.attachDragHandle(floatingPinBtn, () => this.startPinSelection());
         this.floatingPinBtn = floatingPinBtn;
@@ -3740,7 +3845,7 @@
         if (pinnedCount === 0) {
           const coach = document.createElement("span");
           coach.className = "cd-compact-coach-text";
-          coach.innerHTML = `<strong>Click</strong><span>element to pin</span><span>·</span><span class="cd-compact-wheel-icon">${ICON_SCROLL_VERTICAL}</span><strong>Scroll</strong><span>layers</span>`;
+          coach.innerHTML = `<strong>Space</strong><span>or click to pin</span><span>·</span><span class="cd-compact-wheel-icon">${ICON_SCROLL_VERTICAL}</span><strong>Scroll</strong><span>layers</span><span>·</span><kbd class="cd-kbd">⌥⇧P</kbd><span>freeze</span>`;
           this.compactStatusEl.appendChild(coach);
         } else {
           const latest = this.elementReferences[pinnedCount - 1];
@@ -3774,7 +3879,7 @@
   
           const addMore = document.createElement("span");
           addMore.className = "cd-compact-coach-text";
-          addMore.textContent = "Click another to add";
+          addMore.innerHTML = `<strong>Space</strong><span>or click to add more</span>`;
           this.compactStatusEl.appendChild(addMore);
         }
   
@@ -3825,8 +3930,8 @@
   
         const p2 = document.createElement("p");
         p2.className = "cd-chat-empty-hint";
-        p2.textContent =
-          "Click Pin Element, scroll the wheel to step through overlapping layers, click once to pin, and press Esc when done.";
+        p2.innerHTML =
+          "Press <kbd class=\"cd-kbd\">⌥⇧P</kbd> anywhere or click Pin to freeze &amp; pin, scroll to cycle layers, and press <kbd class=\"cd-kbd\">Space</kbd> to pin instantly.";
   
         emptyBox.appendChild(p1);
         emptyBox.appendChild(p2);

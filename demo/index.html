@@ -129,6 +129,58 @@
       background: #252a34;
     }
 
+    /* Transient Dropdown for Testing Freeze & Pin */
+    .demo-dropdown-wrap {
+      position: relative;
+      display: inline-block;
+    }
+
+    .demo-dropdown-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      box-shadow: var(--shadow-elevated);
+      width: 220px;
+      padding: 6px 0;
+      z-index: 50;
+    }
+
+    .demo-dropdown-menu.is-open {
+      display: block;
+    }
+
+    .demo-dropdown-header {
+      padding: 6px 14px;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+    }
+
+    .demo-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      color: var(--ink-primary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background-color 0.15s ease;
+      cursor: pointer;
+    }
+
+    .demo-dropdown-item:hover,
+    .demo-dropdown-item:focus {
+      background: var(--bg-recessed);
+      color: var(--accent-cobalt);
+    }
+
     /* Main Workspace Layout */
     .demo-shell {
       max-width: 1240px;
@@ -452,6 +504,26 @@
       <span class="demo-brand-badge">ContextDrop Live Demo</span>
     </div>
     <div class="demo-quick-actions">
+      <div class="demo-dropdown-wrap" id="transient-dropdown-container">
+        <button type="button" class="demo-btn" id="demo-dropdown-trigger" aria-expanded="false" aria-haspopup="true" title="Open transient menu to test DOM freeze (⌥⇧P)">
+          <span>Options Menu ▾</span>
+        </button>
+        <div class="demo-dropdown-menu" id="demo-dropdown-menu" role="menu">
+          <div class="demo-dropdown-header">Transient Menu (Closes on Blur)</div>
+          <a class="demo-dropdown-item" id="menu-export-csv" role="menuitem" tabindex="0">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Export Manifest (.csv)</span>
+          </a>
+          <a class="demo-dropdown-item" id="menu-reroute-carrier" role="menuitem" tabindex="0">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            <span>Re-route Carrier</span>
+          </a>
+          <a class="demo-dropdown-item" id="menu-audit-tags" role="menuitem" tabindex="0">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span>Audit Routing Tags</span>
+          </a>
+        </div>
+      </div>
       <button type="button" class="demo-btn demo-btn-pin" id="demo-trigger-pin">
         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.8 3.2l5 5-2.1 2.1-1.8-.6-3.2 3.2.6 2.5-1.6 1.6-3.1-3.1-3.1 3.1v-.1l3.1-3.1-3.1-3.1 1.6-1.6 2.5.6 3.2-3.2-.6-1.8 2.1-2.1z"/></svg>
         <span>Start Pinning Elements</span>
@@ -597,13 +669,16 @@
         </div>
         <ol class="guide-steps">
           <li>
+            <strong>Freeze &amp; Pin Transient Menus (<kbd class="code-tag">⌥⇧P</kbd> or <kbd class="code-tag">Alt+Shift+P</kbd>):</strong> Click <strong>Options Menu ▾</strong> in the top header. While the menu is open, press <code class="code-tag">⌥⇧P</code> (or <code class="code-tag">Alt+Shift+P</code>). ContextDrop freezes the DOM and suppresses blur events, keeping the transient menu open. Hover over any menu item and press <code class="code-tag">Space</code> to pin it immediately without triggering clicks!
+          </li>
+          <li>
             <strong>Drag the Floating Pin Anywhere:</strong> Grab the grip or pin dock at the top-left corner and drag it anywhere on the screen.
           </li>
           <li>
-            <strong>Scrub Overlapping Layers with the Wheel:</strong> Click <strong>Pin</strong>, hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> to unfurl the live layer HUD and select the underlying button or card.
+            <strong>Scrub Overlapping Layers with the Wheel:</strong> Click <strong>Pin</strong> (or press <code class="code-tag">⌥⇧P</code>), hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> to unfurl the live layer HUD and select the underlying button or card.
           </li>
           <li>
-            <strong>1-Click Pin &amp; Toggle:</strong> Click once to pin the highlighted layer immediately (click an already-pinned element again to unpin it), then press <code class="code-tag">Esc</code> or click <strong>Done</strong> on the Coach Bar to write your note.
+            <strong>1-Click Pin &amp; Toggle:</strong> Click once or press <code class="code-tag">Space</code> to pin the highlighted layer immediately (click or press Space on an already-pinned element to unpin it), then press <code class="code-tag">Esc</code> or click <strong>Done</strong> on the Coach Bar to write your note.
           </li>
           <li>
             <strong>Minimize &amp; Drag the Chatbox:</strong> Drag the chatbox by its header bar, hover over pinned element chips in the tray to highlight them on the page, or click the camera icon on a chip to capture an element screenshot.
@@ -642,6 +717,44 @@
       document.getElementById("demo-trigger-chat")?.addEventListener("click", () => {
         if (widget && typeof widget.openComposer === "function") {
           widget.openComposer();
+        }
+      });
+
+      // Transient dropdown setup to test DOM freeze (⌥⇧P)
+      const dropdownTrigger = document.getElementById("demo-dropdown-trigger");
+      const dropdownMenu = document.getElementById("demo-dropdown-menu");
+      const dropdownContainer = document.getElementById("transient-dropdown-container");
+
+      function closeDropdown() {
+        if (!dropdownMenu || !dropdownTrigger) return;
+        dropdownMenu.classList.remove("is-open");
+        dropdownTrigger.setAttribute("aria-expanded", "false");
+      }
+
+      function openDropdown() {
+        if (!dropdownMenu || !dropdownTrigger) return;
+        dropdownMenu.classList.add("is-open");
+        dropdownTrigger.setAttribute("aria-expanded", "true");
+      }
+
+      dropdownTrigger?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (dropdownMenu?.classList.contains("is-open")) {
+          closeDropdown();
+        } else {
+          openDropdown();
+        }
+      });
+
+      document.addEventListener("click", (e) => {
+        if (dropdownContainer && !dropdownContainer.contains(e.target)) {
+          closeDropdown();
+        }
+      });
+
+      dropdownContainer?.addEventListener("focusout", (e) => {
+        if (dropdownContainer && !dropdownContainer.contains(e.relatedTarget)) {
+          closeDropdown();
         }
       });
 

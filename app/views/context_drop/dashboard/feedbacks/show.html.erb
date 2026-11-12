@@ -1,21 +1,72 @@
-<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
-  <div style="display: flex; align-items: center; gap: 0.75rem;">
-    <a href="<%= dashboard_feedbacks_path %>" class="cd-btn">&larr; Back to List</a>
-    <h1 style="margin: 0; font-size: 1.25rem;">Feedback #<%= @feedback.id %></h1>
-    <span class="cd-badge cd-badge-<%= @feedback.status %>"><%= @feedback.status %></span>
+<% content_for :cd_breadcrumbs do %>
+  <a href="<%= @triage_index_back_path %>" class="cd-crumb">Triage</a>
+  <span class="cd-crumb-sep">/</span>
+  <span class="cd-crumb cd-crumb-active">Feedback #<%= @feedback.id %></span>
+<% end %>
+
+<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.875rem; margin-bottom: 1.25rem;">
+  <div style="display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap;">
+    <a href="<%= @triage_index_back_path %>" class="cd-btn cd-btn-sm" title="Back to triage list (Esc)">
+      <%= cd_icon_arrow_left(size: 13) %>
+      <span>Back to Triage</span>
+      <kbd class="cd-kbd" style="margin-left: 0.25rem;">Esc</kbd>
+    </a>
+
+    <div style="display: inline-flex; align-items: center; border: 1px solid var(--cd-border); border-radius: 0.375rem; background: var(--cd-surface); overflow: hidden;">
+      <% if @newer_feedback %>
+        <a href="<%= dashboard_feedback_path(@newer_feedback) %>"
+           class="cd-btn cd-btn-sm"
+           id="cd-nav-newer"
+           style="border: none; border-radius: 0;"
+           title="Newer feedback (Keyboard: [ or k)">
+          <%= cd_icon_arrow_left(size: 12) %>
+          <span>Newer</span>
+          <kbd class="cd-kbd">[</kbd>
+        </a>
+      <% else %>
+        <button class="cd-btn cd-btn-sm" disabled style="border: none; border-radius: 0; opacity: 0.35; cursor: not-allowed;">
+          <%= cd_icon_arrow_left(size: 12) %>
+          <span>Newer</span>
+        </button>
+      <% end %>
+      <span style="width: 1px; height: 1.25rem; background: var(--cd-border-subtle);"></span>
+      <% if @older_feedback %>
+        <a href="<%= dashboard_feedback_path(@older_feedback) %>"
+           class="cd-btn cd-btn-sm"
+           id="cd-nav-older"
+           style="border: none; border-radius: 0;"
+           title="Older feedback (Keyboard: ] or j)">
+          <span>Older</span>
+          <%= cd_icon_arrow_right(size: 12) %>
+          <kbd class="cd-kbd">]</kbd>
+        </a>
+      <% else %>
+        <button class="cd-btn cd-btn-sm" disabled style="border: none; border-radius: 0; opacity: 0.35; cursor: not-allowed;">
+          <span>Older</span>
+          <%= cd_icon_arrow_right(size: 12) %>
+        </button>
+      <% end %>
+    </div>
+
+    <div style="display: inline-flex; align-items: center; gap: 0.5rem; margin-left: 0.25rem;">
+      <h1 style="margin: 0; font-size: 1.125rem; font-weight: 700; color: var(--cd-text);">
+        Feedback #<%= @feedback.id %>
+      </h1>
+      <span class="cd-badge cd-badge-<%= @feedback.status %>"><%= @feedback.status %></span>
+    </div>
   </div>
 
-  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+  <div style="display: flex; gap: 0.375rem; flex-wrap: wrap; align-items: center;">
     <% [
-      ["reviewed", "Mark Reviewed"],
-      ["resolved", "Mark Resolved"],
-      ["dismissed", "Dismiss"]
-    ].each do |target_status, label| %>
+      ["reviewed", "Mark Reviewed", ""],
+      ["resolved", "Mark Resolved", "cd-btn-primary"],
+      ["dismissed", "Dismiss", ""]
+    ].each do |target_status, label, extra_class| %>
       <%= form_with url: dashboard_feedback_path(@feedback), method: :patch, local: true, style: "display: inline;" do %>
         <input type="hidden" name="status" value="<%= target_status %>">
         <button type="submit"
-                class="cd-btn <%= 'cd-btn-primary' if target_status == 'resolved' %>"
-                <%= "disabled" if @feedback.status == target_status %>>
+                class="cd-btn cd-btn-sm <%= extra_class %>"
+                <%= "disabled style='opacity: 0.35; cursor: default;'" if @feedback.status == target_status %>>
           <%= label %>
         </button>
       <% end %>
@@ -24,53 +75,86 @@
 </div>
 
 <div class="cd-card">
-  <h2 style="margin-top: 0; font-size: 1rem; color: var(--cd-muted);">Feedback Message</h2>
-  <p style="font-size: 1rem; white-space: pre-wrap; margin: 0 0 1.25rem 0;"><%= @feedback.message.presence || "(No message text provided)" %></p>
+  <h2 style="margin: 0 0 0.5rem 0; font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cd-muted);">
+    Feedback Message
+  </h2>
+  <div style="font-size: 0.9375rem; line-height: 1.6; white-space: pre-wrap; margin-bottom: 1.25rem; color: var(--cd-text); font-weight: 500;">
+    <%= @feedback.message.presence || content_tag(:span, "(No message text provided)", style: "color: var(--cd-muted); font-style: italic; font-weight: normal;") %>
+  </div>
 
   <dl class="cd-meta-list">
     <dt>Page URL</dt>
-    <dd><code class="cd-mono"><%= @feedback.page_url %></code></dd>
+    <dd>
+      <div style="display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;">
+        <code class="cd-mono" style="word-break: break-all;"><%= @feedback.page_url %></code>
+        <% if @feedback.page_url.present? %>
+          <a href="<%= @feedback.page_url %>"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="cd-icon-link"
+             title="Open page in new tab">
+            <%= cd_icon_external_link(size: 13) %>
+          </a>
+        <% end %>
+      </div>
+    </dd>
     <dt>Submitter</dt>
-    <dd><%= @feedback.submitter_label %></dd>
+    <dd style="display: inline-flex; align-items: center; gap: 0.35rem;">
+      <%= cd_icon_user(size: 13) %>
+      <span><%= @feedback.submitter_label %></span>
+    </dd>
     <dt>Submitted At</dt>
-    <dd><%= @feedback.created_at&.iso8601 %></dd>
+    <dd style="font-family: var(--cd-font-mono); font-variant-numeric: tabular-nums;">
+      <%= @feedback.created_at&.strftime("%Y-%m-%d %H:%M:%S UTC") %>
+    </dd>
     <dt>User Agent</dt>
-    <dd><%= @feedback.user_agent.presence || "N/A" %></dd>
+    <dd style="font-size: 0.75rem; color: var(--cd-text-secondary);"><%= @feedback.user_agent.presence || "N/A" %></dd>
     <dt>Metadata</dt>
-    <dd><code class="cd-mono"><%= JSON.generate(@feedback.metadata || {}) %></code></dd>
+    <dd><code class="cd-mono" style="font-size: 0.75rem;"><%= JSON.pretty_generate(@feedback.metadata || {}) rescue JSON.generate(@feedback.metadata || {}) %></code></dd>
   </dl>
 </div>
 
 <div class="cd-card">
-  <h2 style="margin-top: 0; font-size: 1rem;">
-    DOM Element References (<%= @feedback.element_references.size %>)
-  </h2>
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
+    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <%= cd_icon_pin(size: 14) %>
+      <span>DOM Element References</span>
+      <span class="cd-tab-count"><%= @feedback.element_references.size %></span>
+    </h2>
+  </div>
 
   <% if @feedback.element_references.empty? %>
-    <p style="color: var(--cd-muted); margin: 0;">No DOM elements were selected for this submission.</p>
+    <p style="color: var(--cd-muted); margin: 0; font-size: 0.8125rem;">No DOM elements were selected for this submission.</p>
   <% else %>
     <div class="cd-grid">
-      <% @feedback.element_references.each do |el| %>
-        <div style="border: 1px solid var(--cd-border); border-radius: 0.5rem; padding: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <code class="cd-mono">&lt;<%= el.tag_name %>&gt;</code>
+      <% @feedback.element_references.each_with_index do |el, idx| %>
+        <div style="border: 1px solid var(--cd-border-subtle); border-radius: 0.5rem; padding: 0.875rem; background: var(--cd-surface);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem; border-bottom: 1px solid var(--cd-border-subtle); padding-bottom: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.35rem;">
+              <span class="cd-mono-id">#<%= idx + 1 %></span>
+              <code class="cd-mono" style="font-weight: 600;">&lt;<%= el.tag_name %>&gt;</code>
+            </div>
             <% if el.captured_at %>
-              <span style="font-size: 0.75rem; color: var(--cd-muted);"><%= el.captured_at.iso8601 %></span>
+              <span style="font-size: 0.6875rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
+                <%= el.captured_at.strftime("%H:%M:%S UTC") %>
+              </span>
             <% end %>
           </div>
-          <dl class="cd-meta-list">
+          <dl class="cd-meta-list" style="grid-template-columns: 110px 1fr; font-size: 0.75rem;">
             <dt>Selector</dt>
-            <dd><code class="cd-mono"><%= el.selector %></code></dd>
+            <dd><code class="cd-mono" style="word-break: break-all;"><%= el.selector %></code></dd>
             <dt>DOM Path</dt>
-            <dd><code class="cd-mono"><%= el.dom_path.presence || "N/A" %></code></dd>
+            <dd><code class="cd-mono" style="word-break: break-all;"><%= el.dom_path.presence || "N/A" %></code></dd>
             <dt>Text Content</dt>
-            <dd><%= el.text_content.presence || "(empty)" %></dd>
+            <dd style="font-style: italic; color: var(--cd-text-secondary);"><%= el.text_content.presence || "(empty)" %></dd>
             <dt>Bounding Rect</dt>
             <dd><code class="cd-mono"><%= JSON.generate(el.bounding_rect || {}) %></code></dd>
             <dt>Viewport</dt>
             <dd><code class="cd-mono"><%= JSON.generate(el.viewport || {}) %></code></dd>
-            <dt>Attributes</dt>
-            <dd><code class="cd-mono"><%= JSON.generate(el.attributes_snapshot || {}) %></code></dd>
+            <% if el.attributes_snapshot.present? && !el.attributes_snapshot.empty? %>
+              <dt>Attributes</dt>
+              <dd><code class="cd-mono" style="word-break: break-all;"><%= JSON.generate(el.attributes_snapshot) %></code></dd>
+            <% end %>
           </dl>
         </div>
       <% end %>
@@ -79,21 +163,25 @@
 </div>
 
 <div class="cd-card">
-  <h2 style="margin-top: 0; font-size: 1rem;">
-    Screenshots &amp; Attachments (<%= @feedback.attachments.size %>)
-  </h2>
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
+    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <%= cd_icon_attachment(size: 14) %>
+      <span>Screenshots &amp; Attachments</span>
+      <span class="cd-tab-count"><%= @feedback.attachments.size %></span>
+    </h2>
+  </div>
 
   <% if @feedback.attachments.empty? %>
-    <p style="color: var(--cd-muted); margin: 0;">No binary attachments or screenshots were included.</p>
+    <p style="color: var(--cd-muted); margin: 0; font-size: 0.8125rem;">No binary attachments or screenshots were included.</p>
   <% else %>
     <div class="cd-grid">
       <% @feedback.attachments.each do |att| %>
-        <div style="border: 1px solid var(--cd-border); border-radius: 0.5rem; padding: 1rem;">
+        <div style="border: 1px solid var(--cd-border-subtle); border-radius: 0.5rem; padding: 0.875rem; background: var(--cd-surface);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
             <span class="cd-badge cd-badge-new"><%= att.attachment_type %></span>
             <% if att.element_reference %>
               <span style="font-size: 0.75rem; color: var(--cd-muted);">
-                Element: <code class="cd-mono"><%= att.element_reference.selector %></code>
+                Pinned: <code class="cd-mono"><%= att.element_reference.selector %></code>
               </span>
             <% end %>
           </div>
@@ -101,21 +189,54 @@
           <% if att.respond_to?(:file) && att.file.attached? %>
             <div style="margin: 0.5rem 0;">
               <% if main_app.respond_to?(:url_for) %>
-                <img src="<%= main_app.url_for(att.file) %>"
-                     alt="Attachment #<%= att.id %>"
-                     style="max-width: 100%; border-radius: 0.375rem; border: 1px solid var(--cd-border);" />
+                <a href="<%= main_app.url_for(att.file) %>" target="_blank" rel="noopener noreferrer">
+                  <img src="<%= main_app.url_for(att.file) %>"
+                       alt="Attachment #<%= att.id %>"
+                       style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 0.375rem; border: 1px solid var(--cd-border-subtle); display: block;" />
+                </a>
               <% end %>
             </div>
-            <div style="font-size: 0.75rem; color: var(--cd-muted);">
+            <div style="font-size: 0.6875rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
               <%= att.file.filename %> (<%= att.file.content_type %>, <%= att.file.byte_size %> bytes)
             </div>
           <% end %>
 
-          <div style="margin-top: 0.5rem;">
-            <code class="cd-mono"><%= JSON.generate(att.metadata || {}) %></code>
-          </div>
+          <% if att.metadata.present? && !att.metadata.empty? %>
+            <div style="margin-top: 0.5rem;">
+              <code class="cd-mono" style="font-size: 0.6875rem;"><%= JSON.generate(att.metadata || {}) %></code>
+            </div>
+          <% end %>
         </div>
       <% end %>
     </div>
   <% end %>
 </div>
+
+<script>
+  (function() {
+    window.addEventListener("keydown", function(e) {
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT" || e.target.isContentEditable)) {
+        return;
+      }
+      if (e.key === "[" || e.key === "k" || e.key === "K") {
+        var newerLink = document.getElementById("cd-nav-newer");
+        if (newerLink && newerLink.href) {
+          e.preventDefault();
+          window.location.href = newerLink.href;
+        }
+      } else if (e.key === "]" || e.key === "j" || e.key === "J") {
+        var olderLink = document.getElementById("cd-nav-older");
+        if (olderLink && olderLink.href) {
+          e.preventDefault();
+          window.location.href = olderLink.href;
+        }
+      } else if (e.key === "Escape") {
+        var backUrl = <%= @triage_index_back_path.to_json %>;
+        if (backUrl) {
+          e.preventDefault();
+          window.location.href = backUrl;
+        }
+      }
+    });
+  })();
+</script>

@@ -48,11 +48,17 @@ module ContextDrop
     def submitter_label
       return "Anonymous" if submitter_type.blank? && submitter_id.blank?
 
-      if submitter
-        if submitter.respond_to?(:email) && submitter.email.present?
-          "#{submitter_type}##{submitter_id} (#{submitter.email})"
-        elsif submitter.respond_to?(:name) && submitter.name.present?
-          "#{submitter_type}##{submitter_id} (#{submitter.name})"
+      target_submitter = begin
+        submitter
+      rescue NameError
+        nil
+      end
+
+      if target_submitter
+        if target_submitter.respond_to?(:email) && target_submitter.email.present?
+          "#{submitter_type}##{submitter_id} (#{target_submitter.email})"
+        elsif target_submitter.respond_to?(:name) && target_submitter.name.present?
+          "#{submitter_type}##{submitter_id} (#{target_submitter.name})"
         else
           "#{submitter_type}##{submitter_id}"
         end

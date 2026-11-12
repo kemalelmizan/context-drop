@@ -4,8 +4,10 @@ module ContextDrop
   module Dashboard
     class FeedbacksController < ApplicationController
       layout "context_drop/application"
+      helper ContextDrop::DashboardHelper
 
       before_action :enforce_dashboard_authorization!
+      before_action :resolve_navigation_shortcuts
 
       PER_PAGE = 25
 
@@ -18,7 +20,7 @@ module ContextDrop
           "dismissed" => ContextDrop::Feedback.dismissed.count
         }
 
-        scope = ContextDrop::Feedback.includes(:submitter, :element_references, :attachments).recent
+        scope = ContextDrop::Feedback.includes(:element_references, :attachments).recent
 
         @current_status = params[:status].to_s.strip
         if ContextDrop::Feedback::STATUSES.include?(@current_status)
@@ -48,12 +50,35 @@ module ContextDrop
         @page = [params[:page].to_i, 1].max
         @total_pages = [(@total_filtered.to_f / PER_PAGE).ceil, 1].max
         @feedbacks = scope.limit(PER_PAGE).offset((@page - 1) * PER_PAGE)
+
+        session[:context_drop_dashboard_index_url] = request.fullpath if respond_to?(:session) && request&.get?
       end
 
       def show
         @feedback = ContextDrop::Feedback
-                    .includes(:submitter, :element_references, :attachments)
+                    .includes(:element_references, :attachments)
                     .find(params[:id])
+
+        # Newer feedback (previous in chronological newest-first list) and older feedback (next in list)
+        @newer_feedback = ContextDrop::Feedback
+                          .where(
+                            "created_at > :ts OR (created_at = :ts AND id > :id)",
+                            ts: @feedback.created_at,
+                            id: @feedback.id
+                          )
+                          .order(created_at: :asc, id: :asc)
+                          .select(:id, :status)
+                          .first
+
+        @older_feedback = ContextDrop::Feedback
+                          .where(
+                            "created_at < :ts OR (created_at = :ts AND id < :id)",
+                            ts: @feedback.created_at,
+                            id: @feedback.id
+                          )
+                          .order(created_at: :desc, id: :desc)
+                          .select(:id, :status)
+                          .first
       end
 
       def update
@@ -101,6 +126,41 @@ module ContextDrop
         ActiveRecord::Base.sanitize_sql_like(str.to_s)
       rescue StandardError
         str.to_s.gsub(/[%_\\]/) { |m| "\\#{m}" }
+      end
+
+      def resolve_navigation_shortcuts
+        @host_app_path = resolve_host_app_path
+        @triage_index_back_path = if respond_to?(:session) && session[:context_drop_dashboard_index_url].present?
+                                    session[:context_drop_dashboard_index_url]
+                                  else
+                                    dashboard_feedbacks_path
+                                  end
+      end
+
+      def resolve_host_app_path
+        engine_prefix = (request.respond_to?(:script_name) && request.script_name.presence) || "/context_drop"
+        if respond_to?(:session) && request&.referer.present?
+          begin
+            ref_uri = URI.parse(request.referer)
+            same_host = ref_uri.host.nil? || (request.respond_to?(:host) && ref_uri.host == request.host)
+            if same_host && ref_uri.path.present? && !ref_uri.path.start_with?(engine_prefix)
+              full_ref = [ref_uri.path, ref_uri.query].compact.join("?")
+              session[:context_drop_return_to] = full_ref
+            end
+          rescue URI::InvalidURIError
+            # Ignore malformed referer headers
+          end
+        end
+
+        return session[:context_drop_return_to] if respond_to?(:session) && session[:context_drop_return_to].present?
+
+        if respond_to?(:main_app) && main_app.respond_to?(:root_path)
+          main_app.root_path
+        else
+          "/"
+        end
+      rescue StandardError
+        "/"
       end
     end
   end
