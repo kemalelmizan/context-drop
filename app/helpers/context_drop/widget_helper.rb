@@ -16,7 +16,17 @@ module ContextDrop
       controller_instance = respond_to?(:controller) ? controller : nil
       return nil unless cfg.submission_authorized?(controller_instance)
 
-      widget_config = cfg.public_widget_config(options)
+      req = if respond_to?(:request)
+              request
+            elsif controller_instance.respond_to?(:request)
+              controller_instance.request
+            end
+      merged_options = if req
+                         options.merge(agent_enabled: cfg.local_agent_allowed? && cfg.loopback_request?(req))
+                       else
+                         options
+                       end
+      widget_config = cfg.public_widget_config(merged_options)
       mount_path = resolve_context_drop_mount_path(options[:endpoint])
       custom_metadata = options[:metadata].is_a?(Hash) ? options[:metadata] : {}
 

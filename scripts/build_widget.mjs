@@ -17,6 +17,7 @@ const MODULE_ORDER = [
   "types.ts",
   "sanitizer.ts",
   "icons.ts",
+  "markdown.ts",
   "styles.ts",
   "api-client.ts",
   "screenshot.ts",
@@ -53,7 +54,7 @@ for (const filename of MODULE_ORDER) {
 }
 
 const banner = `/**
- * ContextDrop Browser Widget Bundle (v0.1.0)
+ * ContextDrop Browser Widget Bundle (v0.2.0)
  * Self-contained Custom Element (<context-drop-widget>) with Shadow DOM isolation.
  * Generated from app/javascript/context_drop/*.ts — DO NOT EDIT DIRECTLY.
  */

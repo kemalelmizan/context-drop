@@ -527,6 +527,7 @@
         <a href="<%= dashboard_feedbacks_path %>" class="cd-brand-tag">
           <span>ContextDrop</span>
           <span class="cd-brand-pill">Triage</span>
+          <span class="cd-context-chip" style="font-family: var(--cd-font-mono); font-size: 0.6875rem;"><%= ContextDrop.configuration.resolved_environment %></span>
         </a>
 
         <% if content_for?(:cd_breadcrumbs) %>

@@ -1,6 +1,13 @@
 import type {
+  AgentChatRequestPayload,
+  AgentChatResponse,
+  AgentKeysUpdatePayload,
+  AgentKeysUpdateResponse,
+  AgentStatusResponse,
+  CrossEnvFeedbackListResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
+  ProposedFileEdit,
   WidgetConfig
 } from "./types.ts";
 
@@ -146,6 +153,17 @@ export class ContextDropApiClient {
     );
   }
 
+  private buildJsonHeaders(csrfToken: string | null): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    };
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+    return headers;
+  }
+
   public async uploadAttachment(file: Blob, filename: string): Promise<{ signed_blob_id: string }> {
     const makeRequest = async (csrfToken: string | null) => {
       const formData = new FormData();
@@ -170,23 +188,124 @@ export class ContextDropApiClient {
   }
 
   public async submitFeedback(payload: FeedbackSubmissionPayload): Promise<FeedbackSubmissionResponse> {
-    const makeRequest = async (csrfToken: string | null) => {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        Accept: "application/json"
-      };
-      if (csrfToken) {
-        headers["X-CSRF-Token"] = csrfToken;
-      }
-
-      return fetch(`${this.baseUrl}/feedback`, {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/feedback`, {
         method: "POST",
         credentials: "same-origin",
-        headers,
+        headers: this.buildJsonHeaders(csrfToken),
         body: JSON.stringify({ feedback: payload })
       });
-    };
 
     return this.executeWithCsrfRetry(makeRequest, "Submission failed");
+  }
+
+  public async fetchAgentStatus(): Promise<AgentStatusResponse> {
+    const response = await fetch(`${this.baseUrl}/agent/status`, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(
+        (errBody as { error?: string }).error || `Failed to load agent status (${response.status})`
+      );
+    }
+
+    return (await response.json()) as AgentStatusResponse;
+  }
+
+  public async saveAgentKeys(payload: AgentKeysUpdatePayload): Promise<AgentKeysUpdateResponse> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/keys`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken),
+        body: JSON.stringify(payload)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to save BYOK settings");
+  }
+
+  public async deleteAgentKeys(provider: string = "all"): Promise<AgentKeysUpdateResponse> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/keys?provider=${encodeURIComponent(provider)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to clear BYOK key");
+  }
+
+  public async fetchAgentFeedbacks(
+    environment: string = "all",
+    status: string = "new"
+  ): Promise<CrossEnvFeedbackListResponse> {
+    const qs = `environment=${encodeURIComponent(environment)}&status=${encodeURIComponent(status)}`;
+    const response = await fetch(`${this.baseUrl}/agent/feedbacks?${qs}`, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(
+        (errBody as { error?: string }).error || `Failed to load feedbacks (${response.status})`
+      );
+    }
+
+    return (await response.json()) as CrossEnvFeedbackListResponse;
+  }
+
+  public async sendAgentChat(payload: AgentChatRequestPayload): Promise<AgentChatResponse> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/chat`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken),
+        body: JSON.stringify(payload)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Agent request failed");
+  }
+
+  public async applyEdit(editId: string): Promise<{ edit: ProposedFileEdit }> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/apply`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to apply file edit");
+  }
+
+  public async rejectEdit(editId: string): Promise<{ edit: ProposedFileEdit }> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/reject`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to reject file edit");
+  }
+
+  public async revertEdit(editId: string): Promise<{ edit: ProposedFileEdit }> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/revert`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: this.buildJsonHeaders(csrfToken)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to revert file edit");
   }
 }

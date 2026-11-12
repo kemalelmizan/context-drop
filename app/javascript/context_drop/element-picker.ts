@@ -1,10 +1,12 @@
-import type { ElementCandidateInfo, ElementReferenceSnapshot } from "./types.ts";
+import type { ElementCandidateInfo, ElementReferenceSnapshot, SelectionMode } from "./types.ts";
 import {
   captureElementSnapshot,
+  computeSelector,
   describeElementCandidate,
   isSelectableElement,
   resolveAncestorChain,
-  resolveCandidateStack
+  resolveCandidateStack,
+  resolveSmartComponent
 } from "./sanitizer.ts";
 import {
   ICON_CHECK,
@@ -16,6 +18,7 @@ import {
 export interface PinnedElementEntry {
   clientRef: string;
   selector: string;
+  friendlyLabel?: string;
   element: Element;
 }
 
@@ -38,6 +41,7 @@ export interface ElementPickerCallbacks {
   onExit: () => void;
   canSelectMore: () => boolean;
   getExcludedSelectors: () => string[];
+  getSelectionMode?: () => SelectionMode;
   getPinnedElements?: () => PinnedElementEntry[];
   onStateChange?: (state: ElementPickerStateSnapshot) => void;
 }
@@ -78,6 +82,7 @@ function isPointInsideRect(
 
 export class ElementPicker {
   private active: boolean = false;
+  private suppressCursorPin: boolean = false;
   private isScrubbingLayers: boolean = false;
   private scrubOriginX: number = 0;
   private scrubOriginY: number = 0;
@@ -136,6 +141,10 @@ export class ElementPicker {
     return this.isScrubbingLayers;
   }
 
+  private isSmartMode(): boolean {
+    return (this.callbacks.getSelectionMode ? this.callbacks.getSelectionMode() : "verbose") === "smart";
+  }
+
   public getActiveCandidate(): ElementCandidateInfo | null {
     return this.candidateStack[this.activeCandidateIndex] || null;
   }
@@ -144,11 +153,12 @@ export class ElementPicker {
     return [...this.candidateStack];
   }
 
-  public start(): void {
+  public start(options?: { suppressCursorPin?: boolean }): void {
     if (this.active || typeof document === "undefined" || typeof window === "undefined") {
       return;
     }
     this.active = true;
+    this.suppressCursorPin = Boolean(options?.suppressCursorPin);
     this.isScrubbingLayers = false;
     this.wheelAccumulator = 0;
     this.lastWheelStepAt = 0;
@@ -161,7 +171,7 @@ export class ElementPicker {
 
     this.previousCursor = document.body ? document.body.style.cursor : "";
     if (document.body) {
-      document.body.style.cursor = "crosshair";
+      document.body.style.cursor = this.suppressCursorPin ? "grabbing" : "crosshair";
     }
 
     this.mountSelectionUi();
@@ -181,9 +191,10 @@ export class ElementPicker {
     window.addEventListener("resize", this.boundScrollOrResize, { passive: true });
   }
 
-  public stop(): void {
+  public stop(options?: { silent?: boolean }): void {
     if (!this.active) return;
     this.active = false;
+    this.suppressCursorPin = false;
     this.isScrubbingLayers = false;
     this.wheelAccumulator = 0;
     this.candidateStack = [];
@@ -212,14 +223,43 @@ export class ElementPicker {
 
     this.unmountSelectionUi();
     this.notifyStateChange();
-    this.callbacks.onExit();
+    if (!options?.silent) {
+      this.callbacks.onExit();
+    }
   }
 
-  public highlightAtPoint(x: number, y: number): void {
+  public highlightAtPoint(x: number, y: number, event?: Event): void {
     if (!this.active || typeof document === "undefined") return;
     this.lastPointerX = x;
     this.lastPointerY = y;
-    this.updateCandidatesFromPoint(x, y);
+    this.updateCandidatesFromPoint(x, y, event);
+    this.updateOverlayPosition();
+    this.notifyStateChange();
+  }
+
+  public clearCandidateHighlight(): void {
+    if (!this.active) return;
+    this.leafElement = null;
+    this.candidateStack = [];
+    this.activeCandidateIndex = 0;
+    this.isScrubbingLayers = false;
+    if (this.overlayEl) this.overlayEl.style.display = "none";
+    if (this.hudEl) this.hudEl.style.display = "none";
+    if (this.leafOutlineEl) this.leafOutlineEl.style.display = "none";
+    if (this.pinMarkerEl) this.pinMarkerEl.style.display = "none";
+    this.notifyStateChange();
+  }
+
+  public commitActiveCandidate(x?: number, y?: number): boolean {
+    if (!this.active) return false;
+    const candidate = this.getActiveCandidate();
+    if (!candidate) return false;
+    this.commitCandidateSelection(
+      candidate.element,
+      x ?? this.lastPointerX ?? 80,
+      y ?? this.lastPointerY ?? 80
+    );
+    return true;
   }
 
   public focusCandidateElement(el: Element): void {
@@ -288,6 +328,7 @@ export class ElementPicker {
 
       const badge = document.createElement("div");
       const badgeTop = rect.top < 26 ? "4px" : "-22px";
+      const smartMode = this.isSmartMode();
       badge.style.cssText = [
         "position: absolute",
         `top: ${badgeTop}`,
@@ -295,23 +336,27 @@ export class ElementPicker {
         "display: inline-flex",
         "align-items: center",
         "gap: 4px",
-        "padding: 2px 6px",
+        "padding: 2px 7px",
         "border-radius: 9999px",
         "background: #c2410c",
         "color: #faf9f6",
         "border: 1px solid #faf9f6",
-        "font-family: ui-monospace, SFMono-Regular, Menlo, monospace",
+        smartMode
+          ? "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          : "font-family: ui-monospace, SFMono-Regular, Menlo, monospace",
         "font-size: 10px",
-        "font-weight: 700",
+        "font-weight: 600",
         "font-variant-numeric: tabular-nums",
         "line-height: 1.2",
-        "max-width: 160px",
+        "max-width: 180px",
         "overflow: hidden",
         "text-overflow: ellipsis",
         "white-space: nowrap",
         "box-shadow: 0 4px 10px -2px rgba(17, 19, 24, 0.25)"
       ].join(";");
-      badge.textContent = `#${index + 1} ${entry.selector}`;
+      badge.textContent = smartMode
+        ? entry.friendlyLabel || "Selected area"
+        : `#${index + 1} ${entry.selector}`;
 
       markerFrame.appendChild(badge);
       this.pinnedMarkersContainerEl?.appendChild(markerFrame);
@@ -637,6 +682,22 @@ export class ElementPicker {
       return;
     }
 
+    if (this.isSmartMode()) {
+      const smartComponent = resolveSmartComponent(primary, excluded) || primary;
+      if (
+        this.leafElement === primary &&
+        this.candidateStack.length === 1 &&
+        this.candidateStack[0].element === smartComponent
+      ) {
+        return;
+      }
+      this.leafElement = primary;
+      this.candidateStack = [describeElementCandidate(smartComponent, "target", 0, excluded)];
+      this.activeCandidateIndex = 0;
+      this.isScrubbingLayers = false;
+      return;
+    }
+
     // Preserve depth & inline stack when pointer stays inside the exact same primary leaf element
     if (this.leafElement === primary && this.candidateStack.length > 0) {
       return;
@@ -683,9 +744,13 @@ export class ElementPicker {
     }
 
     if (this.pinMarkerEl) {
-      this.pinMarkerEl.style.display = "inline-flex";
-      this.pinMarkerEl.style.left = `${event.clientX}px`;
-      this.pinMarkerEl.style.top = `${event.clientY}px`;
+      if (this.suppressCursorPin) {
+        this.pinMarkerEl.style.display = "none";
+      } else {
+        this.pinMarkerEl.style.display = "inline-flex";
+        this.pinMarkerEl.style.left = `${event.clientX}px`;
+        this.pinMarkerEl.style.top = `${event.clientY}px`;
+      }
     }
 
     this.updateCandidatesFromPoint(event.clientX, event.clientY, event);
@@ -716,6 +781,64 @@ export class ElementPicker {
     return kbd;
   }
 
+  private renderSmartHudContent(currentCandidate: ElementCandidateInfo): void {
+    if (!this.hudEl) return;
+    this.hudEl.innerHTML = "";
+    this.hudEl.style.width = "auto";
+    this.hudEl.style.maxWidth = "min(360px, calc(100vw - 20px))";
+    this.hudEl.style.borderRadius = "9999px";
+
+    const pinnedInfo = this.findPinnedIndex(currentCandidate.element);
+    const pill = document.createElement("div");
+    pill.setAttribute("data-context-drop-ui", "smart-hud-pill");
+    pill.style.cssText = [
+      "display: inline-flex",
+      "align-items: center",
+      "gap: 7px",
+      "padding: 6px 12px",
+      "white-space: nowrap"
+    ].join(";");
+
+    const iconDot = document.createElement("span");
+    iconDot.style.cssText = [
+      "display: inline-flex",
+      "align-items: center",
+      "justify-content: center",
+      "width: 14px",
+      "height: 14px",
+      "color: #ffedd5",
+      "flex-shrink: 0"
+    ].join(";");
+    iconDot.innerHTML = ICON_PIN;
+    pill.appendChild(iconDot);
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = currentCandidate.friendlyLabel || "Page area";
+    nameSpan.style.cssText = [
+      "font-size: 12px",
+      "font-weight: 600",
+      "color: #faf9f6",
+      "max-width: 210px",
+      "overflow: hidden",
+      "text-overflow: ellipsis",
+      "white-space: nowrap"
+    ].join(";");
+    pill.appendChild(nameSpan);
+
+    const actionHint = document.createElement("span");
+    actionHint.textContent = this.suppressCursorPin
+      ? pinnedInfo
+        ? "· Release to remove"
+        : "· Release to select"
+      : pinnedInfo
+        ? "· Click to remove"
+        : "· Click to select";
+    actionHint.style.cssText = "font-size: 11px; color: #cbd5e1; flex-shrink: 0;";
+    pill.appendChild(actionHint);
+
+    this.hudEl.appendChild(pill);
+  }
+
   private renderCompactHudContent(
     currentCandidate: ElementCandidateInfo,
     rect: { width: number; height: number }
@@ -724,6 +847,7 @@ export class ElementPicker {
     this.hudEl.innerHTML = "";
     this.hudEl.style.width = "auto";
     this.hudEl.style.maxWidth = "min(440px, calc(100vw - 20px))";
+    this.hudEl.style.borderRadius = "10px";
 
     const total = this.candidateStack.length;
     const pos = this.activeCandidateIndex + 1;
@@ -831,15 +955,25 @@ export class ElementPicker {
 
     const clickHint = document.createElement("span");
     clickHint.style.cssText = "display: inline-flex; align-items: center; gap: 4px;";
-    clickHint.appendChild(this.createKbdEl("Space"));
-    clickHint.appendChild(this.createSpanEl("or"));
-    const clickStrong = document.createElement("strong");
-    clickStrong.style.cssText = pinnedInfo
-      ? "color: #ffedd5; font-weight: 600;"
-      : "color: #faf9f6; font-weight: 600;";
-    clickStrong.textContent = "Click";
-    clickHint.appendChild(clickStrong);
-    clickHint.appendChild(this.createSpanEl(pinnedInfo ? " to unpin" : " to pin"));
+    if (this.suppressCursorPin) {
+      const releaseStrong = document.createElement("strong");
+      releaseStrong.style.cssText = pinnedInfo
+        ? "color: #ffedd5; font-weight: 600;"
+        : "color: #faf9f6; font-weight: 600;";
+      releaseStrong.textContent = "Release";
+      clickHint.appendChild(releaseStrong);
+      clickHint.appendChild(this.createSpanEl(pinnedInfo ? " to unpin" : " to pin"));
+    } else {
+      clickHint.appendChild(this.createKbdEl("Space"));
+      clickHint.appendChild(this.createSpanEl("or"));
+      const clickStrong = document.createElement("strong");
+      clickStrong.style.cssText = pinnedInfo
+        ? "color: #ffedd5; font-weight: 600;"
+        : "color: #faf9f6; font-weight: 600;";
+      clickStrong.textContent = "Click";
+      clickHint.appendChild(clickStrong);
+      clickHint.appendChild(this.createSpanEl(pinnedInfo ? " to unpin" : " to pin"));
+    }
     coachRow.appendChild(clickHint);
 
     if (total > 1) {
@@ -1168,16 +1302,20 @@ export class ElementPicker {
     this.overlayEl.style.height = `${rect.height}px`;
 
     this.hudEl.style.display = "block";
-    if (this.isScrubbingLayers && this.candidateStack.length > 1) {
+    if (this.isSmartMode()) {
+      this.renderSmartHudContent(currentCandidate);
+    } else if (this.isScrubbingLayers && this.candidateStack.length > 1) {
+      this.hudEl.style.borderRadius = "10px";
       this.renderScrubbingHudContent(currentCandidate, rect);
     } else {
       this.renderCompactHudContent(currentCandidate, rect);
     }
     this.positionHudElement(rect);
 
-    // Show ghost leaf outline when inspecting an ancestor or overlapping layer
+    // Show ghost leaf outline only in verbose inspector mode when inspecting an ancestor/overlap layer
     if (this.leafOutlineEl) {
       if (
+        !this.isSmartMode() &&
         this.activeCandidateIndex > 0 &&
         this.leafElement &&
         this.leafElement !== currentCandidate.element
@@ -1287,6 +1425,7 @@ export class ElementPicker {
   }
 
   private commitCandidateSelection(el: Element, x: number, y: number): void {
+    const smartMode = this.isSmartMode();
     const existingPinned = this.findPinnedIndex(el);
     if (existingPinned && this.callbacks.onUnselect) {
       this.callbacks.onUnselect(existingPinned.entry.clientRef, el);
@@ -1294,14 +1433,22 @@ export class ElementPicker {
       this.isScrubbingLayers = false;
       this.refreshPinnedMarkers();
       this.flashSelectionPulse("unpinned");
-      this.showCursorToast(existingPinned.entry.selector, "unpinned", x, y);
+      if (!smartMode) {
+        this.showCursorToast(existingPinned.entry.selector, "unpinned", x, y);
+      }
       this.updateOverlayPosition();
       this.notifyStateChange();
       return;
     }
 
     const excluded = this.callbacks.getExcludedSelectors();
-    const snapshot = captureElementSnapshot(el, excluded);
+    const extraMeta: Record<string, unknown> = {
+      selection_mode: smartMode ? "smart" : "verbose"
+    };
+    if (smartMode && this.leafElement && this.leafElement !== el) {
+      extraMeta.original_target_selector = computeSelector(this.leafElement);
+    }
+    const snapshot = captureElementSnapshot(el, excluded, undefined, extraMeta);
     if (!snapshot) return;
 
     this.callbacks.onSelect(snapshot, el);
@@ -1309,19 +1456,24 @@ export class ElementPicker {
     this.isScrubbingLayers = false;
     this.refreshPinnedMarkers();
 
-    if (!this.callbacks.canSelectMore()) {
+    // In Production ("smart") click-select mode, immediately return to the quick feedback card
+    // instead of keeping the user inside a multi-pin inspector loop.
+    if ((smartMode && !this.suppressCursorPin) || !this.callbacks.canSelectMore()) {
       this.stop();
       return;
     }
 
     this.flashSelectionPulse("pinned");
-    this.showCursorToast(snapshot.selector, "pinned", x, y);
+    if (!smartMode) {
+      this.showCursorToast(snapshot.selector, "pinned", x, y);
+    }
     this.updateOverlayPosition();
     this.notifyStateChange();
   }
 
   private handleWheelCapture(event: WheelEvent): void {
     if (!this.active) return;
+    if (this.isSmartMode()) return;
     if (this.isInternalUiEvent(event)) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
 
@@ -1448,14 +1600,14 @@ export class ElementPicker {
       return;
     }
 
-    if (event.key === "ArrowUp" || event.key === "[") {
+    if (!this.isSmartMode() && (event.key === "ArrowUp" || event.key === "[")) {
       event.preventDefault();
       event.stopPropagation();
       this.cycleDepth(1, true);
       return;
     }
 
-    if (event.key === "ArrowDown" || event.key === "]") {
+    if (!this.isSmartMode() && (event.key === "ArrowDown" || event.key === "]")) {
       event.preventDefault();
       event.stopPropagation();
       this.cycleDepth(-1, true);

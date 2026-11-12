@@ -8,14 +8,18 @@ module ContextDrop
 
         DEFINITION = {
           name: "get_feedback",
-          description: "Retrieve a complete ContextDrop feedback record, all DOM ElementReference snapshots, and screenshots/images as multimodal MCP image blocks.",
+          description: "Retrieve a complete ContextDrop feedback record, all DOM ElementReference snapshots, and screenshots/images as multimodal MCP image blocks across local or remote environments.",
           inputSchema: {
             type: "object",
             required: ["id"],
             properties: {
               id: {
                 type: %w[integer string],
-                description: "The ID of the ContextDrop::Feedback record."
+                description: "The ID of the ContextDrop::Feedback record, or a qualified '<environment>:<id>' string (e.g. 'staging:42')."
+              },
+              environment: {
+                type: "string",
+                description: "Optional environment name ('local', 'development', 'staging', 'production', etc.). Defaults to the local host environment unless specified or prefixed on `id`."
               },
               include_images: {
                 type: "boolean",
@@ -27,10 +31,20 @@ module ContextDrop
 
         def self.call(args = {})
           params = args.is_a?(Hash) ? args.transform_keys(&:to_s) : {}
-          feedback_id = params["id"] || params["feedback_id"]
-          return error_result("Missing required parameter: id") if feedback_id.nil? || feedback_id.to_s.strip.empty?
+          raw_id = params["id"] || params["feedback_id"]
+          return error_result("Missing required parameter: id") if raw_id.nil? || raw_id.to_s.strip.empty?
 
           include_images = params.key?("include_images") ? !!params["include_images"] : true
+          target_env, feedback_id = ContextDrop::MCP::EnvironmentRouter.parse_target(raw_id, params["environment"])
+
+          unless ContextDrop::MCP::EnvironmentRouter.local_target?(target_env)
+            remote_cfg = ContextDrop::MCP::EnvironmentRouter.remote_config_for(target_env)
+            unless remote_cfg
+              return error_result("Unknown remote environment '#{target_env}'")
+            end
+
+            return fetch_remote_feedback(target_env, remote_cfg, feedback_id, include_images: include_images)
+          end
 
           feedback = ContextDrop::Feedback
                      .includes(:submitter, :element_references, :attachments)
@@ -59,9 +73,40 @@ module ContextDrop
           }
         end
 
+        def self.fetch_remote_feedback(env_name, remote_cfg, feedback_id, include_images: true)
+          res = ContextDrop::MCP::RemoteClient.call_tool(env_name, remote_cfg, "get_feedback", {
+            "id" => feedback_id,
+            "include_images" => include_images
+          })
+          return res if res[:isError]
+
+          updated_blocks = Array(res[:content]).map do |block|
+            if block.is_a?(Hash) && block[:type].to_s == "text"
+              begin
+                parsed = JSON.parse(block[:text].to_s)
+                if parsed.is_a?(Hash)
+                  parsed["environment"] = env_name
+                  parsed["qualified_id"] = ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, parsed["id"] || feedback_id)
+                  next block.merge(text: JSON.pretty_generate(parsed))
+                end
+              rescue JSON::ParserError
+                # Keep original text block if non-JSON
+              end
+            end
+            block
+          end
+
+          { content: updated_blocks, isError: false }
+        rescue ContextDrop::MCP::RemoteClient::RemoteError => e
+          error_result(e.message)
+        end
+
         def self.serialize_feedback(feedback)
+          env_name = ContextDrop::MCP::EnvironmentRouter.record_environment(feedback)
           {
             id: feedback.id,
+            qualified_id: ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, feedback.id),
+            environment: env_name,
             status: feedback.status,
             message: feedback.message,
             page_url: feedback.page_url,
@@ -93,6 +138,7 @@ module ContextDrop
               attached = att.respond_to?(:file) && att.file.attached?
               {
                 id: att.id,
+                qualified_id: ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, att.id),
                 attachment_type: att.attachment_type,
                 element_reference_id: att.element_reference_id,
                 metadata: att.metadata || {},

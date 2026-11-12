@@ -6,14 +6,18 @@ module ContextDrop
       class GetFeedbackAttachment
         DEFINITION = {
           name: "get_feedback_attachment",
-          description: "Retrieve a specific ContextDrop::Attachment record and its binary image/screenshot as an MCP image content block.",
+          description: "Retrieve a specific ContextDrop::Attachment record and its binary image/screenshot as an MCP image content block from local or remote environments.",
           inputSchema: {
             type: "object",
             required: ["attachment_id"],
             properties: {
               attachment_id: {
                 type: %w[integer string],
-                description: "The ID of the ContextDrop::Attachment record."
+                description: "The ID of the ContextDrop::Attachment record, or a qualified '<environment>:<attachment_id>' string (e.g. 'staging:201')."
+              },
+              environment: {
+                type: "string",
+                description: "Optional environment name ('local', 'staging', 'production', etc.)."
               }
             }
           }
@@ -21,15 +25,33 @@ module ContextDrop
 
         def self.call(args = {})
           params = args.is_a?(Hash) ? args.transform_keys(&:to_s) : {}
-          att_id = params["attachment_id"] || params["id"]
-          return error_result("Missing required parameter: attachment_id") if att_id.nil? || att_id.to_s.strip.empty?
+          raw_att_id = params["attachment_id"] || params["id"]
+          return error_result("Missing required parameter: attachment_id") if raw_att_id.nil? || raw_att_id.to_s.strip.empty?
+
+          target_env, att_id = ContextDrop::MCP::EnvironmentRouter.parse_target(raw_att_id, params["environment"])
+
+          unless ContextDrop::MCP::EnvironmentRouter.local_target?(target_env)
+            remote_cfg = ContextDrop::MCP::EnvironmentRouter.remote_config_for(target_env)
+            return error_result("Unknown remote environment '#{target_env}'") unless remote_cfg
+
+            begin
+              return ContextDrop::MCP::RemoteClient.call_tool(target_env, remote_cfg, "get_feedback_attachment", {
+                "attachment_id" => att_id
+              })
+            rescue ContextDrop::MCP::RemoteClient::RemoteError => e
+              return error_result(e.message)
+            end
+          end
 
           attachment = ContextDrop::Attachment.includes(:element_reference).find_by(id: att_id)
           return error_result("Attachment ##{att_id} not found") unless attachment
 
+          env_name = ContextDrop::MCP::EnvironmentRouter.host_environment
           attached = attachment.respond_to?(:file) && attachment.file.attached?
           meta_payload = {
             id: attachment.id,
+            qualified_id: ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, attachment.id),
+            environment: env_name,
             feedback_id: attachment.feedback_id,
             element_reference_id: attachment.element_reference_id,
             element_selector: attachment.element_reference&.selector,

@@ -50,9 +50,38 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 14px 32px 14px 190px;
+      padding: 14px 32px 14px 56px;
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .demo-env-toggle {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      border-radius: 6px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      gap: 3px;
+    }
+
+    .demo-env-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--ink-secondary);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.14s ease, color 0.14s ease;
+    }
+
+    .demo-env-btn.is-active {
+      background: var(--ink-primary);
+      color: #faf9f6;
     }
 
     .demo-brand {
@@ -489,24 +518,36 @@
   </style>
 </head>
 <body>
-  <!-- ContextDrop Floating Widget (starts at top_left so the Pin selector is immediately accessible) -->
+  <!-- ContextDrop v0.2 Widget (3-Tier Environment-Adaptive UX: Local Agent | Staging Verbose | Production Smart) -->
   <context-drop-widget
     id="demo-widget"
     data-position="top_left"
     data-endpoint="/context_drop"
-    data-placeholder="Describe what feels off with the pinned elements..."
-    data-metadata='{"environment":"demo-playground","release":"v0.2.0-pin-ui"}'
+    data-config='{"enabled":true,"environment":"development","position":"top_left","csrf_token":"demo_csrf_token_test","agent":{"enabled":true},"features":{"selection_mode":"verbose","smart_capture_padding":84}}'
+    data-metadata='{"release":"v0.2.0"}'
   ></context-drop-widget>
 
   <header class="demo-topbar" id="meridian-topbar">
     <div class="demo-brand">
       <span>Meridian Fulfillment Studio</span>
-      <span class="demo-brand-badge">ContextDrop Live Demo</span>
+      <span class="demo-brand-badge">ContextDrop v0.2 Demo</span>
     </div>
     <div class="demo-quick-actions">
+      <div class="demo-env-toggle" role="group" aria-label="Simulated Host Rails Environment">
+        <button type="button" class="demo-env-btn is-active" id="demo-env-dev" data-env="development">
+          local (Agent)
+        </button>
+        <button type="button" class="demo-env-btn" id="demo-env-staging" data-env="staging">
+          staging (Verbose)
+        </button>
+        <button type="button" class="demo-env-btn" id="demo-env-prod" data-env="production">
+          production (Smart)
+        </button>
+      </div>
       <div class="demo-dropdown-wrap" id="transient-dropdown-container">
         <button type="button" class="demo-btn" id="demo-dropdown-trigger" aria-expanded="false" aria-haspopup="true" title="Open transient menu to test DOM freeze (⌥⇧P)">
-          <span>Options Menu ▾</span>
+          <span>Options Menu</span>
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3.5 6 8 10.5 12.5 6"/></svg>
         </button>
         <div class="demo-dropdown-menu" id="demo-dropdown-menu" role="menu">
           <div class="demo-dropdown-header">Transient Menu (Closes on Blur)</div>
@@ -669,19 +710,16 @@
         </div>
         <ol class="guide-steps">
           <li>
-            <strong>Freeze &amp; Pin Transient Menus (<kbd class="code-tag">⌥⇧P</kbd> or <kbd class="code-tag">Alt+Shift+P</kbd>):</strong> Click <strong>Options Menu ▾</strong> in the top header. While the menu is open, press <code class="code-tag">⌥⇧P</code> (or <code class="code-tag">Alt+Shift+P</code>). ContextDrop freezes the DOM and suppresses blur events, keeping the transient menu open. Hover over any menu item and press <code class="code-tag">Space</code> to pin it immediately without triggering clicks!
+            <strong>Peel the Book Corner into a Pushpin:</strong> Drag the folded paper corner in the top-left viewport corner. Watch it morph into a pushpin, hover over any UI element (scroll your wheel to scrub overlapping layers), and release to pin it directly—or drag it into another viewport corner to re-dock!
           </li>
           <li>
-            <strong>Drag the Floating Pin Anywhere:</strong> Grab the grip or pin dock at the top-left corner and drag it anywhere on the screen.
+            <strong>3-Tier Environment Workflow (<code class="code-tag">local</code> · <code class="code-tag">staging</code> · <code class="code-tag">production</code>):</strong> Switch the top-bar toggle between <strong>local (Agent)</strong> (full docked BYOK coding sidebar), <strong>staging (Verbose)</strong> (<code class="code-tag">v0.1.x</code> CSS selectors, wheel layer scrubbing, and <code class="code-tag">⌥⇧P</code>), and <strong>production (Smart)</strong> (zero-jargon component promotion + automatic surrounding-context screenshot + compact quick-feedback card).
           </li>
           <li>
-            <strong>Scrub Overlapping Layers with the Wheel:</strong> Click <strong>Pin</strong> (or press <code class="code-tag">⌥⇧P</code>), hover over the blue promo ribbon or dark toast in Scenario 1, and <strong>scroll your mouse wheel</strong> to unfurl the live layer HUD and select the underlying button or card.
+            <strong>Cross-Environment MCP Feedbacks &amp; Diff Approval:</strong> Open the Agent sidebar, click <strong>Feedbacks</strong> to inspect simulated <code class="code-tag">local</code>, <code class="code-tag">staging</code>, and <code class="code-tag">production</code> items, ask the agent for a fix, and review/apply the staged file diff inline.
           </li>
           <li>
-            <strong>1-Click Pin &amp; Toggle:</strong> Click once or press <code class="code-tag">Space</code> to pin the highlighted layer immediately (click or press Space on an already-pinned element to unpin it), then press <code class="code-tag">Esc</code> or click <strong>Done</strong> on the Coach Bar to write your note.
-          </li>
-          <li>
-            <strong>Minimize &amp; Drag the Chatbox:</strong> Drag the chatbox by its header bar, hover over pinned element chips in the tray to highlight them on the page, or click the camera icon on a chip to capture an element screenshot.
+            <strong>Freeze &amp; Pin Transient Menus (<kbd class="code-tag">⌥⇧P</kbd>):</strong> Click <strong>Options Menu</strong> in the top header, press <code class="code-tag">⌥⇧P</code> to freeze blur events, and press <code class="code-tag">Space</code> to pin any menu item without closing the menu.
           </li>
         </ol>
       </section>
@@ -707,6 +745,51 @@
       const container = document.getElementById("submissions-container");
       const counterBadge = document.getElementById("submission-counter-badge");
       const widget = document.getElementById("demo-widget");
+      const envDevBtn = document.getElementById("demo-env-dev");
+      const envStagingBtn = document.getElementById("demo-env-staging");
+      const envProdBtn = document.getElementById("demo-env-prod");
+      const triggerChatBtn = document.getElementById("demo-trigger-chat");
+      const triggerPinLabel = document.querySelector("#demo-trigger-pin span");
+
+      function applyDemoEnv(envName) {
+        const isDev = envName === "development";
+        const isStaging = envName === "staging";
+        const isProd = envName === "production";
+
+        envDevBtn?.classList.toggle("is-active", isDev);
+        envStagingBtn?.classList.toggle("is-active", isStaging);
+        envProdBtn?.classList.toggle("is-active", isProd);
+
+        if (triggerChatBtn) {
+          triggerChatBtn.textContent = isDev
+            ? "Open Local Agent Sidebar"
+            : isProd
+              ? "Send Quick Feedback"
+              : "Open Verbose Inspector";
+        }
+        if (triggerPinLabel) {
+          triggerPinLabel.textContent = isProd
+            ? "Highlight Page Area"
+            : "Start Pinning Elements";
+        }
+        if (widget && typeof widget.setWidgetConfig === "function") {
+          widget.setWidgetConfig({
+            environment: envName,
+            agent: { enabled: isDev },
+            features: {
+              selection_mode: isProd ? "smart" : "verbose",
+              smart_capture_padding: 84
+            }
+          });
+        }
+      }
+
+      envDevBtn?.addEventListener("click", () => applyDemoEnv("development"));
+      envStagingBtn?.addEventListener("click", () => applyDemoEnv("staging"));
+      envProdBtn?.addEventListener("click", () => applyDemoEnv("production"));
+      if (triggerChatBtn) {
+        triggerChatBtn.textContent = "Open Local Agent Sidebar";
+      }
 
       document.getElementById("demo-trigger-pin")?.addEventListener("click", () => {
         if (widget && typeof widget.startPinSelection === "function") {
@@ -862,9 +945,108 @@
           });
         }
 
-        if (originalFetch) {
+        if (originalFetch && window.location.protocol.startsWith("http")) {
           return originalFetch(input, init);
         }
+
+        // Offline file:// fallback for Local Agent endpoints in standalone demo
+        if (url.includes("/context_drop/agent/status")) {
+          return new Response(
+            JSON.stringify({
+              enabled: true,
+              environment: "development",
+              workspace_name: "meridian-fulfillment",
+              mcp_environments: [
+                { name: "local", type: "local", host_env: "development" },
+                { name: "staging", type: "remote_http" },
+                { name: "production", type: "remote_http" }
+              ],
+              active_provider: "anthropic",
+              providers: [
+                {
+                  id: "anthropic",
+                  label: "Anthropic Claude",
+                  configured: true,
+                  source: "local_no_key",
+                  env_var_hint: "ANTHROPIC_API_KEY",
+                  masked_key: "demo-sim",
+                  model: "claude-sonnet-4-20250514",
+                  default_model: "claude-sonnet-4-20250514",
+                  models: ["claude-sonnet-4-20250514", "claude-3-5-haiku-latest"],
+                  supports_base_url: false
+                }
+              ]
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (url.includes("/context_drop/agent/feedbacks")) {
+          return new Response(
+            JSON.stringify({
+              total_count: 2,
+              environments_queried: ["local", "staging", "production"],
+              feedbacks: [
+                {
+                  id: 41,
+                  qualified_id: "staging:41",
+                  environment: "staging",
+                  status: "new",
+                  message: "Floating promo ribbon overlaps Enterprise plan price.",
+                  page_url: "/fulfillment",
+                  primary_selector: "#promo-ribbon-overlay",
+                  element_references_count: 2,
+                  attachments_count: 1,
+                  created_at: new Date().toISOString()
+                }
+              ]
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (url.includes("/context_drop/agent/chat")) {
+          const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+          const sel = body.element_references?.[0]?.selector || "#promo-ribbon-overlay";
+          return new Response(
+            JSON.stringify({
+              reply: `Inspected \`${sel}\` in \`app/views/fulfillment/_enterprise_card.html.erb\` and staged a reviewable diff below.`,
+              provider: "anthropic",
+              model: "claude-sonnet-4-20250514",
+              tool_calls: [{ name: "read_file", summary: "Read app/views/fulfillment/_enterprise_card.html.erb", status: "ok" }],
+              proposed_edits: [
+                {
+                  id: "edit_offline_1",
+                  path: "app/views/fulfillment/_enterprise_card.html.erb",
+                  summary: `Polish spacing on ${sel}`,
+                  is_new_file: false,
+                  diff: `@@ -14,2 +14,2 @@\n-<div class="floating-overlap-ribbon">\n+<div class="floating-overlap-ribbon is-docked">`,
+                  added_lines: 1,
+                  removed_lines: 1,
+                  status: "pending",
+                  created_at: new Date().toISOString()
+                }
+              ]
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (url.includes("/context_drop/agent/edits/")) {
+          const status = url.endsWith("/apply") ? "applied" : url.endsWith("/reject") ? "rejected" : "reverted";
+          return new Response(
+            JSON.stringify({ edit: { id: "edit_offline_1", status } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        if (url.includes("/context_drop/agent/keys")) {
+          return new Response(JSON.stringify({ active_provider: "anthropic", providers: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
         throw new Error("Fetch unavailable");
       };
     })();

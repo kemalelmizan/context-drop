@@ -107,6 +107,7 @@ module MiniRSpec
       @name = name
       @parent = parent
       @before_hooks = []
+      @after_hooks = []
       @let_definitions = {}
       @examples = []
       @children = []
@@ -123,8 +124,17 @@ module MiniRSpec
       @before_hooks << block
     end
 
+    def after(&block)
+      @after_hooks << block
+    end
+
     def let(name, &block)
       @let_definitions[name.to_sym] = block
+    end
+
+    def let!(name, &block)
+      let(name, &block)
+      before { public_send(name) }
     end
 
     def it(desc, &block)
@@ -133,6 +143,10 @@ module MiniRSpec
 
     def all_before_hooks
       (parent ? parent.all_before_hooks : []) + @before_hooks
+    end
+
+    def all_after_hooks
+      @after_hooks + (parent ? parent.all_after_hooks : [])
     end
 
     def all_let_definitions
@@ -155,6 +169,12 @@ module MiniRSpec
           stats[:failed] += 1
           stats[:failures] << ["#{full_name} — #{desc}", e]
           print "F"
+        ensure
+          all_after_hooks.each do |h|
+            ctx.instance_eval(&h)
+          rescue StandardError
+            nil
+          end
         end
       end
       @children.each { |c| c.run(stats) }

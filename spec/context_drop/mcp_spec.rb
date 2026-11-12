@@ -180,7 +180,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       "method" => "tools/list"
     )
     tool_names = tools_res[:result][:tools].map { |t| t[:name] }
-    expect(tool_names).to eq(%w[list_feedbacks get_feedback get_feedback_attachment update_feedback_status])
+    expect(tool_names).to eq(%w[list_environments list_feedbacks get_feedback get_feedback_attachment update_feedback_status])
   end
 
   it "filters feedbacks via list_feedbacks tool" do
@@ -308,5 +308,170 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
     )
     fb_payload = JSON.parse(res_id[:result][:contents].first[:text])
     expect(fb_payload["id"]).to eq(42)
+  end
+
+  describe "Unified multi-environment MCP federation" do
+    before do
+      ContextDrop.reset_configuration!
+      ContextDrop.configure do |config|
+        config.environment = "development"
+        config.mcp_environments = {
+          staging: {
+            url: "https://staging.example.com/context_drop/mcp",
+            api_key: "staging_secret_key"
+          },
+          production: {
+            url: "https://app.example.com/context_drop/mcp",
+            api_key: "prod_secret_key"
+          }
+        }
+      end
+
+      ContextDrop::MCP::RemoteClient.transport = lambda do |env_name, _cfg, method, params|
+        if method == "ping"
+          {}
+        elsif method == "tools/call" && params[:name] == "list_feedbacks"
+          remote_fb = {
+            id: env_name == "staging" ? 901 : 902,
+            status: "new",
+            message: "Remote #{env_name} checkout bug",
+            page_url: "https://#{env_name}.example.com/checkout",
+            submitter: "QA",
+            attachments_count: 0,
+            element_references_count: 1,
+            element_selectors: ["#remote-btn"],
+            created_at: "2026-11-11T10:00:00Z"
+          }
+          {
+            content: [{ type: "text", text: JSON.generate(total: 1, limit: 20, offset: 0, feedbacks: [remote_fb]) }],
+            isError: false
+          }
+        elsif method == "tools/call" && params[:name] == "get_feedback"
+          {
+            content: [
+              {
+                type: "text",
+                text: JSON.generate(
+                  id: params[:arguments]["id"].to_i,
+                  status: "new",
+                  message: "Remote staging details",
+                  page_url: "https://staging.example.com/checkout",
+                  element_references: [{ selector: "#staging-pay-btn", tag_name: "button" }],
+                  attachments: []
+                )
+              }
+            ],
+            isError: false
+          }
+        elsif method == "tools/call" && params[:name] == "update_feedback_status"
+          {
+            content: [
+              {
+                type: "text",
+                text: JSON.generate(
+                  id: params[:arguments]["id"].to_i,
+                  previous_status: "new",
+                  status: params[:arguments]["status"],
+                  page_url: "https://staging.example.com/checkout"
+                )
+              }
+            ],
+            isError: false
+          }
+        else
+          raise ContextDrop::MCP::RemoteClient::RemoteError, "Unhandled stub #{method}"
+        end
+      end
+    end
+
+    after do
+      ContextDrop::MCP::RemoteClient.transport = nil
+      ContextDrop.reset_configuration!
+    end
+
+    it "lists local host environment alongside federated remote environments" do
+      res = ContextDrop::MCP::Dispatcher.call(
+        "jsonrpc" => "2.0",
+        "id" => 20,
+        "method" => "tools/call",
+        "params" => { "name" => "list_environments", "arguments" => { "ping_remotes" => true } }
+      )
+
+      parsed = JSON.parse(res[:result][:content].first[:text])
+      expect(parsed["host_environment"]).to eq("development")
+      env_names = parsed["environments"].map { |e| e["name"] }
+      expect(env_names).to eq(%w[development staging production])
+      staging_entry = parsed["environments"].find { |e| e["name"] == "staging" }
+      expect(staging_entry["reachable"]).to eq(true)
+    end
+
+    it "aggregates feedbacks across local, staging, and production when environment is 'all'" do
+      res = ContextDrop::MCP::Dispatcher.call(
+        "jsonrpc" => "2.0",
+        "id" => 21,
+        "method" => "tools/call",
+        "params" => { "name" => "list_feedbacks", "arguments" => { "status" => "new" } }
+      )
+
+      parsed = JSON.parse(res[:result][:content].first[:text])
+      expect(parsed["environment"]).to eq("all")
+      expect(parsed["total"]).to eq(3) # 1 local (#42) + 1 staging (#901) + 1 production (#902)
+      qualified_ids = parsed["feedbacks"].map { |f| f["qualified_id"] }
+      expect(qualified_ids).to include("development:42")
+      expect(qualified_ids).to include("staging:901")
+      expect(qualified_ids).to include("production:902")
+    end
+
+    it "routes get_feedback and update_feedback_status to remote environment via qualified '<env>:<id>'" do
+      get_res = ContextDrop::MCP::Dispatcher.call(
+        "jsonrpc" => "2.0",
+        "id" => 22,
+        "method" => "tools/call",
+        "params" => { "name" => "get_feedback", "arguments" => { "id" => "staging:901" } }
+      )
+      fb_json = JSON.parse(get_res[:result][:content].first[:text])
+      expect(fb_json["environment"]).to eq("staging")
+      expect(fb_json["qualified_id"]).to eq("staging:901")
+      expect(fb_json["element_references"].first["selector"]).to eq("#staging-pay-btn")
+
+      upd_res = ContextDrop::MCP::Dispatcher.call(
+        "jsonrpc" => "2.0",
+        "id" => 23,
+        "method" => "tools/call",
+        "params" => {
+          "name" => "update_feedback_status",
+          "arguments" => { "id" => "staging:901", "status" => "resolved" }
+        }
+      )
+      upd_json = JSON.parse(upd_res[:result][:content].first[:text])
+      expect(upd_json["environment"]).to eq("staging")
+      expect(upd_json["status"]).to eq("resolved")
+    end
+
+    it "prevents recursive remote fan-out when invoked via handle_http_payload(local_only: true)" do
+      res = ContextDrop::MCP::Server.handle_http_payload(
+        {
+          "jsonrpc" => "2.0",
+          "id" => 24,
+          "method" => "tools/call",
+          "params" => { "name" => "list_feedbacks", "arguments" => { "status" => "new" } }
+        },
+        local_only: true
+      )
+
+      parsed = JSON.parse(res[:result][:content].first[:text])
+      expect(parsed["total"]).to eq(1)
+      expect(parsed["feedbacks"].first["id"]).to eq(42)
+    end
+
+    it "rejects insecure non-loopback http:// remote MCP URLs" do
+      expect do
+        ContextDrop::MCP::RemoteClient.validate_endpoint_uri!(
+          "staging",
+          "http://staging.example.com/context_drop/mcp",
+          allow_insecure_http: false
+        )
+      end.to raise_error(ContextDrop::MCP::RemoteClient::RemoteError, /Insecure HTTP MCP URL refused/)
+    end
   end
 end

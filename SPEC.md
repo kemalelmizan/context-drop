@@ -1,9 +1,9 @@
 # ContextDrop — Technical Specification
 
-**Status:** Draft (v0.1.0-spec)  
+**Status:** Active (`v0.2.0`)  
 **Project Type:** Open-source Ruby Gem (`context_drop`)  
-**Architecture:** Mountable Ruby on Rails Engine (`isolate_namespace ContextDrop`) + Decoupled TypeScript Frontend Widget + MCP Server  
-**License:** MIT (Proposed / TBD)  
+**Architecture:** Mountable Ruby on Rails Engine (`isolate_namespace ContextDrop`) + Decoupled TypeScript Frontend Widget + Unified Multi-Environment MCP Hub + Local BYOK Agentic Coding Sidebar  
+**License:** MIT  
 **Working Name:** ContextDrop  
 
 > **Core Design Principle:**  
@@ -68,12 +68,13 @@ The host application remains responsible for deciding whether authentication is 
 
 ## 4. User Experience
 
-### 4.1 Freely Floating Pin Dock & Draggable Chatbox
+### 4.1 Book-Corner Fold Launcher & Peel-to-Pin Morph (`v0.2`)
 
-ContextDrop provides a freely draggable floating Pin dock and chatbox on configured application pages:
-- **Positioning:** `position: fixed` relative to the viewport, starting at the configured corner (`:top_left`, `:bottom_right`, `:bottom_left`, `:top_right`) and freely draggable anywhere within viewport bounds.
-- **Pin-Shaped Selector:** Available both on the floating dock (`.cd-floating-pin-btn`) and anchored at the **top-left corner of the chatbox header** (`.cd-pin-corner-btn`) with an asymmetric pushpin silhouette (`11px 11px 11px 3px`).
-- **Minimize to Compact Bar:** While pinning elements on the page (or when clicking the header minimize button), the chatbox collapses into a compact floating bar (`.cd-compact-bar`) with live DOM breadcrumbs, layer Up/Down buttons, and an expand-to-chat toggle so the host page remains unobstructed.
+ContextDrop rests flush in a single viewport corner rather than rendering a wide floating pill:
+- **Flush Book-Corner Launcher (`.cd-book-corner`):** Compact `38×38px` (`46×46px` on hover) folded archival paper corner flush against the configured viewport corner (`:bottom_right`, `:bottom_left`, `:top_right`, `:top_left`).
+- **Click Action:** Clicking the book corner opens the normal draggable Feedback Chatbox (`.cd-composer`) in deployed environments (`staging`, `production`), or opens the docked **Local BYOK Agentic Coding Sidebar** (`.cd-agent-sidebar`) when running locally in `development` on loopback (`127.0.0.1` / `::1`), complete with an `Agent | Feedback` mode switcher so developers can still use and test the standard feedback chatbox locally.
+- **Peel-and-Drop to Pin on Drag:** Dragging the book corner past `6px` animates the folded corner into an asymmetric pushpin (`.cd-drag-pin`) with live Inspector Cobalt element highlighting (`Release to pin`). Releasing over any valid DOM element pins it directly and opens the active composer/sidebar with the element attached; releasing inside another `68×68px` viewport corner zone (`.cd-corner-snap-ghost`) re-docks the book corner to that corner.
+- **Minimize to Compact Bar:** While pinning elements via click-mode (`Pin Element` button in `.cd-pin-corner-btn`), the chatbox or sidebar collapses into a compact floating bar (`.cd-compact-bar`) with live DOM breadcrumbs, layer Up/Down buttons, and an expand toggle so the host page remains unobstructed.
 
 ### 4.2 Chatbox Feedback Composer
 
@@ -93,17 +94,23 @@ Attached items are represented as individual chips/cards within the composer tra
 - **Type Indicator:** Clearly distinguishes `Pin`, `Shot`, and `Image`.
 - **Removable:** Each item can be removed prior to submission.
 
-### 4.4 Precision DOM Element Selection (Overlapping & Cascading Disambiguation)
+### 4.4 Environment-Adaptive DOM Element Selection (`smart` vs `verbose`)
 
-1. User activates the Pin-shaped selector in the top-left corner of the chatbox or on the floating pin dock.
+ContextDrop resolves `selection_mode` via `config.resolved_selection_mode` (`"smart"` when `Rails.env.production?` and `config.selection_mode == :auto`; `"verbose"` otherwise):
+
+#### A. Production Smart Component Selector (`selection_mode = "smart"`)
+1. Hovering or peel-dragging over inner leaf nodes (`<span>`, `<svg>`, `<strong>`, icon wrappers) automatically promotes the target (`resolveSmartComponent`) to the nearest meaningful UI component (`button`, `link`, `input`/`field`, `card`, `banner`, `dialog`, `form`, `navigation`, `table row`, or bounded `section`).
+2. Displays a compact 1-line rounded hover pill showing only a plain-language human label (`describeSmartComponent` → `“Complete Order” button`)—omitting CSS selectors, pixel geometry, overlapping layer stacks, wheel-scrubbing interception, and `<kbd>` shortcut badges.
+3. Clicking or dropping immediately captures the component snapshot (`ElementReference` with `metadata.friendly_label`, `metadata.component_kind`, and `metadata.original_target_selector`), triggers an automatic privacy-redacted surrounding-context screenshot (`captureSurroundingContextScreenshot` with `smart_capture_padding = 84`, minimum `340×220px` clamped to viewport), merges both into a single `.cd-smart-card` in the compact `356px` composer, and exits selection mode immediately so the user can type quick feedback right away.
+
+#### B. Staging, QA & Dev Verbose Layer Disambiguation (`selection_mode = "verbose"`)
+1. User activates the Pin-shaped selector in the top-left corner of the chatbox or drags the book corner.
 2. ContextDrop collapses the chatbox into the Compact Pinning Bar and enters selection mode (`crosshair` cursor with a cursor-following pushpin marker).
 3. Hovering over an element displays a primary bounding-box highlight overlay and a live HUD showing `<tag#selector>`, pixel dimensions, and layer depth (`1/5 layers · ↕ scroll`).
 4. **Disambiguating Overlapping & Cascading Elements:**
    - **Scroll-Wheel & `↑`/`↓` Arrow Key Depth Cycling:** Scrolling the mouse wheel (`wheel`) or pressing `ArrowUp`/`ArrowDown` (`[`/`]`) smoothly cycles through the candidate stack at that point (`target`, overlapping sibling elements via `document.elementsFromPoint`, direct children, and DOM ancestors) while rendering a dashed ghost outline around the original leaf element.
-   - **Click-to-Pick Layer Popover:** Clicking a location with multiple cascading or overlapping layers anchors the floating pin and opens a floating Layer & Hierarchy Picker Popover listing all candidate layers at that coordinate with live hover preview on the page (`Shift+Click` or `Enter` pins immediately).
-   - **Interactive DOM Breadcrumb Bar:** Both the Layer Popover and the Compact Pinning Bar render an interactive ancestor path (`section > div.card > button`) where hovering previews and clicking pins any ancestor or target element directly.
-5. Selection mode remains active so additional elements can be pinned in one session.
-6. Users can exit selection mode explicitly (`Escape` or returning to `Chat`).
+   - **Freeze & Pin Transient Menus (`⌥⇧P`):** Pressing `Alt+Shift+P` freezes hover-triggered menus/dropdowns at the current cursor coordinate for layer scrubbing and pinning.
+5. Selection mode remains active for multi-element pinning (`Space` or click) until exited (`Escape` or returning to `Chat`).
 
 **Host Non-Interference:** Click and pointer events in selection mode MUST be intercepted in the capture phase (`preventDefault`, `stopPropagation`, `stopImmediatePropagation`) so underlying application links, buttons, and forms are never triggered.
 
@@ -240,7 +247,10 @@ ContextDrop.configure do |config|
   # Environment-based master switch (disables widget, dashboard, and ingestion endpoints when false)
   config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"
 
-  # Widget position: :bottom_right, :bottom_left, :top_right, :top_left
+  # Host environment attribution (defaults automatically to Rails.env)
+  # config.environment = Rails.env
+
+  # Initial book-corner launcher position: :bottom_right, :bottom_left, :top_right, :top_left
   config.position = :bottom_right
 
   # Attachment storage backend
@@ -257,10 +267,12 @@ ContextDrop.configure do |config|
   config.allowed_content_types = %w[image/png image/jpeg image/webp image/gif]
   config.max_image_dimensions = [4096, 4096]
 
-  # Widget feature flags
+  # Widget feature flags & environment-adaptive selector mode (:auto | :smart | :verbose)
   config.element_selection = true
+  config.selection_mode = :auto
   config.screenshot_capture = true
   config.element_capture_padding = 16
+  config.smart_capture_padding = 84
 
   # DOM selectors excluded from selection and redacted in screenshots
   config.excluded_selectors = [
@@ -284,10 +296,23 @@ ContextDrop.configure do |config|
   # Optional lifecycle callback invoked after feedback creation
   config.on_feedback_created = ->(feedback) { }
 
-  # Model Context Protocol (MCP) server settings (Phase 2)
+  # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
+  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
+
+  # Unified Model Context Protocol (MCP) server settings
   config.mcp_enabled = ENV.fetch("CONTEXT_DROP_MCP_ENABLED", "false") == "true"
   config.mcp_api_key = ENV["CONTEXT_DROP_MCP_API_KEY"]
   config.authorize_mcp = nil
+  config.mcp_environments = {
+    staging: {
+      url: ENV["CONTEXT_DROP_STAGING_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_STAGING_MCP_API_KEY"]
+    },
+    production: {
+      url: ENV["CONTEXT_DROP_PRODUCTION_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_PRODUCTION_MCP_API_KEY"]
+    }
+  }
 end
 ```
 
@@ -376,6 +401,7 @@ end
 | `message` | `text` | `true` | `nil` | User-submitted feedback message |
 | `page_url` | `string` | `false` | — | Originating page URL |
 | `user_agent` | `string` | `true` | `nil` | Browser `User-Agent` |
+| `environment` | `string` | `false` | `"development"` | Originating host environment (`Rails.env` / `config.resolved_environment`) |
 | `metadata` | `jsonb` / `json` | `false` | `{}` | Contextual metadata (`viewport`, `locale`, `timezone`, custom fields) |
 | `status` | `string` | `false` | `"new"` | Workflow status (`new`, `reviewed`, `resolved`, `dismissed`) |
 | `created_at` | `datetime` | `false` | — | Submission timestamp |
@@ -502,24 +528,44 @@ ContextDrop::Feedback.includes(:submitter, :element_references, attachments: { f
 | `GET` | `/context_drop/dashboard/feedbacks/:id` | Self-hosted Feedback Dashboard detail view | `enabled` + `authorize_dashboard` |
 | `PATCH` | `/context_drop/dashboard/feedbacks/:id` | Update feedback status from the dashboard | `enabled` + `authorize_dashboard` + CSRF |
 | `POST` | `/context_drop/mcp` | Model Context Protocol (MCP) JSON-RPC 2.0 endpoint | `mcp_enabled` + `mcp_api_key` / `authorize_mcp` |
+| `GET` | `/context_drop/agent/status` | Local BYOK Agent status, providers, and masked key sources | `enabled` + `development` (never `production`) + Loopback + Same-Origin + `authorize_dashboard` |
+| `POST` | `/context_drop/agent/keys` | Save BYOK provider API key into encrypted server vault | Same as above + CSRF |
+| `DELETE` | `/context_drop/agent/keys/:provider` | Remove stored BYOK provider key from encrypted vault | Same as above + CSRF |
+| `GET` | `/context_drop/agent/feedbacks` | List federated feedbacks across `local` + remote MCP environments | Same as `/agent/status` |
+| `POST` | `/context_drop/agent/chat` | Run bounded agentic turn (read-only workspace tools + staged diffs) | Same as above + CSRF |
+| `POST` | `/context_drop/agent/edits/:id/apply` | Apply human-approved staged unified diff to workspace file | Same as above + CSRF |
+| `POST` | `/context_drop/agent/edits/:id/reject` | Reject and discard a staged file edit | Same as above + CSRF |
+| `POST` | `/context_drop/agent/edits/:id/revert` | Revert a previously applied file edit to its original snapshot | Same as above + CSRF |
 
 ---
 
-## 11. Model Context Protocol (MCP) Server for IDEs & Coding Agents (Phase 2)
+## 11. Unified Multi-Environment Model Context Protocol (MCP) Hub (`v0.2`)
 
-ContextDrop provides a built-in MCP server (`ContextDrop::MCP::Server`) supporting:
-1. **Local `stdio` Transport (`bin/rails context_drop:mcp`):** Spawns locally from the developer's IDE (`Cursor`, `Claude Code`, `Antigravity`, `Windsurf`, `VS Code`) and reads `ContextDrop::Feedback`, `ContextDrop::Attachment`, and `ContextDrop::ElementReference` directly from the local Rails environment.
-2. **Remote Streamable HTTP Transport (`POST /context_drop/mcp`):** Authenticated via `Authorization: Bearer <CONTEXT_DROP_MCP_API_KEY>` so developers can query staging/production feedback directly from their IDE.
+ContextDrop provides a unified MCP server (`ContextDrop::MCP::Server` + `ContextDrop::MCP::EnvironmentRouter`) so developers register **one** MCP server in their IDE (`bin/rails context_drop:mcp`) to triage every environment:
+1. **Single Local `stdio` Hub (`bin/rails context_drop:mcp`):** Queries the local Rails database (`environment: "local"`) and transparently federates configured remote HTTP endpoints (`staging`, `production`, etc., configured via `config.mcp_environments`, `CONTEXT_DROP_REMOTE_ENVIRONMENTS`, or `CONTEXT_DROP_<ENV>_MCP_URL` + `CONTEXT_DROP_<ENV>_MCP_API_KEY`).
+2. **Remote Streamable HTTP Transport (`POST /context_drop/mcp`):** Authenticated via `Authorization: Bearer <CONTEXT_DROP_MCP_API_KEY>` (constant-time `secure_compare`) so the local MCP hub—or remote-only / Docker MCP clients—can securely query deployed environments over HTTPS.
 
 **Exposed MCP Tools:**
-- `list_feedbacks`: Filter by `status`, `page_url`, `query` (searches `message`, `selector`, `dom_path`, `text_content`), `limit`, `offset`.
-- `get_feedback`: Returns the full `Feedback`, all `ElementReference` records, and `Attachment` screenshots/images as base64 MCP `image` content blocks.
-- `get_feedback_attachment`: Returns a specific `ContextDrop::Attachment` binary as an MCP `image` content block.
-- `update_feedback_status`: Updates a feedback record's `status` (`new`, `reviewed`, `resolved`, `dismissed`).
+- `list_environments`: Lists `local` (with current host `Rails.env`) plus all configured remote environments and reachability metadata.
+- `list_feedbacks`: Filter by `environment` (`"all"`, `"local"`, `"staging"`, `"production"`, etc.), `status`, `page_url`, `query` (searches `message`, `selector`, `dom_path`, `text_content`), `limit`, `offset`. Returns chronologically merged results with `qualified_id` (`local:12`, `staging:42`, `production:98`) and non-blocking `environment_errors` if a remote endpoint is unreachable.
+- `get_feedback`: Accepts either `<id>` + `environment` or a qualified ID (`"production:42"`), returning the full `Feedback`, all `ElementReference` records, and `Attachment` screenshots/images as base64 MCP `image` content blocks.
+- `get_feedback_attachment`: Accepts `<attachment_id>` + `environment` or `"staging:15"`, returning a specific `ContextDrop::Attachment` binary as an MCP `image` content block.
+- `update_feedback_status`: Updates a local or remote feedback record's `status` (`new`, `reviewed`, `resolved`, `dismissed`).
 
 ---
 
-## 12. MVP Acceptance Criteria
+## 12. Local BYOK Agentic Sidebar & Defense-in-Depth Safety (`v0.2`)
+
+When the host Rails application runs locally in `development`, ContextDrop transforms the feedback surface into a docked Antigravity / VS Code-style **Agentic Coding Sidebar** (`ContextDrop::Agent::Orchestrator`) governed by five strict safety walls:
+1. **Environment & Loopback Hard Lock:** `/context_drop/agent/*` returns `404 Not Found` whenever `Rails.env.production?` is true, when `!config.local_agent_allowed?`, when `remote_addr` / `remote_ip` / `X-Forwarded-For` is not strict loopback (`127.0.0.1` / `::1`), when `Host` fails loopback DNS-rebinding checks, or when `Origin` / `Sec-Fetch-Site` is cross-origin. All mutations also require Rails CSRF verification and `config.authorize_dashboard`.
+2. **Server-Side Encrypted BYOK Vault:** Supports `Anthropic`, `Google Gemini`, `OpenAI`, and `Custom OpenAI-Compatible` endpoints. Keys are auto-detected from local server `ENV` (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `CONTEXT_DROP_LLM_API_KEY`) or stored server-side encrypted (`AES-256-GCM`, file mode `0600`) in gitignored `tmp/context_drop_byok.enc`. Raw API keys are **never** stored in browser `localStorage`, `sessionStorage`, cookies, or DOM attributes, and `/agent/status` returns only masked tails (`••••••••abcd`).
+3. **Workspace Root Jail & Secret Denylist (`WorkspaceSandbox`):** Agent workspace tools (`list_workspace_files`, `search_workspace`, `read_workspace_file`, `propose_file_edit`) resolve paths through `File.realpath` strictly inside `Rails.root` and block `.env*`, `config/master.key`, `config/credentials*`, `*.pem`, `*.key`, `tmp/context_drop_byok*`, `.git/config`, and `.git/hooks/*`.
+4. **No Arbitrary Shell Execution:** No `bash`, `sh`, `system`, or `Open3` tool is exposed to LLM tool calls, eliminating prompt-injection command execution from untrusted user-submitted feedback messages.
+5. **Human-in-the-Loop Diff Approval:** `propose_file_edit` stages edits in memory and renders an inline unified diff card (`+N / -N`) in the sidebar. Files on disk are modified only when the developer explicitly clicks **Apply Change** (verified via SHA-256 pre-image digest check to prevent clobbering concurrent edits), with 1-click **Revert** support.
+
+---
+
+## 13. Acceptance Criteria
 
 1. Generated and structured as a mountable Rails Engine (`isolate_namespace ContextDrop`) with engine-owned migrations (`context_drop_feedbacks`, `context_drop_attachments`, `context_drop_element_references`).
 2. `bin/rails generate context_drop:install` installs the initializer, mounts routes, and copies migrations (`rails context_drop:install:migrations`).

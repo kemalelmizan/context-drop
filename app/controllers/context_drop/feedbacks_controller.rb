@@ -27,15 +27,24 @@ module ContextDrop
       feedback = nil
 
       ContextDrop::Feedback.transaction do
-        feedback = ContextDrop::Feedback.new(
+        sanitized_meta = ContextDrop::MetadataSanitizer.sanitize_feedback_metadata(payload["metadata"])
+        host_env = ContextDrop.config.resolved_environment
+        sanitized_meta["environment"] = host_env
+
+        feedback_attrs = {
           submitter: current_context_drop_submitter,
           session_id: hashed_session_identifier,
           message: payload["message"].to_s.strip.presence,
           page_url: (payload["page_url"].presence || request.referer).to_s.strip,
           user_agent: (payload["user_agent"].presence || request.user_agent).to_s.strip.presence,
-          metadata: ContextDrop::MetadataSanitizer.sanitize_feedback_metadata(payload["metadata"]),
+          metadata: sanitized_meta,
           status: "new"
-        )
+        }
+        if ContextDrop::Feedback.column_names.include?("environment")
+          feedback_attrs[:environment] = host_env
+        end
+
+        feedback = ContextDrop::Feedback.new(feedback_attrs)
 
         element_refs_by_client_ref = {}
         raw_elements.each_with_index do |raw_el, idx|
@@ -99,6 +108,7 @@ module ContextDrop
 
       render json: {
         id: feedback.id,
+        environment: feedback.environment_name,
         status: feedback.status,
         attachments_count: feedback.attachments.size,
         element_references_count: feedback.element_references.size,

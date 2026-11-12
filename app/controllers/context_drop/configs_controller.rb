@@ -7,7 +7,8 @@ module ContextDrop
 
     def show
       token = form_authenticity_token if respond_to?(:form_authenticity_token, true)
-      render json: ContextDrop.config.public_widget_config.merge(csrf_token: token), status: :ok
+      agent_ok = ContextDrop.config.local_agent_allowed? && ContextDrop.config.loopback_request?(request)
+      render json: ContextDrop.config.public_widget_config(agent_enabled: agent_ok).merge(csrf_token: token), status: :ok
     end
 
     def widget_bundle

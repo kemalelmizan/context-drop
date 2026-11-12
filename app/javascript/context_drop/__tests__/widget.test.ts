@@ -4,12 +4,14 @@ import {
   captureElementSnapshot,
   computeDomPath,
   computeSelector,
+  describeSmartComponent,
   extractSanitizedAttributes,
   extractSanitizedText,
   isElementExcluded,
   isSelectableElement,
   resolveAncestorChain,
-  resolveCandidateStack
+  resolveCandidateStack,
+  resolveSmartComponent
 } from "../sanitizer.ts";
 import { ElementPicker } from "../element-picker.ts";
 import { ContextDropWidgetElement } from "../widget.ts";
@@ -316,6 +318,57 @@ describe("ContextDrop Frontend DOM Sanitizer & Snapshot Capture", () => {
     assert.equal(picker.selectElementDirectly(btn as unknown as Element), true);
     assert.equal(selectedRef, "#submit-order");
   });
+
+  it("promotes leaf nodes to meaningful UI components with plain-language labels in smart mode", () => {
+    const iconSpan = new MockElement({
+      tagName: "SPAN",
+      attributes: { class: "btn-label" },
+      children: [new MockTextNode("Pay $49.00")],
+      rect: { x: 88, y: 188, width: 90, height: 18 }
+    });
+    const payButton = new MockElement({
+      tagName: "BUTTON",
+      attributes: { id: "pay-btn" },
+      children: [iconSpan],
+      rect: { x: 80, y: 180, width: 160, height: 42 }
+    });
+    const planHeading = new MockElement({
+      tagName: "H3",
+      children: [new MockTextNode("Pro Plan")],
+      rect: { x: 64, y: 112, width: 140, height: 24 }
+    });
+    const planParagraph = new MockElement({
+      tagName: "P",
+      attributes: { class: "fine-print" },
+      children: [new MockTextNode("Includes automated backups and regional failover.")],
+      rect: { x: 64, y: 144, width: 260, height: 28 }
+    });
+    const pricingCard = new MockElement({
+      tagName: "DIV",
+      attributes: { class: "pricing-card" },
+      children: [planHeading, planParagraph, payButton],
+      rect: { x: 52, y: 96, width: 320, height: 210 }
+    });
+    const giantMain = new MockElement({
+      tagName: "MAIN",
+      attributes: { id: "page-shell" },
+      children: [pricingCard],
+      rect: { x: 0, y: 0, width: 1280, height: 800 }
+    });
+
+    // 1. Inner <span> inside <button> promotes to the interactive button
+    const promotedBtn = resolveSmartComponent(iconSpan as unknown as Element);
+    assert.equal(promotedBtn, payButton);
+    assert.equal(describeSmartComponent(promotedBtn!).label, "“Pay $49.00” button");
+
+    // 2. Paragraph leaf inside .pricing-card promotes to the bounded card (and NOT full-page <main>)
+    const promotedCard = resolveSmartComponent(planParagraph as unknown as Element);
+    assert.equal(promotedCard, pricingCard);
+    assert.equal(describeSmartComponent(promotedCard!).label, "“Pro Plan” card");
+
+    // 3. Direct giant <main> shell is not treated as a bounded smart component when better targets exist
+    assert.ok(giantMain);
+  });
 });
 
 interface MockListenerEntry {
@@ -439,6 +492,8 @@ class MockDomElement {
   public placeholder: string = "";
   public value: string = "";
   public disabled: boolean = false;
+  public selected: boolean = false;
+  public autocomplete: string = "";
   public multiple: boolean = false;
   public accept: string = "";
   public scrollTop: number = 0;
@@ -654,13 +709,24 @@ function withMountedWidget(
     widget: ContextDropWidgetElement;
     shadowRoot: MockDomElement;
     mockBody: MockDomElement;
+    mockHtml: MockDomElement;
     mockDocument: {
       body: MockDomElement;
+      documentElement: MockDomElement;
       createElement: (tag: string) => MockDomElement;
+      querySelector: (sel: string) => MockDomElement | null;
       elementsFromPoint?: (x: number, y: number) => MockDomElement[];
     };
     mockWindow: MockDomElement & { innerWidth: number; innerHeight: number; location: { href: string } };
-  }) => void | Promise<void>
+  }) => void | Promise<void>,
+  hostAttrs: Record<string, string> = {
+    "data-config": JSON.stringify({
+      enabled: true,
+      environment: "staging",
+      position: "top_left",
+      agent: { enabled: false }
+    })
+  }
 ): Promise<void> {
   const g = globalThis as Record<string, unknown>;
   const prevWindow = g.window;
@@ -671,14 +737,21 @@ function withMountedWidget(
     innerHeight: 800,
     location: { href: "http://localhost:3000/orders" }
   });
+  const mockHtml = new MockDomElement("html");
   const mockBody = new MockDomElement("body");
+  mockHtml.appendChild(mockBody);
+
   const mockDocument: {
     body: MockDomElement;
+    documentElement: MockDomElement;
     createElement: (tag: string) => MockDomElement;
+    querySelector: (sel: string) => MockDomElement | null;
     elementsFromPoint?: (x: number, y: number) => MockDomElement[];
   } = {
     body: mockBody,
-    createElement: (tag: string) => new MockDomElement(tag)
+    documentElement: mockHtml,
+    createElement: (tag: string) => new MockDomElement(tag),
+    querySelector: () => null
   };
 
   g.window = mockWindow;
@@ -689,14 +762,16 @@ function withMountedWidget(
   const hostShim = widget as unknown as {
     attachShadow: () => ShadowRoot;
     getAttribute: (name: string) => string | null;
+    hasAttribute: (name: string) => boolean;
   };
   hostShim.attachShadow = () => shadowRoot as unknown as ShadowRoot;
-  hostShim.getAttribute = () => null;
+  hostShim.getAttribute = (name: string) => (name in hostAttrs ? hostAttrs[name] : null);
+  hostShim.hasAttribute = (name: string) => name in hostAttrs;
 
   widget.connectedCallback();
 
   return Promise.resolve()
-    .then(() => fn({ widget, shadowRoot, mockBody, mockDocument, mockWindow }))
+    .then(() => fn({ widget, shadowRoot, mockBody, mockHtml, mockDocument, mockWindow }))
     .finally(() => {
       widget.disconnectedCallback();
       if (prevWindow === undefined) {
@@ -712,126 +787,323 @@ function withMountedWidget(
     });
 }
 
-describe("ContextDrop Floating Dock & Drag Handle Interactions", () => {
-  it("activates Pin and ContextDrop floating dock buttons on pointer click (including nested label spans)", async () => {
+describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
+  it("opens standard feedback chatbox when book corner is clicked or keyboard-activated", async () => {
     await withMountedWidget(({ shadowRoot, mockWindow }) => {
-      const pinDock = shadowRoot.querySelector(".cd-pin-dock");
-      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
-      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
+      const bookCorner = shadowRoot.querySelector(".cd-book-corner");
       const composer = shadowRoot.querySelector(".cd-composer");
+      const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
       const compactBar = shadowRoot.querySelector(".cd-compact-bar");
 
-      assert.ok(pinDock && floatingPinBtn && triggerBtn && composer && compactBar);
+      assert.ok(bookCorner && composer && sidebar && compactBar);
+      assert.equal(bookCorner.hidden, false);
+      assert.equal(bookCorner.classList.contains("corner-top_left"), true);
       assert.equal(composer.hidden, true);
+      assert.equal(sidebar.hidden, true);
       assert.equal(compactBar.hidden, true);
-      assert.equal(pinDock.hidden, false);
 
-      // Click nested <span>ContextDrop</span> inside .cd-trigger
-      const triggerSpan = triggerBtn.querySelector("span") ?? triggerBtn;
-      triggerSpan.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 40, clientY: 30 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 40, clientY: 30 }));
-      triggerSpan.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 40, clientY: 30 }));
+      // Pointer click without drag opens normal floating feedback composer
+      bookCorner.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 16, clientY: 16 }));
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 18, clientY: 18 }));
+      bookCorner.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 18, clientY: 18 }));
 
       assert.equal(composer.hidden, false);
-      assert.equal(pinDock.hidden, true);
-      assert.equal(triggerBtn.getAttribute("aria-expanded"), "true");
+      assert.equal(bookCorner.hidden, true);
+      assert.equal(bookCorner.getAttribute("aria-expanded"), "true");
 
-      // Close composer to return to floating dock
+      // Close composer returns to flush book corner
       const closeBtn = shadowRoot.querySelector("[aria-label='Close feedback composer']");
       assert.ok(closeBtn);
       closeBtn.dispatchEvent(new MockUiEvent("click"));
       assert.equal(composer.hidden, true);
-      assert.equal(pinDock.hidden, false);
+      assert.equal(bookCorner.hidden, false);
 
-      // Click nested <span>Pin</span> inside .cd-floating-pin-btn
-      const pinSpan = floatingPinBtn.querySelector("span") ?? floatingPinBtn;
-      pinSpan.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 30, clientY: 30 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 30, clientY: 30 }));
-      pinSpan.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 30, clientY: 30 }));
-
-      assert.equal(compactBar.hidden, false);
-      assert.equal(floatingPinBtn.getAttribute("aria-pressed"), "true");
+      // Keyboard activation (click without pointerdown/pointerup) also opens composer
+      bookCorner.dispatchEvent(new MockUiEvent("click"));
+      assert.equal(composer.hidden, false);
     });
   });
 
-  it("repositions the dock when dragging >5px from Pin or ContextDrop buttons and suppresses synthetic click", async () => {
-    await withMountedWidget(({ shadowRoot, mockWindow }) => {
+  it("morphs book corner into a pushpin when dragged and pins DOM element directly on drop", async () => {
+    await withMountedWidget(({ widget, shadowRoot, mockBody, mockDocument, mockWindow }) => {
+      const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+      const dragPin = shadowRoot.querySelector(".cd-drag-pin");
+      const composer = shadowRoot.querySelector(".cd-composer");
+      const tray = shadowRoot.querySelector(".cd-tray");
+      assert.ok(bookCorner && dragPin && composer && tray);
+
+      const checkoutBtn = new MockDomElement("button");
+      checkoutBtn.setAttribute("id", "checkout-btn");
+      checkoutBtn.textContent = "Complete Order";
+      checkoutBtn.setRect({ left: 220, top: 180, width: 180, height: 44 });
+      mockBody.appendChild(checkoutBtn);
+
+      mockDocument.elementsFromPoint = () => [checkoutBtn];
+
+      // Start peeling from top-left book corner
+      bookCorner.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 14, clientY: 14 }));
+      assert.equal(dragPin.hidden, true);
+
+      // Drag >6px over #checkout-btn: book corner peels away & morphs into live pushpin
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 260, clientY: 200 }));
+      assert.equal(bookCorner.classList.contains("is-peeled"), true);
+      assert.equal(dragPin.hidden, false);
+      assert.equal(dragPin.classList.contains("has-target"), true);
+
+      // Release pointer over #checkout-btn: commits pin and opens composer with chip attached
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 260, clientY: 200 }));
+
+      // Trailing synthetic click from browser is suppressed cleanly
+      const trailingClick = new MockUiEvent("click", { clientX: 260, clientY: 200 });
+      bookCorner.dispatchEvent(trailingClick);
+      assert.equal(trailingClick.defaultPrevented, true);
+
+      assert.equal(dragPin.hidden, true);
+      assert.equal(widget.getElementReferences().length, 1);
+      assert.equal(widget.getElementReferences()[0].selector, "#checkout-btn");
+      assert.equal(composer.hidden, false);
+      assert.ok(tray.querySelector(".cd-chip"));
+    });
+  });
+
+  it("snaps and re-docks book corner when dragged into another viewport corner", async () => {
+    await withMountedWidget(({ widget, shadowRoot, mockWindow }) => {
       const root = shadowRoot.querySelector(".cd-root");
-      const pinDock = shadowRoot.querySelector(".cd-pin-dock");
-      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
-      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
+      const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+      const snapGhost = shadowRoot.querySelector(".cd-corner-snap-ghost");
       const composer = shadowRoot.querySelector(".cd-composer");
-      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+      assert.ok(root && bookCorner && snapGhost && composer);
 
-      assert.ok(root && pinDock && floatingPinBtn && triggerBtn && composer && compactBar);
+      bookCorner.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 12, clientY: 12 }));
+      // Move across page first
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 420, clientY: 340 }));
+      assert.equal(snapGhost.hidden, true);
 
-      // Drag >5px starting from .cd-floating-pin-btn
-      floatingPinBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 50, clientY: 50 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 150, clientY: 120 }));
-      assert.equal(pinDock.classList.contains("is-dragging"), true);
-      assert.equal(root.classList.contains("is-free-positioned"), true);
-      assert.equal(root.style.left, "120px");
-      assert.equal(root.style.top, "90px");
+      // Enter bottom-right snap zone (viewport is 1280x800)
+      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 1250, clientY: 775 }));
+      assert.equal(snapGhost.hidden, false);
+      assert.equal(snapGhost.classList.contains("corner-bottom_right"), true);
 
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 150, clientY: 120 }));
-      assert.equal(pinDock.classList.contains("is-dragging"), false);
-
-      // Browser dispatches synthetic click after pointerup over the dragged button
-      const syntheticClick = new MockUiEvent("click", { clientX: 150, clientY: 120 });
-      floatingPinBtn.dispatchEvent(syntheticClick);
-      assert.equal(syntheticClick.defaultPrevented, true);
-      assert.equal(compactBar.hidden, true);
+      // Release inside bottom-right snap zone: re-docks corner and stays closed
+      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 1250, clientY: 775 }));
+      assert.equal(snapGhost.hidden, true);
+      assert.equal(widget.getConfig().position, "bottom_right");
+      assert.equal(bookCorner.classList.contains("corner-bottom_right"), true);
+      assert.equal(root.classList.contains("pos-bottom_right"), true);
       assert.equal(composer.hidden, true);
-
-      // Drag >5px starting from .cd-trigger
-      triggerBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 150, clientY: 120 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 210, clientY: 180 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 210, clientY: 180 }));
-      const triggerSyntheticClick = new MockUiEvent("click", { clientX: 210, clientY: 180 });
-      triggerBtn.dispatchEvent(triggerSyntheticClick);
-      assert.equal(triggerSyntheticClick.defaultPrevented, true);
-      assert.equal(composer.hidden, true);
-      assert.equal(root.style.left, "180px");
-      assert.equal(root.style.top, "150px");
-
-      // Subsequent normal click on .cd-trigger opens composer as expected
-      triggerBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 210, clientY: 180 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { button: 0, clientX: 210, clientY: 180 }));
-      triggerBtn.dispatchEvent(new MockUiEvent("click", { button: 0, clientX: 210, clientY: 180 }));
-      assert.equal(composer.hidden, false);
+      assert.equal(bookCorner.hidden, false);
     });
   });
 
-  it("supports keyboard activation (click without pointerdown/pointerup) on Pin and ContextDrop buttons", async () => {
-    await withMountedWidget(async ({ shadowRoot, mockWindow }) => {
-      const floatingPinBtn = shadowRoot.querySelector(".cd-floating-pin-btn");
-      const triggerBtn = shadowRoot.querySelector(".cd-trigger");
-      const composer = shadowRoot.querySelector(".cd-composer");
-      const compactBar = shadowRoot.querySelector(".cd-compact-bar");
+  it("transforms into local BYOK agentic sidebar in development, switches modes, saves keys safely, and applies staged diffs", async () => {
+    const g = globalThis as Record<string, unknown>;
+    const prevFetch = g.fetch;
+    const apiCalls: Array<{ url: string; method: string; body?: unknown }> = [];
 
-      assert.ok(floatingPinBtn && triggerBtn && composer && compactBar);
+    g.fetch = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || "GET").toUpperCase();
+      const parsedBody =
+        typeof init?.body === "string" && init.body.length > 0 ? JSON.parse(init.body) : undefined;
+      apiCalls.push({ url, method, body: parsedBody });
 
-      // Keyboard Enter/Space dispatches click directly with no pointer events
-      triggerBtn.dispatchEvent(new MockUiEvent("click"));
-      assert.equal(composer.hidden, false);
+      if (url.endsWith("/agent/status")) {
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            environment: "development",
+            workspace_name: "demo-shop",
+            mcp_environments: [
+              { name: "local", type: "local", host_env: "development" },
+              { name: "staging", type: "remote_http" },
+              { name: "production", type: "remote_http" }
+            ],
+            active_provider: "anthropic",
+            providers: [
+              {
+                id: "anthropic",
+                label: "Anthropic Claude",
+                configured: true,
+                source: "env",
+                env_var_hint: "ANTHROPIC_API_KEY",
+                masked_key: "••••9876",
+                model: "claude-sonnet-4-20250514",
+                default_model: "claude-sonnet-4-20250514",
+                models: ["claude-sonnet-4-20250514"],
+                supports_base_url: false
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
 
-      // Close via close button
-      const closeBtn = shadowRoot.querySelector("[aria-label='Close feedback composer']");
-      assert.ok(closeBtn);
-      closeBtn.dispatchEvent(new MockUiEvent("click"));
-      assert.equal(composer.hidden, true);
+      if (url.endsWith("/agent/keys") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            active_provider: "anthropic",
+            providers: [
+              {
+                id: "anthropic",
+                label: "Anthropic Claude",
+                configured: true,
+                source: "vault",
+                env_var_hint: "ANTHROPIC_API_KEY",
+                masked_key: "••••4321",
+                model: "claude-sonnet-4-20250514",
+                default_model: "claude-sonnet-4-20250514",
+                models: ["claude-sonnet-4-20250514"],
+                supports_base_url: false
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
 
-      // Simulate a drag where pointerup occurred outside the button (no synthetic click dispatched)
-      floatingPinBtn.dispatchEvent(new MockUiEvent("pointerdown", { button: 0, clientX: 30, clientY: 30 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointermove", { clientX: 90, clientY: 90 }));
-      mockWindow.dispatchEvent(new MockUiEvent("pointerup", { clientX: 90, clientY: 90 }));
+      if (url.endsWith("/agent/chat") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            reply: "Found `#hero-cta` in `app/views/home/index.html.erb`. Escaped check: <script>alert(1)</script>",
+            provider: "anthropic",
+            model: "claude-sonnet-4-20250514",
+            tool_calls: [{ name: "read_file", summary: "Read app/views/home/index.html.erb (L1–40)", status: "ok" }],
+            proposed_edits: [
+              {
+                id: "edit_abc123",
+                path: "app/views/home/index.html.erb",
+                summary: "Fix button contrast and padding",
+                is_new_file: false,
+                diff: "@@ -4,1 +4,1 @@\n-<button id=\"hero-cta\">Buy</button>\n+<button id=\"hero-cta\" class=\"btn-primary\">Buy Now</button>",
+                added_lines: 1,
+                removed_lines: 1,
+                status: "pending",
+                created_at: "2026-11-12T10:00:00Z"
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
 
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (url.endsWith("/agent/edits/edit_abc123/apply") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            edit: {
+              id: "edit_abc123",
+              path: "app/views/home/index.html.erb",
+              summary: "Fix button contrast and padding",
+              is_new_file: false,
+              diff: "@@ -4,1 +4,1 @@",
+              added_lines: 1,
+              removed_lines: 1,
+              status: "applied",
+              created_at: "2026-11-12T10:00:00Z"
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
 
-      // Subsequent keyboard activation on floatingPinBtn still works
-      floatingPinBtn.dispatchEvent(new MockUiEvent("click"));
-      assert.equal(compactBar.hidden, false);
-    });
+      return new Response(JSON.stringify({}), { status: 200 });
+    };
+
+    try {
+      await withMountedWidget(
+        async ({ widget, shadowRoot, mockHtml }) => {
+          const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+          const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+          const composer = shadowRoot.querySelector(".cd-composer");
+          assert.ok(bookCorner && sidebar && composer);
+
+          // Clicking book corner in local dev opens Agentic Sidebar, not floating composer
+          bookCorner.dispatchEvent(new MockUiEvent("click"));
+          await new Promise((r) => setTimeout(r, 10));
+
+          assert.equal(widget.getSurfaceMode(), "agent");
+          assert.equal(sidebar.hidden, false);
+          assert.equal(composer.hidden, true);
+
+          // Push page layout toggle sets and clears marginRight on <html>
+          const pushBtn = shadowRoot.querySelector("[aria-label='Toggle push page layout']");
+          assert.ok(pushBtn);
+          pushBtn.dispatchEvent(new MockUiEvent("click"));
+          assert.equal(mockHtml.getAttribute("data-context-drop-pushed"), "true");
+          assert.equal(mockHtml.style.marginRight, "436px");
+
+          // Switching mode to "feedback" switches cleanly to floating composer and restores page layout
+          widget.setSurfaceMode("feedback");
+          assert.equal(sidebar.hidden, true);
+          assert.equal(composer.hidden, false);
+          assert.equal(mockHtml.style.marginRight, "");
+
+          // Switch back to "agent" mode
+          widget.setSurfaceMode("agent");
+          assert.equal(sidebar.hidden, false);
+
+          // Save BYOK key via inline vault drawer: clears password input immediately after save
+          const byokBtn = shadowRoot.querySelector("[aria-label='Open BYOK API key settings']");
+          const keyInput = shadowRoot.querySelector("[aria-label='Provider API Key']");
+          assert.ok(byokBtn && keyInput);
+          byokBtn.dispatchEvent(new MockUiEvent("click"));
+          keyInput.value = "sk-ant-test-secret-4321";
+
+          const allButtons: MockDomElement[] = [];
+          const collectBtns = (node: MockDomElement): void => {
+            if (node.tagName === "BUTTON") allButtons.push(node);
+            for (const c of node.childNodes) collectBtns(c);
+          };
+          collectBtns(shadowRoot);
+          const saveBtn = allButtons.find((b) => b.textContent === "Use & Save");
+          assert.ok(saveBtn);
+          saveBtn.dispatchEvent(new MockUiEvent("click"));
+          await new Promise((r) => setTimeout(r, 10));
+          assert.equal(keyInput.value, "", "Expected API key input to be wiped from DOM after vault save");
+
+          // Send an agent prompt and verify XSS-safe Markdown + interactive diff approval
+          const agentTextarea = shadowRoot.querySelector("[aria-label='Agent prompt']");
+          assert.ok(agentTextarea);
+          agentTextarea.value = "Fix #hero-cta contrast";
+          await widget.handleAgentSubmit();
+
+          const messages = widget.getAgentMessages();
+          assert.equal(messages.length, 2);
+          const mdBody = shadowRoot.querySelector(".cd-md-body");
+          assert.ok(mdBody);
+          assert.equal(mdBody.innerHTML.includes("<script>"), false, "Raw <script> must be HTML-escaped");
+          assert.equal(mdBody.innerHTML.includes("&lt;script&gt;"), true);
+
+          const diffCard = shadowRoot.querySelector(".cd-diff-card");
+          assert.ok(diffCard);
+          const applyBtn = diffCard.querySelector(".cd-btn-apply");
+          assert.ok(applyBtn);
+
+          applyBtn.dispatchEvent(new MockUiEvent("click"));
+          await new Promise((r) => setTimeout(r, 10));
+
+          assert.equal(messages[1].proposedEdits?.[0].status, "applied");
+          assert.equal(
+            apiCalls.some((c) => c.url.endsWith("/agent/edits/edit_abc123/apply")),
+            true
+          );
+        },
+        {
+          "data-config": JSON.stringify({
+            enabled: true,
+            environment: "development",
+            position: "top_left",
+            csrf_token: "dev_csrf_123",
+            agent: { enabled: true }
+          })
+        }
+      );
+    } finally {
+      if (prevFetch === undefined) {
+        delete g.fetch;
+      } else {
+        g.fetch = prevFetch;
+      }
+    }
   });
 
   it("ignores nested buttons inside container drag bars (.cd-composer-header, .cd-compact-bar)", async () => {
@@ -1036,5 +1308,133 @@ describe("ContextDrop Floating Dock & Drag Handle Interactions", () => {
       assert.equal(compactBar.hidden, true);
       assert.equal(composer.hidden, false);
     });
+  });
+
+  it("uses jargon-free smart component selection, auto surrounding screenshot, and compact UI in production", async () => {
+    await withMountedWidget(
+      async ({ widget, shadowRoot, mockBody, mockDocument, mockWindow }) => {
+        // Provide a lightweight mock <canvas> 2D context so surrounding-context auto-screenshot succeeds
+        const origCreateElement = mockDocument.createElement;
+        mockDocument.createElement = (tag: string) => {
+          const el = origCreateElement(tag);
+          if (tag.toLowerCase() === "canvas") {
+            const canvasShim = el as unknown as Record<string, unknown>;
+            canvasShim.width = 0;
+            canvasShim.height = 0;
+            canvasShim.getContext = () => ({
+              scale: () => {},
+              fillRect: () => {},
+              strokeRect: () => {},
+              fillText: () => {},
+              setLineDash: () => {},
+              fillStyle: "",
+              strokeStyle: "",
+              lineWidth: 1,
+              font: ""
+            });
+            canvasShim.toDataURL = () =>
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+          }
+          return el;
+        };
+
+        assert.equal(widget.isSmartSelectionMode(), true);
+
+        const composer = shadowRoot.querySelector(".cd-composer");
+        const title = shadowRoot.querySelector(".cd-composer-title");
+        const tray = shadowRoot.querySelector(".cd-tray");
+        const chatThread = shadowRoot.querySelector(".cd-chat-thread");
+        const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+        assert.ok(composer && title && tray && chatThread && bookCorner);
+
+        // Production UI uses compact smart-mode layout & friendly copy
+        assert.equal(composer.classList.contains("is-smart-mode"), true);
+        assert.equal(title.textContent, "Send Feedback");
+
+        // Build host DOM: div.pricing-card > (h3 "Enterprise Plan", button#checkout-btn > span.inner-label "Complete Order")
+        const card = new MockDomElement("div");
+        card.setAttribute("class", "pricing-card");
+        card.setRect({ left: 80, top: 90, width: 340, height: 210 });
+
+        const heading = new MockDomElement("h3");
+        heading.textContent = "Enterprise Plan";
+        heading.setRect({ left: 100, top: 108, width: 180, height: 26 });
+
+        const button = new MockDomElement("button");
+        button.setAttribute("id", "checkout-btn");
+        button.setRect({ left: 100, top: 220, width: 170, height: 42 });
+
+        const innerSpan = new MockDomElement("span");
+        innerSpan.setAttribute("class", "inner-label");
+        innerSpan.textContent = "Complete Order";
+        innerSpan.setRect({ left: 116, top: 230, width: 120, height: 20 });
+
+        button.appendChild(innerSpan);
+        card.appendChild(heading);
+        card.appendChild(button);
+        mockBody.appendChild(card);
+
+        mockDocument.elementsFromPoint = () => [innerSpan, button, card];
+
+        // Start selection from compact composer ("Select area")
+        widget.startPinSelection();
+        mockWindow.dispatchEvent(new MockUiEvent("mousemove", { clientX: 140, clientY: 236 }));
+
+        const hud = mockBody.querySelector("[data-context-drop-ui='label']");
+        assert.ok(hud);
+        const readAllText = (node: MockDomElement): string =>
+          [node.textContent, ...node.childNodes.map((c) => readAllText(c))].join(" ").trim();
+        const hudText = readAllText(hud);
+        assert.equal(hudText.includes("“Complete Order” button"), true);
+        assert.equal(hudText.includes("#checkout-btn"), false, "Smart HUD must omit CSS selectors");
+        assert.equal(hud.querySelector("[data-context-drop-ui='hud-layer-list']"), null);
+
+        // Mouse wheel is NOT hijacked in production smart mode
+        const wheelEv = new MockUiEvent("wheel", { clientX: 140, clientY: 236, deltaY: 40, deltaMode: 0 });
+        mockWindow.dispatchEvent(wheelEv);
+        assert.equal(wheelEv.defaultPrevented, false);
+
+        // Single click selects promoted button, exits picker immediately, and reopens compact feedback form
+        const clickEv = new MockUiEvent("click", { clientX: 140, clientY: 236 });
+        mockWindow.dispatchEvent(clickEv);
+        assert.equal(clickEv.defaultPrevented, true);
+        assert.equal(composer.hidden, false);
+
+        // Wait a tick for async surrounding-context screenshot capture
+        await new Promise((r) => setTimeout(r, 15));
+
+        const refs = widget.getElementReferences();
+        assert.equal(refs.length, 1);
+        assert.equal(refs[0].selector, "#checkout-btn");
+        assert.equal(refs[0].metadata.friendly_label, "“Complete Order” button");
+        assert.equal(refs[0].metadata.original_target_selector, "span.inner-label");
+
+        const shots = widget.getAttachments();
+        assert.equal(shots.length, 1);
+        assert.equal(shots[0].element_reference_ref, refs[0].client_ref);
+        assert.equal(shots[0].metadata?.capture_type, "surrounding_context");
+        assert.equal(shots[0].metadata?.auto_smart_context, true);
+
+        // Tray renders a single merged .cd-smart-card (not separate technical .cd-chip items)
+        assert.ok(tray.querySelector(".cd-smart-card"));
+        assert.equal(tray.querySelector(".cd-chip"), null);
+        // Empty-state chat thread hides once context is attached so composer stays ultra-compact
+        assert.equal(chatThread.hidden, true);
+
+        // Removing the smart card removes BOTH the element reference and its auto-captured screenshot
+        widget.removeElementReference(refs[0].client_ref);
+        assert.equal(widget.getElementReferences().length, 0);
+        assert.equal(widget.getAttachments().length, 0);
+        assert.equal(chatThread.hidden, false);
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "production",
+          position: "top_left",
+          agent: { enabled: false }
+        })
+      }
+    );
   });
 });

@@ -86,6 +86,11 @@
                   <%= fb.message.present? ? truncate(fb.message, length: 120) : content_tag(:span, "(No text message)", style: "color: var(--cd-muted); font-style: italic;") %>
                 </div>
                 <div class="cd-context-chips">
+                  <% if fb.respond_to?(:environment) && fb.environment.present? %>
+                    <span class="cd-context-chip" style="font-family: var(--cd-font-mono);" title="Environment: <%= fb.environment %>">
+                      <%= fb.environment %>
+                    </span>
+                  <% end %>
                   <% if fb.attachments.size > 0 %>
                     <span class="cd-context-chip" title="<%= fb.attachments.size %> attachment(s)">
                       <%= cd_icon_attachment(size: 11) %>

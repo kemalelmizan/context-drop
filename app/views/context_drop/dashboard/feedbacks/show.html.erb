@@ -83,6 +83,8 @@
   </div>
 
   <dl class="cd-meta-list">
+    <dt>Environment</dt>
+    <dd><code class="cd-mono"><%= @feedback.respond_to?(:environment) && @feedback.environment.present? ? @feedback.environment : ContextDrop.configuration.resolved_environment %></code></dd>
     <dt>Page URL</dt>
     <dd>
       <div style="display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;">
@@ -141,8 +143,16 @@
             <% end %>
           </div>
           <dl class="cd-meta-list" style="grid-template-columns: 110px 1fr; font-size: 0.75rem;">
+            <% if el.metadata.is_a?(Hash) && el.metadata["friendly_label"].present? %>
+              <dt>Component</dt>
+              <dd style="font-weight: 600; color: var(--cd-text);"><%= el.metadata["friendly_label"] %></dd>
+            <% end %>
             <dt>Selector</dt>
             <dd><code class="cd-mono" style="word-break: break-all;"><%= el.selector %></code></dd>
+            <% if el.metadata.is_a?(Hash) && el.metadata["original_target_selector"].present? %>
+              <dt>Inner Target</dt>
+              <dd><code class="cd-mono" style="word-break: break-all;"><%= el.metadata["original_target_selector"] %></code></dd>
+            <% end %>
             <dt>DOM Path</dt>
             <dd><code class="cd-mono" style="word-break: break-all;"><%= el.dom_path.presence || "N/A" %></code></dd>
             <dt>Text Content</dt>

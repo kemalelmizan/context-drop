@@ -4,7 +4,10 @@ ContextDrop.configure do |config|
   # Environment-based master switch (disables widget, dashboard, and ingestion endpoints when false)
   config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"
 
-  # Widget position: :bottom_right, :bottom_left, :top_right, :top_left
+  # Host environment attribution (defaults automatically to Rails.env)
+  # config.environment = Rails.env
+
+  # Initial book-corner launcher position: :bottom_right, :bottom_left, :top_right, :top_left
   config.position = :bottom_right
 
   # Attachment storage backend
@@ -22,9 +25,16 @@ ContextDrop.configure do |config|
   config.max_image_dimensions = [4096, 4096]
 
   # Widget feature flags
+  # selection_mode: :auto uses zero-jargon Smart Component Selection + surrounding-context auto-screenshot
+  # in `production`, and Verbose CSS Selector & Layer Scrubbing (`v0.1.x` style) in `development` / `staging`.
   config.element_selection = true
+  config.selection_mode = :auto # :auto | :smart | :verbose
   config.screenshot_capture = true
   config.element_capture_padding = 16
+  config.smart_capture_padding = 84
+
+  # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
+  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
 
   # DOM selectors excluded from selection and redacted in screenshots
   config.excluded_selectors = [
@@ -48,8 +58,22 @@ ContextDrop.configure do |config|
   # Optional lifecycle callback invoked after feedback creation
   config.on_feedback_created = ->(feedback) {}
 
-  # Model Context Protocol (MCP) server settings (Phase 2)
+  # Unified Model Context Protocol (MCP) server settings
+  # Remote HTTP `/mcp` endpoint switch & Bearer key (for staging/production instances):
   config.mcp_enabled = ENV.fetch("CONTEXT_DROP_MCP_ENABLED", "false") == "true"
   config.mcp_api_key = ENV["CONTEXT_DROP_MCP_API_KEY"]
   config.authorize_mcp = nil
+
+  # Federated remote environments queried by your single local `bin/rails context_drop:mcp` server
+  # (also auto-discovers CONTEXT_DROP_<ENV>_MCP_URL + CONTEXT_DROP_<ENV>_MCP_API_KEY env variables):
+  config.mcp_environments = {
+    staging: {
+      url: ENV["CONTEXT_DROP_STAGING_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_STAGING_MCP_API_KEY"]
+    },
+    production: {
+      url: ENV["CONTEXT_DROP_PRODUCTION_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_PRODUCTION_MCP_API_KEY"]
+    }
+  }
 end

@@ -11,7 +11,7 @@ export interface ScreenshotCaptureResult {
 }
 
 export function collectRedactionRects(customExcludedSelectors: string[] = []): BoundingRectSnapshot[] {
-  if (typeof document === "undefined") return [];
+  if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return [];
 
   const selectors = buildExcludedSelectorList(customExcludedSelectors);
   const selectorQuery = [
@@ -69,15 +69,23 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
+export interface CaptureViewportOptions {
+  highlightRect?: BoundingRectSnapshot | null;
+}
+
 export async function captureViewportScreenshot(
   customExcludedSelectors: string[] = [],
-  cropRegion?: BoundingRectSnapshot
+  cropRegion?: BoundingRectSnapshot,
+  options?: CaptureViewportOptions
 ): Promise<ScreenshotCaptureResult> {
   if (typeof document === "undefined" || typeof window === "undefined") {
     throw new Error("Screenshot capture is only available in a browser environment.");
   }
 
-  const widgets = Array.from(document.querySelectorAll("context-drop-widget, [data-context-drop-ui]")) as HTMLElement[];
+  const widgets =
+    typeof document.querySelectorAll === "function"
+      ? (Array.from(document.querySelectorAll("context-drop-widget, [data-context-drop-ui]")) as HTMLElement[])
+      : [];
   const previousVisibility = widgets.map((el) => el.style.visibility);
 
   try {
@@ -102,7 +110,7 @@ export async function captureViewportScreenshot(
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(region.width);
     canvas.height = Math.round(region.height);
-    const ctx = canvas.getContext("2d");
+    const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
 
     if (!ctx) {
       throw new Error("Canvas 2D context is unavailable or restricted by browser policy.");
@@ -117,12 +125,15 @@ export async function captureViewportScreenshot(
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Paint visible non-excluded DOM elements approximation onto canvas
-    const visibleNodes = document.body ? Array.from(document.body.querySelectorAll("*")) : [];
+    const visibleNodes =
+      document.body && typeof document.body.querySelectorAll === "function"
+        ? Array.from(document.body.querySelectorAll("*"))
+        : [];
     for (const node of visibleNodes) {
       if (
-        node.closest("context-drop-widget") ||
-        node.hasAttribute("data-context-drop-ui") ||
-        node.closest("[data-context-drop-ui]")
+        (typeof node.closest === "function" &&
+          (node.closest("context-drop-widget") || node.closest("[data-context-drop-ui]"))) ||
+        node.hasAttribute("data-context-drop-ui")
       ) {
         continue;
       }
@@ -148,7 +159,33 @@ export async function captureViewportScreenshot(
           ctx.lineWidth = Math.min(parseFloat(style.borderWidth), 4);
           ctx.strokeRect(rx, ry, r.width, r.height);
         }
+
+        // Render leaf text labels so surrounding-context previews are legible
+        if (node.children && node.children.length === 0 && typeof ctx.fillText === "function") {
+          const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+          if (text.length > 0 && r.height >= 10) {
+            ctx.fillStyle = style.color || "#111318";
+            const fontSize = Math.min(18, Math.max(10, parseFloat(style.fontSize || "12") || 12));
+            ctx.font = `${style.fontWeight || "400"} ${Math.round(fontSize)}px sans-serif`;
+            ctx.fillText(text.slice(0, 48), rx + 4, ry + Math.min(r.height - 3, fontSize + 3));
+          }
+        }
       }
+    }
+
+    // Optional visual callout box highlighting the selected component inside surrounding context
+    if (options?.highlightRect) {
+      const hr = options.highlightRect;
+      const hx = hr.x - region.x;
+      const hy = hr.y - region.y;
+      ctx.strokeStyle = "#c2410c";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        Math.max(1, hx),
+        Math.max(1, hy),
+        Math.min(region.width - 2, hr.width),
+        Math.min(region.height - 2, hr.height)
+      );
     }
 
     // 2. Enforce pre-capture visual redaction of all sensitive/excluded elements
@@ -213,6 +250,63 @@ export async function captureElementScreenshot(
 
   const result = await captureViewportScreenshot(customExcludedSelectors, cropRegion);
   result.metadata.capture_type = "element";
+  if (elementClientRef) {
+    result.metadata.element_attachment_ref = elementClientRef;
+  }
+  return result;
+}
+
+/**
+ * Captures a privacy-redacted screenshot of a selected component together with generous
+ * surrounding page context (used automatically in Production "smart" mode) and frames the
+ * selected component inside the captured region.
+ */
+export async function captureSurroundingContextScreenshot(
+  element: Element,
+  padding: number = 84,
+  customExcludedSelectors: string[] = [],
+  elementClientRef?: string
+): Promise<ScreenshotCaptureResult> {
+  if (isElementExcluded(element, customExcludedSelectors)) {
+    throw new Error("Cannot capture screenshot of an excluded or sensitive DOM element.");
+  }
+
+  const vw = typeof window !== "undefined" ? Math.max(window.innerWidth || 1024, 1) : 1024;
+  const vh = typeof window !== "undefined" ? Math.max(window.innerHeight || 768, 1) : 768;
+  const r = element.getBoundingClientRect();
+  const baseX = r.x ?? r.left ?? 0;
+  const baseY = r.y ?? r.top ?? 0;
+  const pad = Math.max(32, padding);
+
+  // Ensure a comfortable minimum surrounding neighborhood (340x220px) around small controls
+  const desiredWidth = Math.min(vw, Math.max(r.width + pad * 2, 340));
+  const desiredHeight = Math.min(vh, Math.max(r.height + pad * 2, 220));
+  const centerX = baseX + r.width / 2;
+  const centerY = baseY + r.height / 2;
+
+  const cropX = Math.max(0, Math.min(centerX - desiredWidth / 2, vw - desiredWidth));
+  const cropY = Math.max(0, Math.min(centerY - desiredHeight / 2, vh - desiredHeight));
+
+  const cropRegion: BoundingRectSnapshot = {
+    x: cropX,
+    y: cropY,
+    width: desiredWidth,
+    height: desiredHeight
+  };
+
+  const targetRect: BoundingRectSnapshot = {
+    x: baseX,
+    y: baseY,
+    width: r.width,
+    height: r.height
+  };
+
+  const result = await captureViewportScreenshot(customExcludedSelectors, cropRegion, {
+    highlightRect: targetRect
+  });
+  result.metadata.capture_type = "surrounding_context";
+  result.metadata.context_padding = pad;
+  result.metadata.highlighted_rect = targetRect;
   if (elementClientRef) {
     result.metadata.element_attachment_ref = elementClientRef;
   }

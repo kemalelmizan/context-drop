@@ -13,7 +13,8 @@ module ContextDrop
     def create
       raw_body = request.raw_post.to_s
       payload = JSON.parse(raw_body)
-      response = ContextDrop::MCP::Dispatcher.call(payload)
+      # Remote HTTP endpoints strictly serve their own host environment and never recursively fan out
+      response = ContextDrop::MCP::Server.handle_http_payload(payload, local_only: true)
 
       if response.nil?
         head :accepted

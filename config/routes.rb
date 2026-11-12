@@ -8,6 +8,17 @@ ContextDrop::Engine.routes.draw do
   get "health", to: "health#show"
   post "mcp", to: "mcp#create"
 
+  scope "agent" do
+    get "status", to: "agent#status"
+    get "feedbacks", to: "agent#feedbacks"
+    post "keys", to: "agent#save_keys"
+    delete "keys", to: "agent#destroy_keys"
+    post "chat", to: "agent#chat"
+    post "edits/:id/apply", to: "agent#apply_edit"
+    post "edits/:id/reject", to: "agent#reject_edit"
+    post "edits/:id/revert", to: "agent#revert_edit"
+  end
+
   namespace :dashboard do
     root to: "feedbacks#index"
     resources :feedbacks, only: %i[index show update]

@@ -25,6 +25,14 @@ module ContextDrop
     scope :resolved, -> { where(status: "resolved") }
     scope :dismissed, -> { where(status: "dismissed") }
     scope :recent, -> { order(created_at: :desc, id: :desc) }
+    scope :for_environment, lambda { |env|
+      normalized = env.to_s.strip.downcase
+      if normalized.present? && column_names.include?("environment")
+        where(environment: normalized)
+      else
+        all
+      end
+    }
 
     validates :page_url, presence: true
     validates :status, presence: true, inclusion: { in: STATUSES }
@@ -43,6 +51,16 @@ module ContextDrop
 
     def mark_dismissed!
       update!(status: "dismissed")
+    end
+
+    def environment_name
+      if has_attribute?(:environment) && self[:environment].present?
+        self[:environment].to_s
+      elsif metadata.is_a?(Hash) && metadata["environment"].present?
+        metadata["environment"].to_s
+      else
+        ContextDrop.config.resolved_environment
+      end
     end
 
     def submitter_label
@@ -72,6 +90,11 @@ module ContextDrop
     def normalize_defaults
       self.status = "new" if status.blank?
       self.metadata = {} unless metadata.is_a?(Hash)
+      resolved_env = ContextDrop.config.resolved_environment
+      if has_attribute?(:environment) && self[:environment].blank?
+        self[:environment] = resolved_env
+      end
+      self.metadata["environment"] ||= resolved_env
     end
 
     def ensure_content_or_context_present

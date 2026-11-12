@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Stop decoding vague bug reports! Let users pin the problem with your Rails app</strong><br />
-  Mountable Rails Engine · Shadow DOM Widget · Overlapping Layer Picker · Active Storage · MCP Server
+  <strong>Stop decoding vague bug reports! Let users pin the problem—and fix it right beside your Rails app</strong><br />
+  Mountable Rails Engine · Book-Corner Peel-to-Pin Widget · Local BYOK Agentic Sidebar · Unified Multi-Env MCP Hub
 </p>
 
 <p align="center">
@@ -17,10 +17,12 @@
 
 <p align="center">
   <a href="https://rubygems.org/gems/context_drop">RubyGems</a> ·
+  <a href="#environment-adaptive-workflow">3-Tier Workflow</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#interactive-playground">Live Demo</a> ·
-  <a href="#dom-pinning--layer-disambiguation">Layer Picker</a> ·
-  <a href="#mcp">MCP Server</a> ·
+  <a href="#smart--verbose-element-selection">Smart &amp; Verbose Selectors</a> ·
+  <a href="#local-byok-agentic-sidebar-development-mode">Local Agentic Sidebar</a> ·
+  <a href="#mcp">Unified MCP Hub</a> ·
   <a href="#zero-trust-privacy--redaction">Privacy &amp; Redaction</a> ·
   <a href="#configuration">Configuration</a>
 </p>
@@ -29,9 +31,42 @@
 
 ## Why
 
- When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
+When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
 
-**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM feedback composer and DOM pin selector** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`). Reporters click **Pin Element**, point at any UI component (even underneath floating badges or cascading overlays) attach a privacy-redacted screenshot, and send.
+**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM book-corner launcher, environment-adaptive selector, and local agentic coding sidebar** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`):
+- **Minimal Book-Corner Launcher → Peel-to-Pin on Drag:** Rests quietly as a `38×38px` folded page corner. **Click** the book corner to open the feedback form (or, locally, the docked Agentic Sidebar); **drag** the book corner to peel and animate it into a live pushpin over any part of the page—or snap it to another viewport corner.
+- **3-Tier Environment-Adaptive UX (`production` · `staging` · `local`):** Automatically adapts to `Rails.env`—giving **production** end-users a compact, jargon-free **Smart Component Selector** with automatic surrounding-context screenshots, giving **staging/QA** teams the verbose `v0.1.x` CSS/layer inspector, and giving **local** developers a full docked **BYOK Agentic Coding Sidebar**.
+- **Unified Multi-Environment MCP Hub:** Register **one** local MCP server (`bin/rails context_drop:mcp`) in your IDE to query and resolve feedback across `local`, `staging`, and `production` simultaneously, stamped automatically with the host's `Rails.env`.
+
+---
+
+## Environment-Adaptive Workflow
+
+Different environments serve completely different people. Non-technical customers in **production** shouldn't be confronted with `#css.selectors`, pixel dimensions (`681×350`), overlapping DOM layer counters, or `<kbd>⌥⇧P</kbd>` shortcuts just to send quick feedback—while QA engineers in **staging** want surgical layer inspection, and developers on **`localhost`** want an agentic coding sidebar right beside their live app.
+
+ContextDrop (`v0.2+`) automatically adapts its UI, copy, and selector behavior from your host `Rails.env` (and loopback connection check) with **zero per-environment view templates**:
+
+```mermaid
+flowchart TD
+  Boot["&lt;%= context_drop_widget %&gt;\nReads Host Rails.env + Request Loopback"] --> CheckEnv{"Host Environment?"}
+
+  CheckEnv -->|"Rails.env.production?\n(selection_mode = smart)"| Prod["1. Production · Quick User Feedback\n• Compact 356px 'Send Feedback' card\n• Smart Component Promotion (no raw spans/selectors)\n• Plain-language labels (“Complete Order” button)\n• Auto-captured redacted surrounding screenshot"]
+
+  CheckEnv -->|"staging / qa / non-loopback dev\n(selection_mode = verbose)"| Staging["2. Staging & QA · Verbose Inspector (v0.1.x)\n• Full 404px ContextDrop composer\n• Exact <tag#id.class> & pixel geometry HUD\n• Mouse-wheel overlapping layer scrubbing\n• ⌥⇧P Freeze & Pin + multi-element pinning"]
+
+  CheckEnv -->|"Rails.env.development?\non 127.0.0.1 / ::1"| Local["3. Local Only · Full BYOK Agentic Sidebar\n• Antigravity / VS Code-style docked sidebar\n• Agent | Feedback mode switcher (verbose pin)\n• Pulls local + staging + production MCP feedbacks\n• Read-only workspace tools + human diff approval"]
+```
+
+### How Each Environment Behaves
+
+| Tier | Host Condition | Surface & Size | Selector Behavior (`selection_mode`) | Screenshot Behavior | Copy & Controls Shown to User |
+|---|---|---|---|---|---|
+| **1. Production** *(End-Users)* | `Rails.env.production?` | **Compact Quick-Feedback Card** (`356px`, clutter-free) | **`"smart"`** — Coarsely promotes hovered/dropped `<span>`/`<svg>` leaves to the nearest meaningful UI component (button, link, field, card, banner, dialog, row). Single click selects & reopens the form immediately. | **Automatic surrounding context** (`~84px` neighborhood, min `340×220px`, `[REDACTED]`-safe) merged into **one** clean preview card. | Plain human labels (`“Complete Order” button`, `“Enterprise Plan” card`), `Send Feedback`, `Select area`, `Add image`. **Zero CSS selectors, pixel metrics, wheel layer lists, or `<kbd>` badges.** |
+| **2. Staging / QA** *(Technical Triage)* | `staging`, `qa`, or non-loopback `development` | **Verbose Inspector Chatbox** (`404px`, `v0.1.x` style) | **`"verbose"`** — Exact leaf/ancestor/overlap inspection with scroll-wheel layer scrubbing (`1/6 layers`), `ArrowUp`/`ArrowDown` stepping, `⌥⇧P` Freeze & Pin, and multi-pin mode. | Manual **Viewport Screenshot** button + per-pin **Element Crop** camera icon (`Shot` & `Pin` chips). | Technical HUD (`button#pay-btn · 180×42`), `Pin Element`, `<kbd>⌥⇧P</kbd>`, `<kbd>Space</kbd>`, `Dropped #42`. |
+| **3. Local Only** *(Active Coding)* | `Rails.env.development?` **and** loopback (`127.0.0.1` / `::1`) | **Docked BYOK Agentic Coding Sidebar** (`100dvh`, resizable `340–680px`, `Left`/`Right` + Push Layout) | **`"verbose"`** + live workspace file search (`Agent | Feedback` toggle lets you test standard feedback locally too). | Attaches live DOM pins & redacted screenshots directly to LLM prompts + pulls remote `staging`/`production` screenshots. | Provider/Model pill, encrypted **BYOK** vault, cross-env **Feedbacks** inbox, tool traces, and human-approved unified diffs (`Apply Change` / `Revert`). |
+
+> [!TIP]
+> **Zero Signal Lost in Production!** Even though production users only see friendly labels like `“Complete Order” button` and an automatic surrounding-context screenshot, ContextDrop still captures the full sanitized `selector` (`#checkout-btn`), `dom_path`, `bounding_rect`, `metadata.friendly_label`, and `metadata.original_target_selector` (`span.inner-label`) under the hood—so engineers triaging `production:108` in their IDE or Local Agentic Sidebar get 100% exact technical coordinates. Need verbose mode in an internal-only production tool (or smart mode in staging)? Override `config.selection_mode = :verbose` or `:smart` in `config/initializers/context_drop.rb`.
 
 <p align="center">
   <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
@@ -42,7 +77,7 @@
 <table>
   <thead>
     <tr>
-      <th width="50%" align="left">1. Open the Floating Composer or Pin Dock</th>
+      <th width="50%" align="left">1. Click or Peel the Book-Corner Launcher</th>
       <th width="50%" align="left">2. Pin DOM Layers &amp; Capture Element Screenshots</th>
     </tr>
   </thead>
@@ -51,7 +86,7 @@
       <td valign="top">
         <img src="docs/images/demo-chatbox-composer.jpg" alt="ContextDrop floating chatbox composer with top-left Pin Element trigger and toolbar" width="100%" />
         <p>
-          Drop <code>&lt;%= context_drop_widget %&gt;</code> into your layout to render a draggable, Shadow DOM-isolated feedback composer. Click the top-left <strong>Pin Element</strong> button (or the freely floating pin dock) to start selecting elements on the page.
+          Drop <code>&lt;%= context_drop_widget %&gt;</code> into your layout to render a flush <code>38×38px</code> folded <strong>Book Corner</strong>. Click the corner to open the normal feedback chatbox (or docked local Agentic Sidebar), or drag the corner to morph it into a pushpin and drop it straight onto an element.
         </p>
       </td>
       <td valign="top">
@@ -75,7 +110,7 @@
 | **Host Page Safety** | Injects global CSS; clicks can accidentally fire host buttons | N/A | **Strict Shadow DOM isolation** + capture-phase event suppression during Pin Mode |
 | **Sensitive Data Protection** | Captures raw DOM or requires complex PII scrubbing rules | Risk of unredacted screenshots | **Zero-trust redaction** before rasterization (`[data-feedback-sensitive]`, passwords, cards) |
 | **Authentication Model** | Separate vendor accounts & seats | Manual identity lookup | **Host-agnostic polymorphic `submitter`** (Devise, Rails 8 Auth, Sorcery, custom, or anonymous) |
-| **Developer Resolution Flow** | Copy-paste from external vendor dashboard | Back-and-forth reproduction questions | **Built-in Rails Triage Dashboard** + **Native MCP Server** (`stdio` & HTTP) for Cursor / Claude Code / Antigravity |
+| **Developer Resolution Flow** | Copy-paste from external vendor dashboard | Back-and-forth reproduction questions | **Local BYOK Agentic Sidebar** + **Single Unified Multi-Env MCP Server** (`local` + `staging` + `production`) + **Rails Triage Dashboard** |
 
 > [!IMPORTANT]
 > **Core Architectural Principle: ContextDrop owns its domain. Your Rails app owns its identity and infrastructure.**  
@@ -104,7 +139,7 @@ bin/rails db:migrate
 What `bin/rails generate context_drop:install` sets up for you:
 1. Creates [`config/initializers/context_drop.rb`](lib/generators/context_drop/install/templates/initializer.rb.tt).
 2. Mounts `mount ContextDrop::Engine => "/context_drop"` in `config/routes.rb`.
-3. Copies three engine-owned migrations (`context_drop_feedbacks`, `context_drop_element_references`, `context_drop_attachments`) into `db/migrate/`.
+3. Copies four engine-owned migrations (`context_drop_feedbacks` with `environment` attribution, `context_drop_element_references`, `context_drop_attachments`) into `db/migrate/`.
 4. Verifies that Active Storage migrations are present.
 
 ### 2. Render the Widget in Your Layout
@@ -138,7 +173,7 @@ Visit any page in your Rails app to use the floating widget, or open `/context_d
 
 ## Interactive Playground
 
-Want to test the floating Pin selector, overlapping-layer disambiguation, draggable chatbox, and live payload inspector before installing the gem into a Rails app? Run the standalone playground in this repository:
+Want to test all three environment modes (`local (Agent)` · `staging (Verbose)` · `production (Smart)`), peel-to-pin corner dragging, smart component promotion with auto surrounding screenshots, overlapping-layer disambiguation, and the live payload inspector before installing the gem into a Rails app? Run the standalone playground in this repository:
 
 ```bash
 # Start the local interactive demo server at http://127.0.0.1:4173
@@ -148,6 +183,8 @@ npm run demo
 open demo/index.html
 ```
 
+Use the top-bar switcher in the demo to flip live between **Local (Agent Sidebar)**, **Staging (Verbose Inspector)**, and **Production (Smart Quick-Feedback)**.
+
 ---
 
 ## Feedback-to-Fix Loop
@@ -155,47 +192,78 @@ open demo/index.html
 ```mermaid
 flowchart LR
   subgraph Browser["Host Rails App (Browser)"]
-    Widget["<context-drop-widget>\n(Shadow DOM + Layer Picker)"]
+    Widget["<context-drop-widget>\n(Book-Corner + Layer Picker\n+ Local Agentic Sidebar)"]
   end
 
-  subgraph Engine["ContextDrop::Engine (Self-Hosted in Your Rails App)"]
-    Controller["FeedbacksController\n+ MetadataSanitizer"]
-    DB[("context_drop_feedbacks\ncontext_drop_element_references\ncontext_drop_attachments")]
-    Storage[("Host Active Storage\n(Redacted Screenshots)")]
-    Dashboard["Triage Dashboard\n/context_drop/dashboard/feedbacks"]
-    MCP["ContextDrop::MCP::Server\n(stdio & Streamable HTTP)"]
+  subgraph Engine["ContextDrop::Engine (Local Development Rails App)"]
+    Controller["FeedbacksController\n+ AgentController (Loopback Only)"]
+    DB[("Local DB + Active Storage\n(environment = development)")]
+    MCP["Unified MCP Hub\nbin/rails context_drop:mcp"]
+  end
+
+  subgraph Remote["Staging & Production Rails Apps"]
+    RemoteMCP["Streamable HTTP /context_drop/mcp\n(environment = staging | production)"]
   end
 
   subgraph IDE["Developer IDE / Coding Agent"]
     Agent["Cursor · Claude Code · Antigravity\nWindsurf · VS Code"]
   end
 
-  Widget -->|"POST /context_drop/feedback\n(CSRF + Rate Limit)"| Controller
+  Widget -->|"POST /context_drop/feedback"| Controller
+  Widget <-->|"BYOK Chat + Diff Approval\n(development + 127.0.0.1 only)"| Controller
   Controller --> DB
-  Controller --> Storage
-  DB --> Dashboard
-  Storage --> Dashboard
   DB --> MCP
-  Storage --> MCP
-  MCP -->|"list_feedbacks / get_feedback\n(Selectors + Multimodal Images)"| Agent
+  RemoteMCP <-->|"Bearer HTTPS Federation\n(EnvironmentRouter)"| MCP
+  MCP -->|"Single MCP Server\n(environment: all | local | staging | prod)"| Agent
 ```
 
 Every submission captures a rich, sanitized engineering payload:
-- **`ContextDrop::Feedback` (`context_drop_feedbacks`):** Polymorphic `submitter` (`User`, `Employee`, `AdminUser`, or anonymous), `message`, `page_url`, `user_agent`, `viewport` & custom `metadata`, and workflow `status` (`new`, `reviewed`, `resolved`, `dismissed`).
+- **`ContextDrop::Feedback` (`context_drop_feedbacks`):** Automatic host `environment` (`Rails.env`—e.g. `development`, `staging`, `production`), polymorphic `submitter` (`User`, `Employee`, `AdminUser`, or anonymous), `message`, `page_url`, `user_agent`, `viewport` & custom `metadata`, and workflow `status` (`new`, `reviewed`, `resolved`, `dismissed`).
 - **`ContextDrop::ElementReference` (`context_drop_element_references`):** Point-in-time DOM snapshot including `tag_name`, best-effort CSS `selector`, structural `dom_path`, truncated `text_content`, allowlisted `attributes_snapshot` (`id`, `class`, `role`, `aria-*`, `data-testid`), and CSS pixel `bounding_rect` (`{ x, y, width, height }`).
 - **`ContextDrop::Attachment` (`context_drop_attachments`):** Viewport screenshots, element-cropped screenshots (linked via `element_reference_id`), and uploaded images stored in your app's **Active Storage**.
 
 ---
 
-## DOM Pinning & Layer Disambiguation
+## Smart & Verbose Element Selection
 
-Real-world Rails interfaces have sticky navbars, floating promo ribbons, translucent toast notifications, and deeply nested Flexbox/Grid containers. ContextDrop makes selecting the exact underlying element effortless:
+ContextDrop stays tucked away as a `38×38px` folded **Book Corner** until needed—**click** the corner to open the feedback surface, or **drag** the corner to peel and morph it into a pushpin over any part of the page (or drop it into another viewport corner to re-dock). All `pointerdown`, `mousedown`, `mouseup`, and `click` events are intercepted in the capture phase while selecting so host links, buttons, and forms never fire by mistake.
 
-1. **Top-Left Pin Selector & Freely Draggable Dock:** Click **Pin Element** in the top-left corner of the chatbox (or from the floating dock). The chatbox collapses into the **Compact Pinning Bar** so it never blocks the page.
-2. **Scroll-Wheel & Keyboard Depth Cycling:** While hovering any coordinate, roll your mouse wheel (`wheel`) or press `ArrowUp` / `ArrowDown` (`[` / `]`) to cycle through overlapping sibling layers (`document.elementsFromPoint`), child nodes, and parent containers while keeping a dashed ghost outline on the original leaf node.
-3. **Click-to-Pick Layer Stack Popover:** Clicking a multi-layer spot anchors the pin and opens a Figma-style **Layer & Hierarchy Picker** displaying every candidate layer (`Topmost`, `Overlap`, `Child`, `Parent` badges with pixel dimensions) with live hover preview on the page. Hold `Shift+Click` or press `Enter` to pin immediately.
-4. **Interactive DOM Breadcrumb Bar:** Both the Compact Pinning Bar and the Layer Popover render an interactive ancestor trail (`main.demo-shell > section#scenario > button`) hover any segment to preview or click to pin it directly.
-5. **Capture-Phase Host Protection:** All `pointerdown`, `mousedown`, `mouseup`, `click`, and `wheel` events are intercepted in the capture phase during Pin Mode so underlying links, forms, and buttons are never triggered by mistake.
+Once selecting, ContextDrop tailors precision and verbosity to the active environment (`config.selection_mode = :auto`):
+
+### 1. Production: Smart Component Selector (`selection_mode = "smart"`)
+
+Optimized for speed, compactness, and non-technical end-users—being slightly coarse on hover is intentional because ContextDrop pairs the component with a wide neighborhood screenshot:
+- **Automatic Component Promotion:** Hovering or dropping on inner leaf nodes (`<span>`, `<svg>`, `<strong>`, icon wrappers) automatically promotes the highlight to the nearest meaningful UI unit—such as a `button`, `link`, `input` field, `card`, `banner`, `dialog`, `form`, `navigation` bar, `table row`, or bounded `section`.
+- **Plain-Language Labels Only:** The hover pill and composer show human-friendly descriptions (`“Complete Order” button`, `“Enterprise Plan” card`)—never `#id.class` strings, `681×350` pixel readouts, layer counters, wheel-scrubbing interception, or `<kbd>` shortcut hints.
+- **Automatic Surrounding-Context Screenshot:** A single click selects the component, automatically captures a privacy-redacted neighborhood screenshot (`smart_capture_padding = 84`, minimum `340×220px` clamped to viewport, framing the target component in Pin Vermilion), merges both into **one** clean preview card, and immediately reopens the compact `356px` **Send Feedback** form.
+- **Full Technical Fidelity Preserved:** Under the hood, the submitted `ElementReference` still records the exact sanitized `selector`, `dom_path`, `bounding_rect`, `metadata.friendly_label`, `metadata.component_kind`, and `metadata.original_target_selector` alongside the linked `Attachment`.
+
+### 2. Staging, QA & Dev: Verbose Layer Inspector (`selection_mode = "verbose"`, `v0.1.x` Format)
+
+Optimized for QA engineers, designers, and developers debugging dense, overlapping layouts (sticky navbars, floating ribbons, translucent toasts, nested Flexbox/Grid wrappers):
+- **Exact `<tag#id.class>` & Geometry HUD:** Displays exact tag/selector identifiers, `tabular-nums` pixel dimensions (`681×350`), and overlapping candidate depth (`1/6 layers`).
+- **Scroll-Wheel & Keyboard Depth Scrubbing:** Roll your mouse wheel (`wheel`) or press `ArrowUp` / `ArrowDown` (`[` / `]`) over any coordinate to cycle through `document.elementsFromPoint` overlapping layers, child nodes, and parent containers while keeping a dashed ghost outline on the original leaf node.
+- **Freeze & Pin Transient Menus (`⌥⇧P`):** Press `Alt+Shift+P` (`⌥⇧P`) while a hover dropdown or tooltip is open to freeze the page coordinate and scrub/pin transient layers, or press `Space` / click to pin multiple elements in a single pass.
+
+---
+
+## Local BYOK Agentic Sidebar (`development` Mode)
+
+When you run your Rails application locally (`Rails.env.development?` on `localhost` / `127.0.0.1`), clicking or peeling the Book-Corner transforms ContextDrop into a full-height, resizable **Agentic Coding Sidebar**—similar to the coding sidebars in **Antigravity** and **VS Code**:
+
+- **Dual `Agent | Feedback` Mode Switcher:** Triage bugs and edit local Rails code in **Agent** mode, or flip to **Feedback** mode at any time to preview and submit through the standard floating feedback chatbox.
+- **Flexible Docked Layout:** Dock to the **Right** or **Left** edge, drag the resize handle (`320px–680px`), and toggle **Push Page Layout** so the sidebar sits side-by-side with your running app without covering content.
+- **Cross-Environment Context Attachment:** Peel-and-drop live DOM elements and redacted screenshots from the current page, **and** attach bug reports directly from `local`, `staging`, or `production` via the built-in **Feedback Inbox** drawer.
+- **Bring Your Own Key (BYOK):** Supports **Anthropic** (`Claude`), **Google Gemini**, **OpenAI**, and **Custom OpenAI-Compatible** endpoints (OpenRouter, Groq, Ollama, vLLM). Automatically detects local server environment variables (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `CONTEXT_DROP_LLM_API_KEY`), or saves keys you enter in the sidebar's **BYOK Vault** drawer encrypted on disk (`AES-256-GCM`, mode `0600`) inside gitignored `tmp/context_drop_byok.enc`.
+
+### Defense-in-Depth Local Agent Safety
+
+Because user-submitted feedback messages from `staging` or `production` are untrusted input, the Local Agentic Sidebar enforces five strict security walls:
+1. **Hard-Blocked Outside Local Development:** `/context_drop/agent/*` returns `404 Not Found` whenever `Rails.env.production?` is true, when `local_agent_enabled` is false, or when a request does not originate from strict loopback (`127.0.0.1` / `::1`) with a loopback `Host` header, same-origin headers, CSRF token, and `authorize_dashboard` permission.
+2. **Zero Browser Key Exposure:** API keys are **never** stored in `localStorage`, `sessionStorage`, cookies, or DOM attributes. Input fields are wiped immediately upon save, and `/agent/status` returns only masked tails (`••••••••7f9a`).
+3. **Workspace Root Jail & Secret Denylist:** File tools (`list_workspace_files`, `search_workspace`, `read_workspace_file`, `propose_file_edit`) enforce `File.realpath` containment inside `Rails.root` and block `.env*`, `config/master.key`, `config/credentials*`, `*.pem`, `*.key`, `tmp/context_drop_byok*`, `.git/config`, and `.git/hooks/*`.
+4. **No Arbitrary Shell Execution:** No `bash` / `sh` / `system` tool is exposed to LLM tool calls, eliminating prompt-injection command execution.
+5. **Human-Approved Inline Diffs + 1-Click Revert:** Proposed file edits are staged in memory and rendered as unified diff cards (`+N / -N`). Disk writes occur **only** when you click **Apply Change** (guarded by SHA-256 pre-image verification), with 1-click **Revert** afterward.
 
 ---
 
@@ -213,40 +281,36 @@ ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`Cont
 
 | Type | Name / URI | Description |
 |---|---|---|
-| **Tool** | `list_feedbacks` | Filter & paginate submissions by `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url`, or free-text `query` across messages, selectors, and DOM paths. |
-| **Tool** | `get_feedback` | Fetch full `Feedback`, all `ElementReference` DOM snapshots, and inline base64 `image` blocks (`include_images: true` by default). |
-| **Tool** | `get_feedback_attachment` | Retrieve an individual `Attachment` record and its binary screenshot/image as an MCP `image` content block. |
-| **Tool** | `update_feedback_status` | Transition a feedback record between `new`, `reviewed`, `resolved`, and `dismissed`. |
+| **Tool** | `list_environments` | List `local` (with current host `Rails.env`) plus all configured remote environments (`staging`, `production`, etc.) and connection status. |
+| **Tool** | `list_feedbacks` | Filter & paginate submissions across `environment` (`"all"`, `"local"`, `"staging"`, `"production"`), `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url`, or free-text `query`. Returns qualified IDs (`local:12`, `production:42`). |
+| **Tool** | `get_feedback` | Fetch full `Feedback`, all `ElementReference` DOM snapshots, and inline base64 `image` blocks by `id` + `environment` or qualified ID (`"production:42"`). |
+| **Tool** | `get_feedback_attachment` | Retrieve an individual local or remote `Attachment` record and its binary screenshot/image as an MCP `image` content block. |
+| **Tool** | `update_feedback_status` | Transition a local or remote feedback record between `new`, `reviewed`, `resolved`, and `dismissed`. |
 | **Resource** | `contextdrop://feedbacks/new` | Live JSON feed of unresolved `new` feedback records (up to 50 most recent). |
 | **Resource** | `contextdrop://feedbacks/{id}` | Full JSON snapshot of a specific feedback submission, its pinned elements, and attachment metadata. |
-| **Prompt** | `investigate_feedback` | Generates a structured root-cause investigation brief (with attached screenshots) for a given `feedback_id`. |
+| **Prompt** | `investigate_feedback` | Generates a structured root-cause investigation brief (with attached screenshots) for any local or remote `feedback_id` (`"staging:18"`). |
 
 ---
 
-### Recommended Setup (Local + Remote)
+### Recommended Setup: One Unified MCP Server for All Environments (`local` + `staging` + `production`)
 
-For day-to-day development, register **both** a local `stdio` server and a remote Streamable HTTP server side-by-side in your MCP configuration (`mcp_config.json` in **Antigravity**, `~/.cursor/mcp.json` in **Cursor**, **Claude Desktop** / `.mcp.json` in **Claude Code**, **Windsurf**, or **VS Code**):
-
-- **`context-drop-local` (`stdio`):** Runs `./bin/rails context_drop:mcp` directly against your local development database and Active Storage (no running `bin/rails server` required). Wrapped with `/bin/zsh -c`, `cd`, `exec`, and an explicit `PATH` so it boots reliably inside strict agent sandboxes and GUI-launched IDEs.
-- **`context-drop-remote` (`Streamable HTTP`):** Connects to your deployed staging or production Rails app (`POST <mount_path>/mcp` with `CONTEXT_DROP_MCP_ENABLED=true` and `CONTEXT_DROP_MCP_API_KEY=<your-secret-token>` configured on the server) so your agent can pull real bug reports, pinned selectors, and screenshots submitted by QA or users, fix the code locally, and mark the remote feedback resolved.
+Instead of registering separate MCP servers per environment in your IDE, register **a single `context-drop` server** running `./bin/rails context_drop:mcp`. It automatically reads your local development database (`local`) **and** federates every remote environment configured in `config.mcp_environments` or `CONTEXT_DROP_<ENV>_MCP_URL` / `CONTEXT_DROP_<ENV>_MCP_API_KEY`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop-local": {
+    "context-drop": {
       "command": "/bin/zsh",
       "args": [
         "-c",
         "cd /absolute/path/to/your-rails-app && exec /Users/<you>/.rbenv/shims/bundle exec ./bin/rails context_drop:mcp"
       ],
       "env": {
-        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
-    "context-drop-remote": {
-      "url": "https://staging.example.com/context_drop/mcp",
-      "headers": {
-        "Authorization": "Bearer <your-secret-token>"
+        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "CONTEXT_DROP_STAGING_MCP_URL": "https://staging.example.com/context_drop/mcp",
+        "CONTEXT_DROP_STAGING_MCP_API_KEY": "<staging-mcp-secret-token>",
+        "CONTEXT_DROP_PRODUCTION_MCP_URL": "https://app.example.com/context_drop/mcp",
+        "CONTEXT_DROP_PRODUCTION_MCP_API_KEY": "<production-mcp-secret-token>"
       }
     }
   }
@@ -254,78 +318,44 @@ For day-to-day development, register **both** a local `stdio` server and a remot
 ```
 
 > [!NOTE]
-> **Custom route prefixes:** Match the `context-drop-remote` URL to wherever `ContextDrop::Engine` is mounted in `config/routes.rb` plus `/mcp` (for example, `https://staging.example.com/rails/context_drop/mcp` when mounted under `/rails/context_drop`).
+> **Prefer keeping URLs/tokens in Rails credentials or `.env.development.local`?** You can omit the `CONTEXT_DROP_*_MCP_*` entries from your IDE JSON entirely and configure `config.mcp_environments` inside `config/initializers/context_drop.rb`—both your IDE's `context-drop` MCP server and the in-browser Local Agentic Sidebar share the exact same `EnvironmentRouter`.
 
-Naming the servers `context-drop-local` and `context-drop-remote` lets you target either environment explicitly in your IDE prompts without toggling config files:
-- *"Check `context-drop-remote` for new feedbacks, inspect the pinned element selector and screenshot, diagnose the root cause in our local Rails views/CSS, and mark the feedback resolved."*
-- *"Inspect the latest feedback I just pinned on `context-drop-local` and verify the layout fix."*
+With one unified server registered in **Antigravity** (`mcp_config.json`), **Cursor** (`~/.cursor/mcp.json`), **Claude Code** (`.mcp.json`), **Windsurf**, or **VS Code**, you can ask naturally across environments:
+- *"List new feedbacks across `all` environments on `context-drop`, inspect `production:42` with its screenshot, fix the CSS/ERB locally, and mark `production:42` resolved."*
+- *"Check `local` feedbacks I just pinned and verify the layout fix."*
 
 ---
 
-### Multi-Environment & Multiple Remote Servers (`local` + `staging` + `production`)
+### Recommended Environment Matrix
 
-MCP clients support registering any number of ContextDrop servers simultaneously. If your team triages feedback across **Staging / QA** and **Production** (or across multiple Rails services), register each remote endpoint under an explicit environment-scoped key:
-
-```json
-{
-  "mcpServers": {
-    "context-drop-local": {
-      "command": "/bin/zsh",
-      "args": [
-        "-c",
-        "cd /absolute/path/to/your-rails-app && exec /Users/<you>/.rbenv/shims/bundle exec ./bin/rails context_drop:mcp"
-      ],
-      "env": {
-        "PATH": "/Users/<you>/.rbenv/shims:/Users/<you>/.rbenv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
-    "context-drop-staging": {
-      "url": "https://staging.example.com/context_drop/mcp",
-      "headers": {
-        "Authorization": "Bearer <staging-mcp-secret-token>"
-      }
-    },
-    "context-drop-production": {
-      "url": "https://app.example.com/context_drop/mcp",
-      "headers": {
-        "Authorization": "Bearer <production-mcp-secret-token>"
-      }
-    }
-  }
-}
-```
-
-#### Recommended Environment Matrix
-
-| Environment | MCP Transport | `CONTEXT_DROP_ENABLED` (Widget & Dashboard) | `CONTEXT_DROP_MCP_ENABLED` (HTTP `/mcp`) | Token & Access Strategy |
+| Environment | Host `Rails.env` Attribution | `CONTEXT_DROP_ENABLED` (Widget & Dashboard) | `CONTEXT_DROP_MCP_ENABLED` (HTTP `/mcp`) | Widget Surface, Selector Mode & MCP Role |
 |---|---|---|---|---|
-| **Local (`development`)** | `stdio` (`context_drop:mcp`) | `true` | `false` *(not needed for `stdio`)* | Direct local DB & Active Storage access; zero network exposure. |
-| **Staging / QA** | Streamable HTTP | `true` | `true` | Dedicated `staging` token (`bin/rails secret`); open to QA & preview testers. |
-| **Production** | Streamable HTTP | `true` *(or scoped via `authorize_submission`)* | `true` | Separate `production` token (rotated independently) + optional gateway headers / `authorize_mcp`. |
+| **Local (`development`)** | `"development"` *(loopback `127.0.0.1` / `::1`)* | `true` | `false` *(not needed for `stdio` hub)* | **Book-Corner + Local BYOK Agentic Sidebar** (`Agent \| Feedback` toggle, `selection_mode: "verbose"`); runs the single unified `stdio` MCP hub (`context_drop:mcp`). |
+| **Staging / QA** | `"staging"` | `true` | `true` | **Book-Corner + Verbose Inspector Chatbox** (`selection_mode: "verbose"`, `v0.1.x` CSS/layer HUD); federated into local MCP hub via dedicated `staging` Bearer token. |
+| **Production** | `"production"` | `true` *(or scoped via `authorize_submission`)* | `true` | **Book-Corner + Compact Smart Quick-Feedback** (`selection_mode: "smart"`, plain-language component labels + auto surrounding screenshot; Agent endpoints hard-locked `404`); federated into local MCP hub via dedicated `production` Bearer token. |
 
 #### Multi-Environment Best Practices
 
-- **Namespace server keys clearly (especially across multiple Rails apps):** In global IDE configs (`mcp_config.json` in Antigravity or `~/.cursor/mcp.json`), prefix keys by service and environment—such as `checkout-local`, `checkout-staging`, `checkout-prod`, and `admin-prod`—so your agent never confuses tools from different repositories or databases.
-- **Isolate secrets per environment:** Generate a distinct high-entropy `CONTEXT_DROP_MCP_API_KEY` (`bin/rails secret` or `openssl rand -hex 32`) in each environment's Rails encrypted credentials or secret manager. Never share a single Bearer token between staging and production.
-- **Keep live tokens out of version control:** Place configs containing live `Authorization` headers in user-level MCP files (e.g., Antigravity `mcp_config.json`, `~/.cursor/mcp.json`) or gitignore workspace `.mcp.json` overrides.
+- **Automatic Host Environment Stamping:** Every `ContextDrop::Feedback` record automatically stamps `Rails.env` (customizable via `config.environment`)—no manual metadata boilerplate required, though you can still pass `metadata: { release: ENV["GIT_COMMIT_SHA"] }` to `<%= context_drop_widget(...) %>`.
+- **Isolate secrets per environment:** Generate a distinct high-entropy `CONTEXT_DROP_MCP_API_KEY` (`bin/rails secret` or `openssl rand -hex 32`) in each deployed environment's Rails encrypted credentials or secret manager. Never share a single Bearer token between staging and production.
+- **HTTPS Enforced for Remote Endpoints:** `ContextDrop::MCP::RemoteClient` enforces `https://` by default for all non-loopback remote MCP URLs and sets `allow_Cross_Origin` / redirect limits to zero so Bearer tokens are never leaked across redirects.
 - **Independent Widget vs. MCP switches:** `config.enabled` and `config.mcp_enabled` are decoupled—`ContextDrop::McpController` remains reachable whenever `CONTEXT_DROP_MCP_ENABLED=true`, even if you temporarily set `CONTEXT_DROP_ENABLED=false` in production to pause new widget submissions while finishing triage.
-- **Stamp environment & release SHA into widget metadata:** Pass `metadata: { env: Rails.env, release: ENV["GIT_COMMIT_SHA"] }` to `<%= context_drop_widget(...) %>` so every feedback record pulled by your agent explicitly carries the environment and commit SHA it came from.
-- **Layer zero-trust proxy headers when needed:** If your remote MCP endpoints sit behind Cloudflare Access, Google IAP, or an internal MCP gateway, pass additional proxy headers inside `"headers"` alongside `Authorization` (or validate custom JWT/header claims in `config.authorize_mcp`).
+- **Layer zero-trust proxy headers when needed:** If your remote MCP endpoints sit behind Cloudflare Access, Google IAP, or an internal MCP gateway, pass additional proxy `"headers"` inside `config.mcp_environments` alongside `api_key` (or validate custom JWT/header claims in `config.authorize_mcp`).
 
 ---
 
-### Individual Transport Options & Environment Reference
+### Alternative Transport Options & Ruby Version Manager Reference
 
-If you only need a single transport or use a different Ruby version manager (`mise`, `asdf`, `rvm`, Homebrew) or Docker setup, see the reference configurations below.
+If you run a workspace-scoped config where your shell `PATH` is already inherited, or if you run inside Docker / remote-only environments, use the reference snippets below.
 
-#### Option 1: Project-Scoped Local `stdio` (Inherited Shell Environment)
+#### Option 1: Minimal Workspace-Scoped `stdio` (With `config.mcp_environments` in Rails)
 
-When using a workspace-scoped MCP file (e.g., `.mcp.json` in Claude Code or `.cursor/mcp.json` launched from a terminal) where your IDE already runs inside the Rails root and inherits your Ruby shell `PATH`:
+When your IDE runs inside the Rails root, inherits your Ruby `PATH`, and remote environments are already configured in `config/initializers/context_drop.rb` or `.env.development.local`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop-local": {
+    "context-drop": {
       "command": "bundle",
       "args": ["exec", "./bin/rails", "context_drop:mcp"]
     }
@@ -339,12 +369,12 @@ Strict sandboxed coding agents and GUI-launched desktop IDEs (such as **Antigrav
 1. **A non-project working directory** (often `/` or `$HOME`, causing relative `./bin/rails` or `Gemfile` lookup to fail), and
 2. **A stripped minimal `PATH`** (`/usr/bin:/bin:/usr/sbin:/sbin`) without sourcing `~/.zshrc` or `~/.bashrc`—causing `/usr/bin/env ruby` inside `bin/rails` to hit an outdated system Ruby (e.g., macOS Ruby `2.6`) or fail to locate `bundle` and Homebrew native libraries (`libpq`, `sqlite3`, `vips`).
 
-To make `stdio` work reliably in strict sandboxes, wrap the launch command with `/bin/zsh -c` (or `/bin/bash -c` on Linux), `cd` into your Rails application root, `exec` your version manager's `bundle` binary directly, and declare an explicit absolute `PATH`:
+Wrap the unified `context-drop` server command with `/bin/zsh -c` (or `/bin/bash -c` on Linux), `cd` into your Rails application root, `exec` your version manager's `bundle` binary directly, and declare an explicit absolute `PATH`:
 
 ```json
 {
   "mcpServers": {
-    "context-drop-local": {
+    "context-drop": {
       "command": "/bin/zsh",
       "args": [
         "-c",
@@ -429,8 +459,22 @@ ContextDrop.configure do |config|
   # Master switch (disables widget helper, dashboard, and HTTP ingestion endpoints when false)
   config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"
 
-  # Initial widget corner position: :bottom_right, :bottom_left, :top_right, :top_left
+  # Host environment attribution (defaults automatically to Rails.env)
+  # config.environment = Rails.env
+
+  # Initial book-corner launcher position: :bottom_right, :bottom_left, :top_right, :top_left
   config.position = :bottom_right
+
+  # Element selection UX mode:
+  # - :auto (default) -> "smart" (jargon-free component promotion + auto surrounding screenshot) in production,
+  #                      "verbose" (v0.1.x CSS selector HUD, wheel layer scrubbing & ⌥⇧P shortcuts) in staging/dev
+  # - :smart          -> force compact plain-language component selector + auto surrounding screenshot
+  # - :verbose        -> force technical CSS selector HUD, wheel layer scrubbing, and multi-pin inspector
+  config.selection_mode = :auto
+  config.smart_capture_padding = 84
+
+  # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
+  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
 
   # Allow unauthenticated visitors to submit feedback
   config.allow_anonymous = true
@@ -462,13 +506,26 @@ ContextDrop.configure do |config|
 
   # Lifecycle callback invoked after feedback persistence (ideal for Slack, Linear, or GitHub webhooks)
   config.on_feedback_created = ->(feedback) {
-    Rails.logger.info("New ContextDrop Feedback ##{feedback.id} on #{feedback.page_url}")
+    Rails.logger.info("New ContextDrop Feedback ##{feedback.id} (#{feedback.environment}) on #{feedback.page_url}")
   }
 
-  # Model Context Protocol (MCP) Server settings
+  # Unified Model Context Protocol (MCP) Server settings
   config.mcp_enabled = ENV.fetch("CONTEXT_DROP_MCP_ENABLED", "false") == "true"
   config.mcp_api_key = ENV["CONTEXT_DROP_MCP_API_KEY"]
   config.authorize_mcp = nil
+
+  # Federated remote environments queried by your single local `bin/rails context_drop:mcp` hub
+  # (also auto-discovers CONTEXT_DROP_<ENV>_MCP_URL + CONTEXT_DROP_<ENV>_MCP_API_KEY env variables):
+  config.mcp_environments = {
+    staging: {
+      url: ENV["CONTEXT_DROP_STAGING_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_STAGING_MCP_API_KEY"]
+    },
+    production: {
+      url: ENV["CONTEXT_DROP_PRODUCTION_MCP_URL"],
+      api_key: ENV["CONTEXT_DROP_PRODUCTION_MCP_API_KEY"]
+    }
+  }
 end
 ```
 

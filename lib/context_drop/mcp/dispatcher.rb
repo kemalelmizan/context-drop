@@ -8,6 +8,7 @@ module ContextDrop
       PROTOCOL_VERSION = "2025-03-26"
 
       TOOLS = {
+        "list_environments" => ContextDrop::MCP::Tools::ListEnvironments,
         "list_feedbacks" => ContextDrop::MCP::Tools::ListFeedbacks,
         "get_feedback" => ContextDrop::MCP::Tools::GetFeedback,
         "get_feedback_attachment" => ContextDrop::MCP::Tools::GetFeedbackAttachment,
@@ -20,9 +21,15 @@ module ContextDrop
 
       RESOURCES = [
         {
+          uri: "contextdrop://environments",
+          name: "Connected ContextDrop Environments",
+          description: "Host Rails environment and all federated remote ContextDrop environments.",
+          mimeType: "application/json"
+        },
+        {
           uri: "contextdrop://feedbacks/new",
-          name: "Unresolved New Feedbacks",
-          description: "List of all ContextDrop feedback records currently in 'new' status.",
+          name: "Unresolved New Feedbacks (All Connected Environments)",
+          description: "List of unresolved ContextDrop feedback records currently in 'new' status across local and federated environments.",
           mimeType: "application/json"
         }
       ].freeze
@@ -31,7 +38,19 @@ module ContextDrop
         {
           uriTemplate: "contextdrop://feedbacks/{id}",
           name: "Feedback Record by ID",
-          description: "Full ContextDrop feedback submission, DOM element snapshots, and attachment metadata for a specific ID.",
+          description: "Full ContextDrop feedback submission, DOM element snapshots, and attachment metadata for a local ID or '<env>:<id>'.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "contextdrop://{environment}/feedbacks/new",
+          name: "Unresolved New Feedbacks by Environment",
+          description: "Unresolved 'new' feedback records scoped to a specific environment ('local', 'staging', 'production', 'all').",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "contextdrop://{environment}/feedbacks/{id}",
+          name: "Feedback Record by Environment and ID",
+          description: "Full ContextDrop feedback submission for a specific environment and ID.",
           mimeType: "application/json"
         }
       ].freeze
@@ -74,7 +93,9 @@ module ContextDrop
               },
               serverInfo: {
                 name: "context_drop",
-                version: ContextDrop::VERSION
+                version: ContextDrop::VERSION,
+                environment: ContextDrop::MCP::EnvironmentRouter.host_environment,
+                connectedEnvironments: ContextDrop::MCP::EnvironmentRouter.available_environments.map { |e| e[:name] }
               }
             })
           when "ping"
@@ -119,44 +140,65 @@ module ContextDrop
         def handle_resource_read(id, params)
           uri = params["uri"].to_s.strip
           case uri
-          when "contextdrop://feedbacks/new"
-            records = ContextDrop::Feedback
-                      .includes(:submitter, :element_references, :attachments)
-                      .new_records
-                      .recent
-                      .limit(50)
-                      .map { |fb| ContextDrop::MCP::Tools::ListFeedbacks.serialize_summary(fb) }
+          when "contextdrop://environments"
             jsonrpc_result(id, {
               contents: [
                 {
                   uri: uri,
                   mimeType: "application/json",
-                  text: JSON.pretty_generate(feedbacks: records)
+                  text: JSON.pretty_generate(
+                    host_environment: ContextDrop::MCP::EnvironmentRouter.host_environment,
+                    environments: ContextDrop::MCP::EnvironmentRouter.available_environments
+                  )
                 }
               ]
             })
-          when %r{\Acontextdrop://feedbacks/(\d+)\z}
-            feedback_id = Regexp.last_match(1)
-            feedback = ContextDrop::Feedback
-                       .includes(:submitter, :element_references, :attachments)
-                       .find_by(id: feedback_id)
-            unless feedback
-              return jsonrpc_error(id, -32_602, "Feedback ##{feedback_id} not found")
-            end
-
-            payload = ContextDrop::MCP::Tools::GetFeedback.serialize_feedback(feedback)
+          when "contextdrop://feedbacks/new"
+            res = ContextDrop::MCP::Tools::ListFeedbacks.call("status" => "new", "limit" => 50, "environment" => "all")
+            text = res[:content].first[:text]
             jsonrpc_result(id, {
-              contents: [
-                {
-                  uri: uri,
-                  mimeType: "application/json",
-                  text: JSON.pretty_generate(payload)
-                }
-              ]
+              contents: [{ uri: uri, mimeType: "application/json", text: text }]
+            })
+          when %r{\Acontextdrop://([a-z0-9_-]+)/feedbacks/new\z}i
+            env_name = Regexp.last_match(1).downcase
+            res = ContextDrop::MCP::Tools::ListFeedbacks.call("status" => "new", "limit" => 50, "environment" => env_name)
+            return jsonrpc_error(id, -32_602, extract_tool_error(res)) if res[:isError]
+
+            jsonrpc_result(id, {
+              contents: [{ uri: uri, mimeType: "application/json", text: res[:content].first[:text] }]
+            })
+          when %r{\Acontextdrop://feedbacks/([a-z0-9_:-]+)\z}i
+            raw_id = Regexp.last_match(1)
+            res = ContextDrop::MCP::Tools::GetFeedback.call("id" => raw_id, "include_images" => false)
+            return jsonrpc_error(id, -32_602, extract_tool_error(res)) if res[:isError]
+
+            jsonrpc_result(id, {
+              contents: [{ uri: uri, mimeType: "application/json", text: res[:content].first[:text] }]
+            })
+          when %r{\Acontextdrop://([a-z0-9_-]+)/feedbacks/(\d+)\z}i
+            env_name = Regexp.last_match(1).downcase
+            feedback_id = Regexp.last_match(2)
+            res = ContextDrop::MCP::Tools::GetFeedback.call(
+              "id" => feedback_id,
+              "environment" => env_name,
+              "include_images" => false
+            )
+            return jsonrpc_error(id, -32_602, extract_tool_error(res)) if res[:isError]
+
+            jsonrpc_result(id, {
+              contents: [{ uri: uri, mimeType: "application/json", text: res[:content].first[:text] }]
             })
           else
             jsonrpc_error(id, -32_602, "Unknown resource URI: #{uri}")
           end
+        end
+
+        def extract_tool_error(res)
+          raw = res.dig(:content, 0, :text).to_s
+          parsed = JSON.parse(raw)
+          parsed["error"] || raw
+        rescue StandardError
+          raw
         end
 
         def handle_prompt_get(id, params)

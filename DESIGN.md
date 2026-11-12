@@ -1,6 +1,6 @@
 ---
 name: ContextDrop
-description: Tactile instrument design system for the ContextDrop floating feedback chatbox, pin-drop DOM selector, and triage dashboard.
+description: Tactile instrument design system for the ContextDrop book-corner peel-to-pin launcher, floating feedback chatbox, local BYOK agentic coding sidebar, DOM layer picker, and triage dashboard.
 colors:
   pin-vermilion: "#c2410c"
   pin-vermilion-deep: "#9a3412"
@@ -43,15 +43,31 @@ typography:
     fontSize: "13.5px"
     fontWeight: 400
     lineHeight: 1.5
+  caption:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
+    lineHeight: 1.4
   label:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
     fontSize: "11px"
     fontWeight: 600
     lineHeight: 1.3
+  micro:
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    fontSize: "10px"
+    fontWeight: 600
+    lineHeight: 1.25
 rounded:
+  xs: "4px"
   sm: "6px"
+  chip: "7px"
+  row: "8px"
   md: "10px"
+  card: "12px"
+  bar: "14px"
   lg: "16px"
+  pill: "9999px"
   pin: "11px 11px 11px 3px"
 spacing:
   xs: "4px"
@@ -129,10 +145,11 @@ The palette separates **actionable pin affordances** (warm vermilion) from **str
 ## Layout
 
 The widget operates inside an isolated `<context-drop-widget>` Shadow DOM root anchored at `position: fixed; z-index: 2147483640`.
-- **Three Mutual States:**
-  1. **Freely Floating Pin Dock (`.cd-pin-dock`):** Compact pill dock with drag grip, Pin button, and Chatbox toggle. Starts at `top_left` (or configured corner) and can be dragged anywhere within viewport bounds (`8px` margin clamp).
-  2. **Draggable Chatbox Window (`.cd-composer`):** `400px` wide (`calc(100vw - 20px)` on `<480px` viewports), organized vertically into Header Drag Bar (`9px 11px`), Scrollable Session Thread (`max-height: 230px`), Pinned Context Tray (`max-height: 116px`), and Prompt Input Shell.
-  3. **Compact Pinning Bar (`.cd-compact-bar`):** `440px` wide horizontal bar active while pinning elements on the page, displaying the active Pin toggle, scrollable DOM ancestor breadcrumbs, layer Up/Down buttons, and Expand Chat button.
+- **Four Coordinated Surface States:**
+  1. **Flush Book-Corner Fold Launcher (`.cd-book-corner`):** Compact `38×38px` (`46×46px` on hover) folded archival paper dog-ear flush against any viewport corner (`top_left`, `top_right`, `bottom_left`, `bottom_right`) with a Warm Paper flap over a Pin Vermilion under-corner reveal. Clicking opens the active surface; dragging (`>6px` threshold) morphs the folded corner into the live `.cd-drag-pin` pushpin (`@keyframes cd-peel-to-pin`). Releasing over a host DOM element pins it directly, while releasing inside another `68×68px` viewport corner zone (`.cd-corner-snap-ghost`) snaps the book corner to that corner.
+  2. **Draggable Chatbox Window (`.cd-composer` & `.cd-composer.is-smart-mode`):** `404px` wide in verbose `staging`/`dev` mode and a more compact `356px` wide in `production` smart mode (`calc(100vw - 20px)` on `<480px` viewports), organized vertically into Header Drag Bar (`9px 11px`), Scrollable Session Thread (`max-height: 230px`, hidden in `smart` mode when empty while context is attached), Pinned Context Tray (`max-height: 116px`), and Prompt Input Shell. Used as the default surface in deployed environments (`staging`, `production`) and available via the `Feedback` mode toggle locally.
+  3. **Docked Local BYOK Agentic Sidebar (`.cd-agent-sidebar`):** Full-height (`100dvh`) Antigravity / VS Code-style coding sidebar active only in local `development` on loopback (`320px–680px` resizable width, `420px` default, dockable `left` or `right` with an optional Push Page Layout toggle). Contains a Top Header Bar (`Agent | Feedback` mode switcher, environment badge, Cross-Env Feedback Inbox toggle, BYOK Vault toggle, dock/layout controls), collapsible BYOK & Cross-Env Feedback drawers, scrollable Markdown + Tool Trace + Diff Approval conversation stream, Pinned Context Tray, and Prompt Input Shell.
+  4. **Compact Pinning Bar (`.cd-compact-bar`):** `440px` wide horizontal bar active while pinning elements on the page, displaying the active Pin toggle, scrollable DOM ancestor breadcrumbs, layer Up/Down buttons, and Expand Chat button.
 
 ## Elevation & Depth
 
@@ -140,28 +157,39 @@ Because ContextDrop floats over arbitrary host interfaces, it uses multi-layered
 
 ### Shadow Vocabulary
 - **Floating Window Shadow** (`0 22px 44px -12px rgba(17, 19, 24, 0.22), 0 8px 18px -6px rgba(17, 19, 24, 0.10)`): Applied to the Chatbox window, Compact Pinning Bar, and Layer Stack Popover.
-- **Pin Dock Shadow** (`0 12px 24px -6px rgba(17, 19, 24, 0.24), 0 4px 10px -3px rgba(17, 19, 24, 0.12)`): Applied to the freely floating pin trigger dock.
+- **Docked Sidebar Shadow** (`-14px 0 36px -12px rgba(17, 19, 24, 0.16)` / `14px 0 36px -12px rgba(17, 19, 24, 0.16)`): Applied to the right- or left-docked Local Agentic Sidebar.
+- **Book-Corner Flap Shadow** (`drop-shadow(-2px 3px 5px rgba(17, 19, 24, 0.24))`): Applied to the folded dog-ear corner SVG so it lifts cleanly off arbitrary light or dark host pages.
 
 ## Shapes
 
-- **Pin Silhouette (`11px 11px 11px 3px` / `9999px 9999px 9999px 4px`):** The sharp bottom-left corner visually echoes a physical pushpin point and anchors the top-left Pin selector button and cursor pin marker.
-- **Floating Shells (`16px` / `14px`):** Outer chatbox and compact bar containers.
-- **Chips & Layer Rows (`7px` / `8px`):** Internal interactive items inside trays and popovers.
+- **Book-Corner Dog-Ear Crease:** Diagonal SVG corner fold (`38×38px` resting, `46×46px` hover) rotated per docked corner (`0deg`, `90deg`, `-90deg`, `180deg`) with a quadratic Bezier paper curl revealing Pin Vermilion underneath.
+- **Pin Silhouette (`11px 11px 11px 3px` / `9999px 9999px 9999px 4px`):** The sharp bottom-left corner visually echoes a physical pushpin point and anchors the top-left Pin selector button, peel-drag pin (`.cd-drag-pin`), and cursor pin marker.
+- **Floating Shells (`16px` / `14px`):** Outer chatbox and compact bar containers (`0px` flush viewport edge on `.cd-agent-sidebar`).
+- **Chips, Diff Cards & Layer Rows (`7px` / `8px` / `10px`):** Internal interactive items inside trays, drawers, diff cards, and popovers.
 
 ## Components
 
-### Top-Left Pin Selector (`.cd-pin-corner-btn` & `.cd-floating-pin-btn`)
+### Book-Corner Fold Launcher & Peel-to-Pin Morph (`.cd-book-corner` & `.cd-drag-pin`)
+- **Shape:** Flush corner triangle (`38×38px`) that morphs into an asymmetric pushpin (`9999px 9999px 9999px 4px`) when dragged past `6px`.
+- **Color Assignment:** Warm Paper (`#faf9f6`) folded flap over Pin Vermilion (`#c2410c`) corner reveal; morphing drag pin uses Pin Vermilion background with Warm Paper pushpin icon.
+- **Behavior:** Clicking opens the Feedback Composer (or Docked Agentic Sidebar in local `development`). Dragging peels the corner into a live pushpin loupe over host DOM elements (`Release to pin`) or snaps the launcher to any other viewport corner. Accessible via keyboard (`Enter`/`Space` to open; `Shift+Enter` to start keyboard/scroll Pin Mode).
+
+### Top-Left Pin Selector (`.cd-pin-corner-btn`)
 - **Shape:** Asymmetric pin radius (`11px 11px 11px 3px`).
 - **Color Assignment:** Pin Vermilion (`#c2410c`) background with Warm Paper (`#faf9f6`) text and icon; shifts to Inspector Cobalt (`#1d4ed8`) when Pin Mode is active.
-- **Behavior:** Clicking starts Pin Mode and collapses the chatbox into the Compact Pinning Bar; dragging on `.cd-floating-pin-btn` repositions the dock freely.
+- **Behavior:** Clicking starts Pin Mode and collapses the chatbox or sidebar into the Compact Pinning Bar so the host page stays unobstructed.
+
+### Local Agentic Diff Approval Cards (`.cd-diff-card`)
+- **Shape:** `10px` radius card inside `.cd-agent-sidebar` with Obsidian Ink monospace diff viewport and tabular line-count badges (`+N` in Success Emerald, `-N` in Danger Crimson).
+- **Behavior:** Proposed code edits from the local agent are staged in memory without touching disk until the developer clicks **Apply Change** (or **Reject**), with 1-click **Revert** after applying.
 
 ### Layer & Hierarchy Disambiguation Popover (`[data-context-drop-ui="layer-popover"]`)
 - **Shape:** `348px` floating card (`12px` radius) anchored near the clicked pin coordinate and clamped inside the viewport.
 - **Structure:** Header with layer count and Up/Down step buttons, interactive DOM ancestor breadcrumb bar, scrollable candidate stack (`Topmost`, `Overlap`, `Child`, `Parent` badges with dimensions and text snippets), and footer with `Pin Selected` confirmation.
 
-### Context Chips (`.cd-chip`)
-- **Style:** Elevated White (`#ffffff`) background, `1px solid #d6d3cd` border, `7px` radius.
-- **Behavior:** Hovering an element chip highlights the live DOM node on the host page (`[data-context-drop-ui="chip-preview"]`); includes an inline camera button to capture an element-cropped screenshot and a remove button.
+### Context Chips & Production Smart Context Cards (`.cd-chip` & `.cd-smart-card`)
+- **Verbose Chips (`.cd-chip`):** Elevated White (`#ffffff`) background, `1px solid #d6d3cd` border, `7px` radius, monospace `<tag#id.class>` label. Hovering highlights the live DOM node on the host page (`[data-context-drop-ui="chip-preview"]`); includes an inline camera button to capture an element-cropped screenshot and a remove button.
+- **Production Smart Context Cards (`.cd-smart-card`):** Used when `selection_mode === "smart"`. Merges the promoted UI component and its auto-captured surrounding-context screenshot into a single `10px` radius card (`48×36px` redacted thumbnail + `600` System UI Sans friendly component title such as `“Complete Order” button` + `Surrounding area included` caption + cascade remove button), strictly honoring the **Earned Monospace Rule** by never rendering CSS selectors or monospace text to non-technical production users.
 
 ## Do's and Don'ts
 
