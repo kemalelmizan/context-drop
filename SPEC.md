@@ -72,7 +72,7 @@ The host application remains responsible for deciding whether authentication is 
 
 ContextDrop rests flush in a single viewport corner rather than rendering a wide floating pill:
 - **Flush Book-Corner Launcher (`.cd-book-corner`):** Compact `38×38px` (`46×46px` on hover) folded archival paper corner flush against the configured viewport corner (`:bottom_right`, `:bottom_left`, `:top_right`, `:top_left`).
-- **Click Action:** Clicking the book corner opens the normal draggable Feedback Chatbox (`.cd-composer`) in deployed environments (`staging`, `production`), or opens the docked **Local BYOK Agentic Coding Sidebar** (`.cd-agent-sidebar`) when running locally in `development` on loopback (`127.0.0.1` / `::1`), complete with an `Agent | Feedback` mode switcher so developers can still use and test the standard feedback chatbox locally.
+- **Click Action:** Clicking the book corner opens the Feedback Chatbox (`.cd-composer`) in deployed environments (`staging`, `production`) and in local development by default (using staging/verbose mode so developers can test bug pinning and use their external IDE agents via MCP). When opted in via `config.enable_local_agent = true` on loopback (`127.0.0.1` / `::1`), it opens the docked **Local BYOK Agentic Coding Sidebar** (`.cd-agent-sidebar`) with an `Agent | Feedback` mode switcher.
 - **Peel-and-Drop to Pin on Drag:** Dragging the book corner past `6px` animates the folded corner into an asymmetric pushpin (`.cd-drag-pin`) with live Inspector Cobalt element highlighting (`Release to pin`). Releasing over any valid DOM element pins it directly and opens the active composer/sidebar with the element attached; releasing inside another `68×68px` viewport corner zone (`.cd-corner-snap-ghost`) re-docks the book corner to that corner.
 - **Minimize to Compact Bar:** While pinning elements via click-mode (`Pin Element` button in `.cd-pin-corner-btn`), the chatbox or sidebar collapses into a compact floating bar (`.cd-compact-bar`) with live DOM breadcrumbs, layer Up/Down buttons, and an expand toggle so the host page remains unobstructed.
 
@@ -297,7 +297,9 @@ ContextDrop.configure do |config|
   config.on_feedback_created = ->(feedback) { }
 
   # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
-  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
+  # Disabled by default in v0.2.0; local development defaults to the verbose inspector/feedback modal
+  # to focus on external IDE agents connected via the unified MCP hub. Enable if desired:
+  config.enable_local_agent = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "false") == "true"
 
   # Unified Model Context Protocol (MCP) server settings
   config.mcp_enabled = ENV.fetch("CONTEXT_DROP_MCP_ENABLED", "false") == "true"

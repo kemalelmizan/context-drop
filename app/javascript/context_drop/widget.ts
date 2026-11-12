@@ -35,6 +35,8 @@ import {
   ICON_SEND,
   ICON_SHIELD,
   ICON_SIDEBAR,
+  ICON_SUN,
+  ICON_MOON,
   ICON_UNDO
 } from "./icons.ts";
 import { WIDGET_SHADOW_STYLES } from "./styles.ts";
@@ -107,10 +109,12 @@ const BOOK_CORNER_SVG = `<svg class="cd-book-corner-svg" viewBox="0 0 40 40" fil
 const DEFAULT_VERBOSE_PLACEHOLDER = "Describe the issue or drop context from the page...";
 const DEFAULT_SMART_PLACEHOLDER = "Tell us what's happening...";
 
+export const DEFAULT_SIDEBAR_WIDTH = 560;
+
 const DEFAULT_CONFIG: WidgetConfig = {
   enabled: true,
   environment: "production",
-  position: "top_left",
+  position: "bottom_right",
   placeholder: DEFAULT_VERBOSE_PLACEHOLDER,
   agent: {
     enabled: false
@@ -139,6 +143,10 @@ const BaseHTMLElement: typeof HTMLElement =
     : (class {} as unknown as typeof HTMLElement);
 
 export class ContextDropWidgetElement extends BaseHTMLElement {
+  public static get observedAttributes(): string[] {
+    return ["data-position", "data-config", "data-theme"];
+  }
+
   public shadow: ShadowRoot | null = null;
   private config: WidgetConfig = structuredClone(DEFAULT_CONFIG);
   private customMetadata: Record<string, unknown> = {};
@@ -151,7 +159,10 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private isAgentBusy: boolean = false;
   private surfaceMode: WidgetSurfaceMode = "feedback";
   private sidebarSide: "right" | "left" = "right";
-  private sidebarWidth: number = 436;
+  private sidebarWidth: number = DEFAULT_SIDEBAR_WIDTH;
+  private currentTheme: "light" | "dark" = "light";
+  private composerThemeToggleBtn: HTMLButtonElement | null = null;
+  private sidebarThemeToggleBtn: HTMLButtonElement | null = null;
   private pushPageLayout: boolean = false;
   private freePos: { left: number; top: number } | null = null;
   private isPeelDragging: boolean = false;
@@ -243,11 +254,36 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private boundGlobalKeyDown: (ev: KeyboardEvent) => void = () => {};
   private cancelActivePeelDrag: (() => void) | null = null;
 
+  public attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
+    if (oldValue === newValue) return;
+    if (name === "data-theme" && (newValue === "dark" || newValue === "light")) {
+      this.applyTheme(newValue, false);
+    } else if (name === "data-position" && newValue) {
+      this.setCornerPosition(newValue as WidgetPosition);
+    }
+  }
+
   public connectedCallback(): void {
     if (!this.shadow) {
       this.shadow = this.attachShadow({ mode: "open" });
     }
     this.readDataAttributes();
+    this.initTheme();
+
+    try {
+      const storedWidth =
+        typeof localStorage !== "undefined" ? localStorage.getItem("context_drop_sidebar_width") : null;
+      if (storedWidth) {
+        const parsed = parseInt(storedWidth, 10);
+        if (!Number.isNaN(parsed) && parsed >= 360 && parsed <= 920) {
+          // If stored width was from the old cramped v0.2-alpha default (<= 440px), upgrade to DEFAULT_SIDEBAR_WIDTH
+          this.sidebarWidth = parsed <= 440 ? DEFAULT_SIDEBAR_WIDTH : parsed;
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
     this.surfaceMode = this.config.agent?.enabled ? "agent" : "feedback";
     this.renderShadowDom();
 
@@ -545,6 +581,119 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
   }
 
+  public getTheme(): "light" | "dark" {
+    return this.currentTheme;
+  }
+
+  public setTheme(theme: "light" | "dark"): void {
+    this.applyTheme(theme, true);
+  }
+
+  public toggleTheme(): void {
+    const next = this.currentTheme === "dark" ? "light" : "dark";
+    this.applyTheme(next, true);
+  }
+
+  private initTheme(): void {
+    let theme: "light" | "dark" = "light";
+    try {
+      const stored =
+        typeof localStorage !== "undefined" ? localStorage.getItem("context_drop_theme") : null;
+      if (stored === "dark" || stored === "light") {
+        theme = stored;
+      } else {
+        const attr = this.getAttribute("data-theme");
+        if (attr === "dark" || attr === "light") {
+          theme = attr;
+        } else if (
+          typeof window !== "undefined" &&
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+        ) {
+          theme = "dark";
+        }
+      }
+    } catch {
+      // Non-fatal if localStorage is restricted
+    }
+    this.applyTheme(theme, false);
+
+    if (typeof window !== "undefined" && window.matchMedia) {
+      try {
+        const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+        mediaQuery.addEventListener?.("change", (e) => {
+          try {
+            if (!localStorage.getItem("context_drop_theme")) {
+              this.applyTheme(e.matches ? "dark" : "light", false);
+            }
+          } catch {
+            // ignore
+          }
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private applyTheme(theme: "light" | "dark", persist: boolean = true): void {
+    this.currentTheme = theme;
+    if (persist) {
+      try {
+        localStorage.setItem("context_drop_theme", theme);
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    if (typeof this.setAttribute === "function") {
+      this.setAttribute("data-theme", theme);
+    }
+    this.rootContainer?.setAttribute("data-theme", theme);
+    this.agentSidebarEl?.setAttribute("data-theme", theme);
+    this.composerEl?.setAttribute("data-theme", theme);
+    this.compactBarEl?.setAttribute("data-theme", theme);
+
+    if (this.composerThemeToggleBtn) {
+      this.updateThemeToggleBtn(this.composerThemeToggleBtn);
+    }
+    if (this.sidebarThemeToggleBtn) {
+      this.updateThemeToggleBtn(this.sidebarThemeToggleBtn);
+    }
+
+    if (typeof this.dispatchEvent === "function") {
+      try {
+        this.dispatchEvent(
+          new CustomEvent("contextdrop:themechange", {
+            bubbles: true,
+            composed: true,
+            detail: { theme }
+          })
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private buildThemeToggleBtn(): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cd-icon-btn cd-theme-toggle";
+    this.updateThemeToggleBtn(btn);
+    btn.addEventListener("click", () => {
+      this.toggleTheme();
+    });
+    return btn;
+  }
+
+  private updateThemeToggleBtn(btn: HTMLButtonElement): void {
+    const isDark = this.currentTheme === "dark";
+    btn.title = isDark ? "Switch to light theme" : "Switch to dark theme";
+    btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+    btn.innerHTML = isDark ? ICON_SUN : ICON_MOON;
+  }
+
   public setCornerPosition(position: WidgetPosition): void {
     if (!["top_left", "top_right", "bottom_left", "bottom_right"].includes(position)) {
       return;
@@ -686,6 +835,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       } catch {
         this.customMetadata = {};
       }
+    }
+
+    const themeOverride = this.getAttribute("data-theme");
+    if (themeOverride === "dark" || themeOverride === "light") {
+      this.currentTheme = themeOverride;
     }
   }
 
@@ -986,7 +1140,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       if (!active || typeof window === "undefined") return;
       const delta = this.sidebarSide === "right" ? startX - ev.clientX : ev.clientX - startX;
       const maxAllowed = Math.max(360, (window.innerWidth || 1024) - 80);
-      this.sidebarWidth = Math.max(340, Math.min(Math.min(680, maxAllowed), startWidth + delta));
+      this.sidebarWidth = Math.max(360, Math.min(Math.min(920, maxAllowed), startWidth + delta));
       if (this.agentSidebarEl) {
         this.agentSidebarEl.style.width = `${Math.round(this.sidebarWidth)}px`;
       }
@@ -998,6 +1152,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const stopResize = (): void => {
       active = false;
       resizerEl.classList.remove("is-resizing");
+      try {
+        localStorage.setItem("context_drop_sidebar_width", String(Math.round(this.sidebarWidth)));
+      } catch {
+        // Non-fatal
+      }
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", stopResize);
       window.removeEventListener("pointercancel", stopResize);
@@ -1123,6 +1282,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.dragPinEl = dragPin;
     this.shadow.appendChild(dragPin);
 
+    this.applyTheme(this.currentTheme, false);
     this.syncUiStates();
   }
 
@@ -1272,10 +1432,15 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     headerActions.className = "cd-header-actions";
 
     const modeSwitchHolder = document.createElement("div");
+    modeSwitchHolder.className = "cd-composer-mode-switch-wrap";
     modeSwitchHolder.hidden = !this.config.agent?.enabled;
     modeSwitchHolder.appendChild(this.buildModeSwitchDom("feedback"));
     this.composerModeSwitchWrap = modeSwitchHolder;
     headerActions.appendChild(modeSwitchHolder);
+
+    const themeBtn = this.buildThemeToggleBtn();
+    this.composerThemeToggleBtn = themeBtn;
+    headerActions.appendChild(themeBtn);
 
     const minBtn = document.createElement("button");
     minBtn.type = "button";
@@ -1489,6 +1654,10 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     headerActions.className = "cd-header-actions";
 
     headerActions.appendChild(this.buildModeSwitchDom("agent"));
+
+    const themeBtn = this.buildThemeToggleBtn();
+    this.sidebarThemeToggleBtn = themeBtn;
+    headerActions.appendChild(themeBtn);
 
     const newThreadBtn = document.createElement("button");
     newThreadBtn.type = "button";

@@ -723,7 +723,7 @@ function withMountedWidget(
     "data-config": JSON.stringify({
       enabled: true,
       environment: "staging",
-      position: "top_left",
+      position: "bottom_right",
       agent: { enabled: false }
     })
   }
@@ -759,14 +759,40 @@ function withMountedWidget(
 
   const shadowRoot = new MockDomElement("shadow-root");
   const widget = new ContextDropWidgetElement();
+  const widgetListeners: Map<string, Array<(ev: unknown) => void>> = new Map();
+  const hostAttrsMap = new Map<string, string>(Object.entries(hostAttrs));
   const hostShim = widget as unknown as {
     attachShadow: () => ShadowRoot;
     getAttribute: (name: string) => string | null;
+    setAttribute: (name: string, value: string) => void;
     hasAttribute: (name: string) => boolean;
+    addEventListener: (type: string, listener: (ev: unknown) => void) => void;
+    removeEventListener: (type: string, listener: (ev: unknown) => void) => void;
+    dispatchEvent: (event: { type: string }) => boolean;
   };
   hostShim.attachShadow = () => shadowRoot as unknown as ShadowRoot;
-  hostShim.getAttribute = (name: string) => (name in hostAttrs ? hostAttrs[name] : null);
-  hostShim.hasAttribute = (name: string) => name in hostAttrs;
+  hostShim.getAttribute = (name: string) => hostAttrsMap.get(name) ?? null;
+  hostShim.setAttribute = (name: string, value: string) => {
+    hostAttrsMap.set(name, value);
+  };
+  hostShim.hasAttribute = (name: string) => hostAttrsMap.has(name);
+  hostShim.addEventListener = (type: string, listener: (ev: unknown) => void) => {
+    const list = widgetListeners.get(type) || [];
+    list.push(listener);
+    widgetListeners.set(type, list);
+  };
+  hostShim.removeEventListener = (type: string, listener: (ev: unknown) => void) => {
+    const list = widgetListeners.get(type) || [];
+    widgetListeners.set(
+      type,
+      list.filter((l) => l !== listener)
+    );
+  };
+  hostShim.dispatchEvent = (event: { type: string }) => {
+    const list = widgetListeners.get(event.type) || [];
+    for (const l of list) l(event);
+    return true;
+  };
 
   widget.connectedCallback();
 
@@ -797,7 +823,7 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
 
       assert.ok(bookCorner && composer && sidebar && compactBar);
       assert.equal(bookCorner.hidden, false);
-      assert.equal(bookCorner.classList.contains("corner-top_left"), true);
+      assert.equal(bookCorner.classList.contains("corner-bottom_right"), true);
       assert.equal(composer.hidden, true);
       assert.equal(sidebar.hidden, true);
       assert.equal(compactBar.hidden, true);
@@ -1029,7 +1055,7 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
           assert.ok(pushBtn);
           pushBtn.dispatchEvent(new MockUiEvent("click"));
           assert.equal(mockHtml.getAttribute("data-context-drop-pushed"), "true");
-          assert.equal(mockHtml.style.marginRight, "436px");
+          assert.equal(mockHtml.style.marginRight, "560px");
 
           // Switching mode to "feedback" switches cleanly to floating composer and restores page layout
           widget.setSurfaceMode("feedback");
@@ -1432,6 +1458,132 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
           enabled: true,
           environment: "production",
           position: "top_left",
+          agent: { enabled: false }
+        })
+      }
+    );
+  });
+
+  it("supports dark theme toggle on top bar, syncs theme attribute, and persists preference", async () => {
+    await withMountedWidget(
+      ({ widget, shadowRoot }) => {
+        // Initially light theme
+        assert.equal(widget.getTheme(), "light");
+
+        const composer = shadowRoot.querySelector(".cd-composer");
+        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+        assert.ok(composer && sidebar);
+
+        const composerThemeToggle = composer.querySelector(".cd-theme-toggle");
+        const sidebarThemeToggle = sidebar.querySelector(".cd-theme-toggle");
+        assert.ok(composerThemeToggle, "Composer top bar has theme toggle button");
+        assert.ok(sidebarThemeToggle, "Agent sidebar top bar has theme toggle button");
+
+        const themeChangeEvents: string[] = [];
+        const onThemeChange = (ev: Event) => {
+          const detail = (ev as CustomEvent).detail;
+          if (detail?.theme) themeChangeEvents.push(detail.theme);
+        };
+        widget.addEventListener("contextdrop:themechange", onThemeChange);
+
+        // Click theme toggle in composer
+        composerThemeToggle.dispatchEvent(new MockUiEvent("click"));
+
+        assert.equal(widget.getTheme(), "dark");
+        assert.equal(widget.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-root")?.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-composer")?.getAttribute("data-theme"), "dark");
+        assert.equal(shadowRoot.querySelector(".cd-agent-sidebar")?.getAttribute("data-theme"), "dark");
+        assert.equal(composerThemeToggle.getAttribute("aria-label"), "Switch to light theme");
+        assert.equal(themeChangeEvents.length, 1);
+        assert.equal(themeChangeEvents[0], "dark");
+
+        // Click theme toggle in sidebar to toggle back
+        sidebarThemeToggle.dispatchEvent(new MockUiEvent("click"));
+
+        assert.equal(widget.getTheme(), "light");
+        assert.equal(widget.getAttribute("data-theme"), "light");
+        assert.equal(composerThemeToggle.getAttribute("aria-label"), "Switch to dark theme");
+        assert.equal(themeChangeEvents.length, 2);
+        assert.equal(themeChangeEvents[1], "light");
+
+        // Programmatic setTheme
+        widget.setTheme("dark");
+        assert.equal(widget.getTheme(), "dark");
+        assert.equal(themeChangeEvents.length, 3);
+        assert.equal(themeChangeEvents[2], "dark");
+
+        widget.removeEventListener("contextdrop:themechange", onThemeChange);
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "development",
+          position: "bottom_right",
+          agent: { enabled: true }
+        })
+      }
+    );
+  });
+
+  it("defaults sidebar width to 560px for full container item layout without crowding", async () => {
+    await withMountedWidget(
+      async ({ widget, shadowRoot, mockHtml }) => {
+        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+        const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+        assert.ok(sidebar && bookCorner);
+        assert.equal(sidebar.style.width, "560px");
+
+        // Open widget in agent mode so push layout can engage
+        bookCorner.dispatchEvent(new MockUiEvent("click"));
+        await new Promise((r) => setTimeout(r, 10));
+
+        const pushBtn = shadowRoot.querySelector("[aria-label='Toggle push page layout']");
+        assert.ok(pushBtn);
+        pushBtn.dispatchEvent(new MockUiEvent("click"));
+        assert.equal(mockHtml.style.marginRight, "560px");
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "development",
+          position: "bottom_right",
+          agent: { enabled: true }
+        })
+      }
+    );
+  });
+
+  it("defaults local development to staging/verbose mode when agent is disabled", async () => {
+    await withMountedWidget(
+      async ({ widget, shadowRoot }) => {
+        const bookCorner = shadowRoot.querySelector(".cd-book-corner");
+        const composer = shadowRoot.querySelector(".cd-composer");
+        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+        const modeSwitch = composer ? composer.querySelector(".cd-composer-mode-switch-wrap") : null;
+        assert.ok(bookCorner && composer && sidebar && modeSwitch);
+
+        // When agent is disabled for local development:
+        assert.equal(widget.isAgentModeActive(), false);
+        assert.equal(widget.isSmartSelectionMode(), false); // verbose mode
+        assert.equal(modeSwitch.hidden, true);
+
+        // Clicking the book corner opens the floating verbose composer
+        bookCorner.dispatchEvent(new MockUiEvent("click"));
+        assert.equal(composer.hidden, false);
+        assert.equal(sidebar.hidden, true);
+
+        // Opting into agent enables agent mode
+        widget.setWidgetConfig({ agent: { enabled: true } });
+        assert.equal(widget.isAgentModeActive(), true);
+        assert.equal(sidebar.hidden, false);
+        assert.equal(composer.hidden, true);
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "development",
+          position: "bottom_right",
           agent: { enabled: false }
         })
       }

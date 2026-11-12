@@ -34,7 +34,10 @@ ContextDrop.configure do |config|
   config.smart_capture_padding = 84
 
   # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
-  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
+  # In v0.2.0, local development defaults to staging/verbose mode so developers can test bug pinning
+  # and use their preferred IDE coding agents (Antigravity, Cursor, Claude Code, etc.) via MCP.
+  # Set to true to opt into the experimental embedded in-browser agent sidebar:
+  config.enable_local_agent = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "false") == "true"
 
   # DOM selectors excluded from selection and redacted in screenshots
   config.excluded_selectors = [

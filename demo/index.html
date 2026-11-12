@@ -22,6 +22,17 @@
       --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
 
+    :root[data-theme="dark"], body[data-theme="dark"] {
+      --bg-canvas: #0b0d13;
+      --bg-surface: #131720;
+      --bg-recessed: #1c2230;
+      --ink-primary: #f8fafc;
+      --ink-secondary: #94a3b8;
+      --ink-muted: #64748b;
+      --border-hairline: #2a3346;
+      --shadow-elevated: 0 18px 36px -12px rgba(0, 0, 0, 0.6), 0 4px 12px -3px rgba(0, 0, 0, 0.4);
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
     }
@@ -82,6 +93,34 @@
     .demo-env-btn.is-active {
       background: var(--ink-primary);
       color: #faf9f6;
+    }
+
+    .demo-agent-optin-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.14s ease;
+    }
+
+    .demo-agent-optin-toggle:hover {
+      color: var(--ink-primary);
+      border-color: var(--ink-secondary);
+    }
+
+    .demo-agent-optin-toggle input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: var(--accent-vermilion);
+      margin: 0;
     }
 
     .demo-brand {
@@ -518,12 +557,12 @@
   </style>
 </head>
 <body>
-  <!-- ContextDrop v0.2 Widget (3-Tier Environment-Adaptive UX: Local Agent | Staging Verbose | Production Smart) -->
+  <!-- ContextDrop v0.2 Widget (3-Tier Environment-Adaptive UX: Local Verbose | Staging Verbose | Production Smart) -->
   <context-drop-widget
     id="demo-widget"
-    data-position="top_left"
+    data-position="bottom_right"
     data-endpoint="/context_drop"
-    data-config='{"enabled":true,"environment":"development","position":"top_left","csrf_token":"demo_csrf_token_test","agent":{"enabled":true},"features":{"selection_mode":"verbose","smart_capture_padding":84}}'
+    data-config='{"enabled":true,"environment":"development","position":"bottom_right","csrf_token":"demo_csrf_token_test","agent":{"enabled":false},"features":{"selection_mode":"verbose","smart_capture_padding":84}}'
     data-metadata='{"release":"v0.2.0"}'
   ></context-drop-widget>
 
@@ -535,7 +574,7 @@
     <div class="demo-quick-actions">
       <div class="demo-env-toggle" role="group" aria-label="Simulated Host Rails Environment">
         <button type="button" class="demo-env-btn is-active" id="demo-env-dev" data-env="development">
-          local (Agent)
+          local (Verbose)
         </button>
         <button type="button" class="demo-env-btn" id="demo-env-staging" data-env="staging">
           staging (Verbose)
@@ -544,6 +583,15 @@
           production (Smart)
         </button>
       </div>
+      <label class="demo-agent-optin-toggle" id="demo-agent-optin-label" title="Enable in-page local agent sidebar (config.enable_local_agent = true)">
+        <input type="checkbox" id="demo-agent-optin-checkbox" />
+        <span>Agent Sidebar (Opt-in)</span>
+      </label>
+      <button type="button" class="demo-btn" id="demo-theme-btn" aria-label="Toggle demo theme" title="Toggle dark/light theme">
+        <svg class="demo-theme-moon" viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>
+        <svg class="demo-theme-sun" viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;"><circle cx="10" cy="10" r="3.75"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/><line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/><line x1="4.34" y1="4.34" x2="5.75" y2="5.75"/><line x1="14.25" y1="14.25" x2="15.66" y2="15.66"/><line x1="4.34" y1="15.66" x2="5.75" y2="14.25"/><line x1="14.25" y1="5.75" x2="15.66" y2="4.34"/></svg>
+        <span id="demo-theme-label">Dark</span>
+      </button>
       <div class="demo-dropdown-wrap" id="transient-dropdown-container">
         <button type="button" class="demo-btn" id="demo-dropdown-trigger" aria-expanded="false" aria-haspopup="true" title="Open transient menu to test DOM freeze (⌥⇧P)">
           <span>Options Menu</span>
@@ -750,32 +798,45 @@
       const envProdBtn = document.getElementById("demo-env-prod");
       const triggerChatBtn = document.getElementById("demo-trigger-chat");
       const triggerPinLabel = document.querySelector("#demo-trigger-pin span");
+      const agentOptinCheckbox = document.getElementById("demo-agent-optin-checkbox");
+      const agentOptinLabel = document.getElementById("demo-agent-optin-label");
+      let currentEnv = "development";
 
-      function applyDemoEnv(envName) {
-        const isDev = envName === "development";
-        const isStaging = envName === "staging";
-        const isProd = envName === "production";
+      function updateWidgetConfiguration() {
+        const isDev = currentEnv === "development";
+        const isStaging = currentEnv === "staging";
+        const isProd = currentEnv === "production";
+        const agentActive = Boolean(isDev && agentOptinCheckbox && agentOptinCheckbox.checked);
 
         envDevBtn?.classList.toggle("is-active", isDev);
         envStagingBtn?.classList.toggle("is-active", isStaging);
         envProdBtn?.classList.toggle("is-active", isProd);
 
-        if (triggerChatBtn) {
-          triggerChatBtn.textContent = isDev
-            ? "Open Local Agent Sidebar"
-            : isProd
-              ? "Send Quick Feedback"
-              : "Open Verbose Inspector";
+        if (agentOptinLabel) {
+          agentOptinLabel.style.opacity = isDev ? "1" : "0.45";
+          agentOptinLabel.style.pointerEvents = isDev ? "auto" : "none";
         }
+
+        if (triggerChatBtn) {
+          if (agentActive) {
+            triggerChatBtn.textContent = "Open Local Agent Sidebar";
+          } else if (isProd) {
+            triggerChatBtn.textContent = "Send Quick Feedback";
+          } else {
+            triggerChatBtn.textContent = "Open Verbose Inspector";
+          }
+        }
+
         if (triggerPinLabel) {
           triggerPinLabel.textContent = isProd
             ? "Highlight Page Area"
             : "Start Pinning Elements";
         }
+
         if (widget && typeof widget.setWidgetConfig === "function") {
           widget.setWidgetConfig({
-            environment: envName,
-            agent: { enabled: isDev },
+            environment: currentEnv,
+            agent: { enabled: agentActive },
             features: {
               selection_mode: isProd ? "smart" : "verbose",
               smart_capture_padding: 84
@@ -784,12 +845,17 @@
         }
       }
 
+      function applyDemoEnv(envName) {
+        currentEnv = envName;
+        updateWidgetConfiguration();
+      }
+
       envDevBtn?.addEventListener("click", () => applyDemoEnv("development"));
       envStagingBtn?.addEventListener("click", () => applyDemoEnv("staging"));
       envProdBtn?.addEventListener("click", () => applyDemoEnv("production"));
-      if (triggerChatBtn) {
-        triggerChatBtn.textContent = "Open Local Agent Sidebar";
-      }
+      agentOptinCheckbox?.addEventListener("change", () => updateWidgetConfiguration());
+
+      updateWidgetConfiguration();
 
       document.getElementById("demo-trigger-pin")?.addEventListener("click", () => {
         if (widget && typeof widget.startPinSelection === "function") {
@@ -802,6 +868,42 @@
           widget.openComposer();
         }
       });
+
+      // Demo topbar theme switcher
+      const themeBtn = document.getElementById("demo-theme-btn");
+      const moonIcon = themeBtn?.querySelector(".demo-theme-moon");
+      const sunIcon = themeBtn?.querySelector(".demo-theme-sun");
+      const themeLabel = document.getElementById("demo-theme-label");
+
+      function updateDemoThemeUi(theme) {
+        const isDark = theme === "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+        document.body.setAttribute("data-theme", theme);
+        if (moonIcon) moonIcon.style.display = isDark ? "none" : "inline-block";
+        if (sunIcon) sunIcon.style.display = isDark ? "inline-block" : "none";
+        if (themeLabel) themeLabel.textContent = isDark ? "Light" : "Dark";
+      }
+
+      themeBtn?.addEventListener("click", () => {
+        const current = widget?.getTheme?.() || (document.body.getAttribute("data-theme") === "dark" ? "dark" : "light");
+        const next = current === "dark" ? "light" : "dark";
+        updateDemoThemeUi(next);
+        if (widget && typeof widget.setTheme === "function") {
+          widget.setTheme(next);
+        }
+      });
+
+      window.addEventListener("contextdrop:themechange", (ev) => {
+        const theme = ev.detail?.theme;
+        if (theme) {
+          updateDemoThemeUi(theme);
+        }
+      });
+
+      setTimeout(() => {
+        const initialTheme = widget?.getTheme?.() || "light";
+        updateDemoThemeUi(initialTheme);
+      }, 50);
 
       // Transient dropdown setup to test DOM freeze (⌥⇧P)
       const dropdownTrigger = document.getElementById("demo-dropdown-trigger");

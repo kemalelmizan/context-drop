@@ -49,6 +49,7 @@ module ContextDrop
                   :authorize_mcp,
                   :mcp_environments,
                   :local_agent_enabled,
+                  :enable_local_agent,
                   :local_agent_workspace_root,
                   :local_agent_key_store_path
 
@@ -97,9 +98,24 @@ module ContextDrop
       @authorize_mcp = nil
       @mcp_environments = {}
 
-      @local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
+      @local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "false") == "true"
+      @enable_local_agent = @local_agent_enabled
       @local_agent_workspace_root = nil
       @local_agent_key_store_path = nil
+    end
+
+    def enable_local_agent
+      @local_agent_enabled
+    end
+
+    def enable_local_agent=(value)
+      @local_agent_enabled = Boolean(value)
+      @enable_local_agent = @local_agent_enabled
+    end
+
+    def local_agent_enabled=(value)
+      @local_agent_enabled = Boolean(value)
+      @enable_local_agent = @local_agent_enabled
     end
 
     def position=(value)

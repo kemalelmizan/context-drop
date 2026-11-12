@@ -33,18 +33,24 @@
 
 When someone reports *"the button on the checkout card isn't working,"* engineers usually spend 20 minutes hunting down which view partial, feature flag, viewport width, or overlapping toast banner caused the problem.
 
-**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM book-corner launcher, environment-adaptive selector, and local agentic coding sidebar** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`):
-- **Minimal Book-Corner Launcher → Peel-to-Pin on Drag:** Rests quietly as a `38×38px` folded page corner. **Click** the book corner to open the feedback form (or, locally, the docked Agentic Sidebar); **drag** the book corner to peel and animate it into a live pushpin over any part of the page—or snap it to another viewport corner.
-- **3-Tier Environment-Adaptive UX (`production` · `staging` · `local`):** Automatically adapts to `Rails.env`—giving **production** end-users a compact, jargon-free **Smart Component Selector** with automatic surrounding-context screenshots, giving **staging/QA** teams the verbose `v0.1.x` CSS/layer inspector, and giving **local** developers a full docked **BYOK Agentic Coding Sidebar**.
-- **Unified Multi-Environment MCP Hub:** Register **one** local MCP server (`bin/rails context_drop:mcp`) in your IDE to query and resolve feedback across `local`, `staging`, and `production` simultaneously, stamped automatically with the host's `Rails.env`.
+**ContextDrop** (`context_drop`) embeds a tactile, zero-bleed **Shadow DOM book-corner launcher, environment-adaptive selector, and unified multi-environment MCP hub** directly into your Ruby on Rails application (`Rails >= 7.1`, including `Rails 8+`):
+- **Minimal Book-Corner Launcher → Peel-to-Pin on Drag:** Rests quietly as a `38×38px` folded page corner. **Click** the book corner to open the feedback form (or, when opted-in locally, the docked Agentic Sidebar); **drag** the book corner to peel and animate it into a live pushpin over any part of the page—or snap it to another viewport corner.
+- **3-Tier Environment-Adaptive UX (`production` · `staging` · `local`):** Automatically adapts to `Rails.env`—giving **production** end-users a compact, jargon-free **Smart Component Selector** with automatic surrounding-context screenshots, and giving **staging/QA** teams and **local** developers the verbose `v0.1.x` CSS/layer inspector.
+- **MCP-First Workflow for Developers:** Keep your active coding in your preferred editor (**Antigravity**, **Cursor**, **Claude Code**, **VS Code**). Register **one** local MCP server (`bin/rails context_drop:mcp`) in your IDE to query and resolve feedback with multimodal screenshots across `local`, `staging`, and `production` simultaneously.
+- **Opt-in Local BYOK Agentic Sidebar:** Want an agent right in the browser? Flip `config.enable_local_agent = true` in development to unlock the docked in-browser agent sidebar with human-approved file diffs.
 
 ---
 
 ## Environment-Adaptive Workflow
 
-Different environments serve completely different people. Non-technical customers in **production** shouldn't be confronted with `#css.selectors`, pixel dimensions (`681×350`), overlapping DOM layer counters, or `<kbd>⌥⇧P</kbd>` shortcuts just to send quick feedback—while QA engineers in **staging** want surgical layer inspection, and developers on **`localhost`** want an agentic coding sidebar right beside their live app.
+Different environments serve completely different people:
+- **Production users** shouldn't be overwhelmed with `#css.selectors`, pixel dimensions (`681×350`), overlapping DOM layer counters, or `<kbd>⌥⇧P</kbd>` shortcuts just to report a bug. They need a rapid, clutter-free way to point at an issue.
+- **Staging & QA teams** need surgical leaf/layer inspection, mouse-wheel layer scrubbing, and exact geometry coordinates.
+- **Local developers** want two things:
+  1. **In-browser testing:** The exact same verbose DOM inspector as staging to verify element pinning and capture payloads on `localhost`.
+  2. **Active resolution in their IDE:** Powerful **MCP resources & tools** so their preferred AI coding agents (**Antigravity**, **Cursor**, **Claude Code**, **VS Code**) can query, analyze, and resolve bug reports without forcing development into a browser sidebar. For teams that do want an in-page browser agent, ContextDrop includes an experimental **BYOK Agentic Sidebar** enabled via `config.enable_local_agent = true`.
 
-ContextDrop (`v0.2+`) automatically adapts its UI, copy, and selector behavior from your host `Rails.env` (and loopback connection check) with **zero per-environment view templates**:
+ContextDrop automatically adapts its UI, copy, and selector behavior from your host `Rails.env` (and loopback connection check) with **zero per-environment view templates**:
 
 ```mermaid
 flowchart TD
@@ -52,9 +58,13 @@ flowchart TD
 
   CheckEnv -->|"Rails.env.production?\n(selection_mode = smart)"| Prod["1. Production · Quick User Feedback\n• Compact 356px 'Send Feedback' card\n• Smart Component Promotion (no raw spans/selectors)\n• Plain-language labels (“Complete Order” button)\n• Auto-captured redacted surrounding screenshot"]
 
-  CheckEnv -->|"staging / qa / non-loopback dev\n(selection_mode = verbose)"| Staging["2. Staging & QA · Verbose Inspector (v0.1.x)\n• Full 404px ContextDrop composer\n• Exact <tag#id.class> & pixel geometry HUD\n• Mouse-wheel overlapping layer scrubbing\n• ⌥⇧P Freeze & Pin + multi-element pinning"]
+  CheckEnv -->|"staging / qa\n(selection_mode = verbose)"| Staging["2. Staging & QA · Verbose Inspector (v0.1.x)\n• Full 404px ContextDrop composer\n• Exact <tag#id.class> & pixel geometry HUD\n• Mouse-wheel overlapping layer scrubbing\n• ⌥⇧P Freeze & Pin + multi-element pinning"]
 
-  CheckEnv -->|"Rails.env.development?\non 127.0.0.1 / ::1"| Local["3. Local Only · Full BYOK Agentic Sidebar\n• Antigravity / VS Code-style docked sidebar\n• Agent | Feedback mode switcher (verbose pin)\n• Pulls local + staging + production MCP feedbacks\n• Read-only workspace tools + human diff approval"]
+  CheckEnv -->|"Rails.env.development?\non 127.0.0.1 / ::1"| LocalCheck{"config.enable_local_agent?"}
+
+  LocalCheck -->|"false (Default)\nIDE MCP Workflow"| LocalVerbose["3a. Local (Default) · Verbose Inspector + MCP\n• Full 404px floating feedback composer\n• Verbose DOM element picker & layer scrubbing\n• Developer uses their IDE agent via bin/rails context_drop:mcp\n• Full MCP resources across local + staging + production"]
+
+  LocalCheck -->|"true (Opt-in)\nExperimental"| LocalAgent["3b. Local (Opt-in) · BYOK Agentic Sidebar\n• Antigravity / VS Code-style docked sidebar\n• Agent | Feedback mode switcher (verbose pin)\n• Pulls local + staging + production MCP feedbacks\n• Read-only workspace tools + human diff approval"]
 ```
 
 ### How Each Environment Behaves
@@ -63,10 +73,11 @@ flowchart TD
 |---|---|---|---|---|---|
 | **1. Production** *(End-Users)* | `Rails.env.production?` | **Compact Quick-Feedback Card** (`356px`, clutter-free) | **`"smart"`** — Coarsely promotes hovered/dropped `<span>`/`<svg>` leaves to the nearest meaningful UI component (button, link, field, card, banner, dialog, row). Single click selects & reopens the form immediately. | **Automatic surrounding context** (`~84px` neighborhood, min `340×220px`, `[REDACTED]`-safe) merged into **one** clean preview card. | Plain human labels (`“Complete Order” button`, `“Enterprise Plan” card`), `Send Feedback`, `Select area`, `Add image`. **Zero CSS selectors, pixel metrics, wheel layer lists, or `<kbd>` badges.** |
 | **2. Staging / QA** *(Technical Triage)* | `staging`, `qa`, or non-loopback `development` | **Verbose Inspector Chatbox** (`404px`, `v0.1.x` style) | **`"verbose"`** — Exact leaf/ancestor/overlap inspection with scroll-wheel layer scrubbing (`1/6 layers`), `ArrowUp`/`ArrowDown` stepping, `⌥⇧P` Freeze & Pin, and multi-pin mode. | Manual **Viewport Screenshot** button + per-pin **Element Crop** camera icon (`Shot` & `Pin` chips). | Technical HUD (`button#pay-btn · 180×42`), `Pin Element`, `<kbd>⌥⇧P</kbd>`, `<kbd>Space</kbd>`, `Dropped #42`. |
-| **3. Local Only** *(Active Coding)* | `Rails.env.development?` **and** loopback (`127.0.0.1` / `::1`) | **Docked BYOK Agentic Coding Sidebar** (`100dvh`, resizable `340–680px`, `Left`/`Right` + Push Layout) | **`"verbose"`** + live workspace file search (`Agent | Feedback` toggle lets you test standard feedback locally too). | Attaches live DOM pins & redacted screenshots directly to LLM prompts + pulls remote `staging`/`production` screenshots. | Provider/Model pill, encrypted **BYOK** vault, cross-env **Feedbacks** inbox, tool traces, and human-approved unified diffs (`Apply Change` / `Revert`). |
+| **3. Local Development** *(Default · IDE MCP Focus)* | `Rails.env.development?` *(default: `enable_local_agent = false`)* | **Verbose Inspector Chatbox** (`404px`, identical to staging) | **`"verbose"`** — Exact leaf/ancestor inspection, layer scrubbing, and coordinate pinning to test feedback capture locally. | Manual Viewport Screenshot + per-pin Element Crop camera icon. | Technical HUD (`button#pay-btn · 180×42`), `Pin Element`, `<kbd>⌥⇧P</kbd>`, `<kbd>Space</kbd>`. Feedbacks feed directly into your IDE coding agents via `bin/rails context_drop:mcp`. |
+| **4. Local Agentic Sidebar** *(Opt-in · Experimental)* | `Rails.env.development?` on loopback **and** `config.enable_local_agent = true` | **Docked BYOK Agentic Coding Sidebar** (`100dvh`, resizable `360–920px`, `Left`/`Right` + Push Layout) | **`"verbose"`** + live workspace file search (`Agent | Feedback` toggle lets you switch between agent and feedback modes). | Attaches live DOM pins & redacted screenshots directly to LLM prompts + pulls remote `staging`/`production` screenshots. | Provider/Model pill, encrypted **BYOK** vault, cross-env **Feedbacks** inbox, tool traces, and human-approved unified diffs (`Apply Change` / `Revert`). |
 
 > [!TIP]
-> **Zero Signal Lost in Production!** Even though production users only see friendly labels like `“Complete Order” button` and an automatic surrounding-context screenshot, ContextDrop still captures the full sanitized `selector` (`#checkout-btn`), `dom_path`, `bounding_rect`, `metadata.friendly_label`, and `metadata.original_target_selector` (`span.inner-label`) under the hood—so engineers triaging `production:108` in their IDE or Local Agentic Sidebar get 100% exact technical coordinates. Need verbose mode in an internal-only production tool (or smart mode in staging)? Override `config.selection_mode = :verbose` or `:smart` in `config/initializers/context_drop.rb`.
+> **Zero Signal Lost in Production!** Even though production users only see friendly labels like `“Complete Order” button` and an automatic surrounding-context screenshot, ContextDrop still captures the full sanitized `selector` (`#checkout-btn`), `dom_path`, `bounding_rect`, `metadata.friendly_label`, and `metadata.original_target_selector` (`span.inner-label`) under the hood—so engineers triaging `production:108` in their IDE via MCP get 100% exact technical coordinates. Need verbose mode in an internal-only production tool (or smart mode in staging)? Override `config.selection_mode = :verbose` or `:smart` in `config/initializers/context_drop.rb`.
 
 <p align="center">
   <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
@@ -247,12 +258,18 @@ Optimized for QA engineers, designers, and developers debugging dense, overlappi
 
 ---
 
-## Local BYOK Agentic Sidebar (`development` Mode)
+## Local BYOK Agentic Sidebar (`development` Opt-in)
 
-When you run your Rails application locally (`Rails.env.development?` on `localhost` / `127.0.0.1`), clicking or peeling the Book-Corner transforms ContextDrop into a full-height, resizable **Agentic Coding Sidebar**—similar to the coding sidebars in **Antigravity** and **VS Code**:
+> [!NOTE]
+> **MCP-First Workflow by Default:** In v0.2.0, local development defaults to the **staging/verbose DOM inspector** (`config.enable_local_agent = false`) so you can test element pinning and feed bug reports directly to your preferred AI coding agent in your IDE (**Antigravity**, **Cursor**, **Claude Code**, **VS Code**) via the unified MCP server.
+>
+> If you prefer an integrated in-browser coding assistant, set `config.enable_local_agent = true` (or `CONTEXT_DROP_LOCAL_AGENT_ENABLED=true`) to enable the embedded sidebar.
+
+When enabled (`config.enable_local_agent = true`) and running locally (`Rails.env.development?` on `localhost` / `127.0.0.1`), clicking or peeling the Book-Corner transforms ContextDrop into a full-height, resizable **Agentic Coding Sidebar**—similar to the coding sidebars in **Antigravity** and **VS Code**:
 
 - **Dual `Agent | Feedback` Mode Switcher:** Triage bugs and edit local Rails code in **Agent** mode, or flip to **Feedback** mode at any time to preview and submit through the standard floating feedback chatbox.
-- **Flexible Docked Layout:** Dock to the **Right** or **Left** edge, drag the resize handle (`320px–680px`), and toggle **Push Page Layout** so the sidebar sits side-by-side with your running app without covering content.
+- **Flexible Docked Layout:** Dock to the **Right** or **Left** edge, drag the resize handle (`360px–920px`, defaulting to `560px`), and toggle **Push Page Layout** so the sidebar sits side-by-side with your running app without covering content.
+- **Dark & Light Theme Support:** Click the sun/moon switcher in the top bar to toggle between the crisp off-white light theme and the deep charcoal dark theme (`theme: :dark` or `data-theme="dark"`).
 - **Cross-Environment Context Attachment:** Peel-and-drop live DOM elements and redacted screenshots from the current page, **and** attach bug reports directly from `local`, `staging`, or `production` via the built-in **Feedback Inbox** drawer.
 - **Bring Your Own Key (BYOK):** Supports **Anthropic** (`Claude`), **Google Gemini**, **OpenAI**, and **Custom OpenAI-Compatible** endpoints (OpenRouter, Groq, Ollama, vLLM). Automatically detects local server environment variables (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `CONTEXT_DROP_LLM_API_KEY`), or saves keys you enter in the sidebar's **BYOK Vault** drawer encrypted on disk (`AES-256-GCM`, mode `0600`) inside gitignored `tmp/context_drop_byok.enc`.
 
@@ -474,7 +491,10 @@ ContextDrop.configure do |config|
   config.smart_capture_padding = 84
 
   # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
-  config.local_agent_enabled = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "true") != "false"
+  # Disabled by default in v0.2.0; local development defaults to the verbose inspector modal
+  # so developers can test DOM pinning and use their preferred IDE coding agents (Antigravity, Cursor, etc.) via MCP.
+  # Enable if you want the experimental in-browser agent sidebar:
+  config.enable_local_agent = ENV.fetch("CONTEXT_DROP_LOCAL_AGENT_ENABLED", "false") == "true"
 
   # Allow unauthenticated visitors to submit feedback
   config.allow_anonymous = true

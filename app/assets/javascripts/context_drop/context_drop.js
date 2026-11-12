@@ -881,6 +881,8 @@
   const ICON_INBOX = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11.5L5.2 4.5h9.6l1.7 7v4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-4z"/><path d="M3.5 11.5h3.8l1.2 2h3l1.2-2h3.8"/></svg>`;
   const ICON_SHIELD = `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5l6 2.3v4.7c0 4.1-2.6 6.8-6 8-3.4-1.2-6-3.9-6-8V4.8l6-2.3z"/></svg>`;
   const ICON_PUSH_LAYOUT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.8"/><line x1="9.5" y1="2.5" x2="9.5" y2="13.5"/><polyline points="6.5 6.2 4.7 8 6.5 9.8"/></svg>`;
+  const ICON_SUN = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.75"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/><line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/><line x1="4.34" y1="4.34" x2="5.75" y2="5.75"/><line x1="14.25" y1="14.25" x2="15.66" y2="15.66"/><line x1="4.34" y1="15.66" x2="5.75" y2="14.25"/><line x1="14.25" y1="5.75" x2="15.66" y2="4.34"/></svg>`;
+  const ICON_MOON = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>`;
 
   // --- Module: markdown.ts ---
   /**
@@ -1064,6 +1066,76 @@
     color: var(--cd-ink);
     caret-color: var(--cd-pin);
     z-index: 2147483640;
+  }
+  
+  :host([data-theme="dark"]),
+  .cd-root[data-theme="dark"],
+  .cd-composer[data-theme="dark"],
+  .cd-agent-sidebar[data-theme="dark"],
+  .cd-compact-bar[data-theme="dark"] {
+    --cd-ink: #f8fafc;
+    --cd-ink-secondary: #94a3b8;
+    --cd-ink-subtle: #64748b;
+    --cd-surface: #0f1117;
+    --cd-surface-recessed: #181b22;
+    --cd-surface-elevated: #212631;
+    --cd-border: #333947;
+    --cd-border-subtle: #242935;
+    --cd-pin: #ea580c;
+    --cd-pin-hover: #f97316;
+    --cd-pin-soft: rgba(234, 88, 12, 0.22);
+    --cd-accent: #3b82f6;
+    --cd-accent-hover: #60a5fa;
+    --cd-accent-soft: rgba(59, 130, 246, 0.20);
+    --cd-danger: #ef4444;
+    --cd-danger-soft: rgba(239, 68, 68, 0.22);
+    --cd-success: #22c55e;
+    --cd-success-soft: rgba(34, 197, 94, 0.22);
+    --cd-shadow-float: 0 24px 48px -12px rgba(0, 0, 0, 0.70), 0 8px 22px -6px rgba(0, 0, 0, 0.50);
+    --cd-shadow-pin: 0 14px 28px -6px rgba(0, 0, 0, 0.65), 0 4px 12px -3px rgba(0, 0, 0, 0.45);
+    --cd-shadow-sidebar: -16px 0 42px -10px rgba(0, 0, 0, 0.65);
+  }
+  
+  :host([data-theme="dark"]) .cd-corner-flap,
+  .cd-root[data-theme="dark"] .cd-corner-flap {
+    fill: #181b22;
+    stroke: #333947;
+  }
+  
+  :host([data-theme="dark"]) .cd-icon-btn:hover:not(:disabled),
+  .cd-agent-sidebar[data-theme="dark"] .cd-icon-btn:hover:not(:disabled),
+  .cd-composer[data-theme="dark"] .cd-icon-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--cd-ink);
+  }
+  
+  :host([data-theme="dark"]) .cd-starter-btn:hover,
+  .cd-agent-sidebar[data-theme="dark"] .cd-starter-btn:hover {
+    background: #282f3d;
+    border-color: var(--cd-accent);
+  }
+  
+  :host([data-theme="dark"]) .cd-btn-primary:hover:not(:disabled),
+  .cd-agent-sidebar[data-theme="dark"] .cd-btn-primary:hover:not(:disabled),
+  .cd-composer[data-theme="dark"] .cd-btn-primary:hover:not(:disabled) {
+    background: #e2e8f0;
+    border-color: #e2e8f0;
+  }
+  
+  :host([data-theme="dark"]) .cd-md-pre,
+  .cd-agent-sidebar[data-theme="dark"] .cd-md-pre,
+  .cd-composer[data-theme="dark"] .cd-md-pre {
+    background: #090b0e;
+    color: #e2e8f0;
+    border-color: #242935;
+  }
+  
+  :host([data-theme="dark"]) .cd-mode-btn.is-active,
+  .cd-agent-sidebar[data-theme="dark"] .cd-mode-btn.is-active,
+  .cd-composer[data-theme="dark"] .cd-mode-btn.is-active {
+    background: #242935;
+    color: #f8fafc;
+    border-color: #3b4252;
   }
   
   *, *::before, *::after {
@@ -1758,10 +1830,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 9px 11px;
+    padding: 9px 12px;
     background: var(--cd-surface-recessed);
     border-bottom: 1px solid var(--cd-border);
     user-select: none;
+    flex-shrink: 0;
   }
   
   .cd-composer-header {
@@ -1776,8 +1849,20 @@
   .cd-header-left {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     min-width: 0;
+    flex: 0 1 auto;
+  }
+  
+  .cd-sidebar-header .cd-header-left {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+  }
+  
+  .cd-sidebar-header .cd-composer-title {
+    flex-shrink: 0;
+    overflow: visible;
+    text-overflow: clip;
   }
   
   .cd-pin-corner-btn {
@@ -1818,6 +1903,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 0;
   }
   
   .cd-header-actions {
@@ -1970,8 +2056,8 @@
     top: 0;
     bottom: 0;
     height: 100dvh;
-    width: 436px;
-    min-width: 340px;
+    width: var(--cd-sidebar-width, 560px);
+    min-width: 360px;
     max-width: 100vw;
     z-index: 2147483642;
     pointer-events: auto;
@@ -2317,7 +2403,7 @@
   
   .cd-starter-btn:hover {
     border-color: var(--cd-accent);
-    background: #ffffff;
+    background: var(--cd-surface-elevated);
   }
   
   .cd-agent-msg {
@@ -5179,11 +5265,12 @@
   
   const DEFAULT_VERBOSE_PLACEHOLDER = "Describe the issue or drop context from the page...";
   const DEFAULT_SMART_PLACEHOLDER = "Tell us what's happening...";
+  const DEFAULT_SIDEBAR_WIDTH = 560;
   
   const DEFAULT_CONFIG               = {
     enabled: true,
     environment: "production",
-    position: "top_left",
+    position: "bottom_right",
     placeholder: DEFAULT_VERBOSE_PLACEHOLDER,
     agent: {
       enabled: false
@@ -5211,6 +5298,10 @@
       ? HTMLElement
       : (class {}                                 );
   class ContextDropWidgetElement extends BaseHTMLElement {
+           static get observedAttributes()           {
+      return ["data-position", "data-config", "data-theme"];
+    }
+  
            shadow                    = null;
             config               = structuredClone(DEFAULT_CONFIG);
             customMetadata                          = {};
@@ -5223,7 +5314,10 @@
             isAgentBusy          = false;
             surfaceMode                    = "feedback";
             sidebarSide                   = "right";
-            sidebarWidth         = 436;
+            sidebarWidth         = DEFAULT_SIDEBAR_WIDTH;
+            currentTheme                   = "light";
+            composerThemeToggleBtn                           = null;
+            sidebarThemeToggleBtn                           = null;
             pushPageLayout          = false;
             freePos                                       = null;
             isPeelDragging          = false;
@@ -5315,11 +5409,36 @@
             boundGlobalKeyDown                              = () => {};
             cancelActivePeelDrag                      = null;
   
+           attributeChangedCallback(name        , oldValue               , newValue               )       {
+      if (oldValue === newValue) return;
+      if (name === "data-theme" && (newValue === "dark" || newValue === "light")) {
+        this.applyTheme(newValue, false);
+      } else if (name === "data-position" && newValue) {
+        this.setCornerPosition(newValue                  );
+      }
+    }
+  
            connectedCallback()       {
       if (!this.shadow) {
         this.shadow = this.attachShadow({ mode: "open" });
       }
       this.readDataAttributes();
+      this.initTheme();
+  
+      try {
+        const storedWidth =
+          typeof localStorage !== "undefined" ? localStorage.getItem("context_drop_sidebar_width") : null;
+        if (storedWidth) {
+          const parsed = parseInt(storedWidth, 10);
+          if (!Number.isNaN(parsed) && parsed >= 360 && parsed <= 920) {
+            // If stored width was from the old cramped v0.2-alpha default (<= 440px), upgrade to DEFAULT_SIDEBAR_WIDTH
+            this.sidebarWidth = parsed <= 440 ? DEFAULT_SIDEBAR_WIDTH : parsed;
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+  
       this.surfaceMode = this.config.agent?.enabled ? "agent" : "feedback";
       this.renderShadowDom();
   
@@ -5617,6 +5736,119 @@
       }
     }
   
+           getTheme()                   {
+      return this.currentTheme;
+    }
+  
+           setTheme(theme                  )       {
+      this.applyTheme(theme, true);
+    }
+  
+           toggleTheme()       {
+      const next = this.currentTheme === "dark" ? "light" : "dark";
+      this.applyTheme(next, true);
+    }
+  
+            initTheme()       {
+      let theme                   = "light";
+      try {
+        const stored =
+          typeof localStorage !== "undefined" ? localStorage.getItem("context_drop_theme") : null;
+        if (stored === "dark" || stored === "light") {
+          theme = stored;
+        } else {
+          const attr = this.getAttribute("data-theme");
+          if (attr === "dark" || attr === "light") {
+            theme = attr;
+          } else if (
+            typeof window !== "undefined" &&
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches
+          ) {
+            theme = "dark";
+          }
+        }
+      } catch {
+        // Non-fatal if localStorage is restricted
+      }
+      this.applyTheme(theme, false);
+  
+      if (typeof window !== "undefined" && window.matchMedia) {
+        try {
+          const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+          mediaQuery.addEventListener?.("change", (e) => {
+            try {
+              if (!localStorage.getItem("context_drop_theme")) {
+                this.applyTheme(e.matches ? "dark" : "light", false);
+              }
+            } catch {
+              // ignore
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+  
+            applyTheme(theme                  , persist          = true)       {
+      this.currentTheme = theme;
+      if (persist) {
+        try {
+          localStorage.setItem("context_drop_theme", theme);
+        } catch {
+          // Non-fatal
+        }
+      }
+  
+      if (typeof this.setAttribute === "function") {
+        this.setAttribute("data-theme", theme);
+      }
+      this.rootContainer?.setAttribute("data-theme", theme);
+      this.agentSidebarEl?.setAttribute("data-theme", theme);
+      this.composerEl?.setAttribute("data-theme", theme);
+      this.compactBarEl?.setAttribute("data-theme", theme);
+  
+      if (this.composerThemeToggleBtn) {
+        this.updateThemeToggleBtn(this.composerThemeToggleBtn);
+      }
+      if (this.sidebarThemeToggleBtn) {
+        this.updateThemeToggleBtn(this.sidebarThemeToggleBtn);
+      }
+  
+      if (typeof this.dispatchEvent === "function") {
+        try {
+          this.dispatchEvent(
+            new CustomEvent("contextdrop:themechange", {
+              bubbles: true,
+              composed: true,
+              detail: { theme }
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+  
+            buildThemeToggleBtn()                    {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cd-icon-btn cd-theme-toggle";
+      this.updateThemeToggleBtn(btn);
+      btn.addEventListener("click", () => {
+        this.toggleTheme();
+      });
+      return btn;
+    }
+  
+            updateThemeToggleBtn(btn                   )       {
+      const isDark = this.currentTheme === "dark";
+      btn.title = isDark ? "Switch to light theme" : "Switch to dark theme";
+      btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+      btn.innerHTML = isDark ? ICON_SUN : ICON_MOON;
+    }
+  
            setCornerPosition(position                )       {
       if (!["top_left", "top_right", "bottom_left", "bottom_right"].includes(position)) {
         return;
@@ -5758,6 +5990,11 @@
         } catch {
           this.customMetadata = {};
         }
+      }
+  
+      const themeOverride = this.getAttribute("data-theme");
+      if (themeOverride === "dark" || themeOverride === "light") {
+        this.currentTheme = themeOverride;
       }
     }
   
@@ -6058,7 +6295,7 @@
         if (!active || typeof window === "undefined") return;
         const delta = this.sidebarSide === "right" ? startX - ev.clientX : ev.clientX - startX;
         const maxAllowed = Math.max(360, (window.innerWidth || 1024) - 80);
-        this.sidebarWidth = Math.max(340, Math.min(Math.min(680, maxAllowed), startWidth + delta));
+        this.sidebarWidth = Math.max(360, Math.min(Math.min(920, maxAllowed), startWidth + delta));
         if (this.agentSidebarEl) {
           this.agentSidebarEl.style.width = `${Math.round(this.sidebarWidth)}px`;
         }
@@ -6070,6 +6307,11 @@
       const stopResize = ()       => {
         active = false;
         resizerEl.classList.remove("is-resizing");
+        try {
+          localStorage.setItem("context_drop_sidebar_width", String(Math.round(this.sidebarWidth)));
+        } catch {
+          // Non-fatal
+        }
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", stopResize);
         window.removeEventListener("pointercancel", stopResize);
@@ -6195,6 +6437,7 @@
       this.dragPinEl = dragPin;
       this.shadow.appendChild(dragPin);
   
+      this.applyTheme(this.currentTheme, false);
       this.syncUiStates();
     }
   
@@ -6344,10 +6587,15 @@
       headerActions.className = "cd-header-actions";
   
       const modeSwitchHolder = document.createElement("div");
+      modeSwitchHolder.className = "cd-composer-mode-switch-wrap";
       modeSwitchHolder.hidden = !this.config.agent?.enabled;
       modeSwitchHolder.appendChild(this.buildModeSwitchDom("feedback"));
       this.composerModeSwitchWrap = modeSwitchHolder;
       headerActions.appendChild(modeSwitchHolder);
+  
+      const themeBtn = this.buildThemeToggleBtn();
+      this.composerThemeToggleBtn = themeBtn;
+      headerActions.appendChild(themeBtn);
   
       const minBtn = document.createElement("button");
       minBtn.type = "button";
@@ -6561,6 +6809,10 @@
       headerActions.className = "cd-header-actions";
   
       headerActions.appendChild(this.buildModeSwitchDom("agent"));
+  
+      const themeBtn = this.buildThemeToggleBtn();
+      this.sidebarThemeToggleBtn = themeBtn;
+      headerActions.appendChild(themeBtn);
   
       const newThreadBtn = document.createElement("button");
       newThreadBtn.type = "button";

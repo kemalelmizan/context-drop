@@ -77,4 +77,34 @@ RSpec.describe "ContextDrop::Configuration" do
     expect(pub.key?(:mcp_api_key)).to eq(false)
     expect(pub.key?(:current_submitter)).to eq(false)
   end
+
+  it "defaults enable_local_agent to false and uses verbose selection mode for local development" do
+    cfg = ContextDrop.config
+    expect(cfg.local_agent_enabled).to eq(false)
+    expect(cfg.enable_local_agent).to eq(false)
+    expect(cfg.local_agent_allowed?).to eq(false)
+
+    # In local development without agent enabled, public widget config has agent disabled and verbose selection mode
+    pub = cfg.public_widget_config
+    expect(pub.dig(:agent, :enabled)).to eq(false)
+    expect(pub.dig(:features, :selection_mode)).to eq("verbose")
+
+    # Enabling via enable_local_agent = true sets local_agent_enabled and activates local agent
+    ContextDrop.configure do |c|
+      c.environment = "development"
+      c.enable_local_agent = true
+    end
+    expect(ContextDrop.config.enable_local_agent).to eq(true)
+    expect(ContextDrop.config.local_agent_enabled).to eq(true)
+    expect(ContextDrop.config.local_agent_allowed?).to eq(true)
+    expect(ContextDrop.config.public_widget_config.dig(:agent, :enabled)).to eq(true)
+
+    # Enabling via local_agent_enabled = true alias also works
+    ContextDrop.configure do |c|
+      c.local_agent_enabled = false
+    end
+    expect(ContextDrop.config.enable_local_agent).to eq(false)
+    expect(ContextDrop.config.local_agent_enabled).to eq(false)
+    expect(ContextDrop.config.local_agent_allowed?).to eq(false)
+  end
 end

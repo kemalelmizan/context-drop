@@ -170,6 +170,19 @@ RSpec.describe "ContextDrop::Agent (BYOK Vault, Workspace Sandbox & Security Wal
   end
 
   describe "ContextDrop::AgentController HTTP security wall & end-to-end orchestration" do
+    it "returns 404 Not Found in development when enable_local_agent is false (default)" do
+      ContextDrop.configure do |config|
+        config.enabled = true
+        config.environment = "development"
+        # enable_local_agent is false by default
+        config.authorize_dashboard = ->(_c) { true }
+      end
+
+      session.get "/context_drop/agent/status",
+                  headers: { "HTTP_HOST" => "localhost", "REMOTE_ADDR" => "127.0.0.1" }
+      expect(session.response.status).to eq(404)
+    end
+
     it "returns 404 Not Found in production even if local_agent_enabled is set true" do
       ContextDrop.configure do |config|
         config.enabled = true

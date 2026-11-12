@@ -54,3 +54,8 @@ export const ICON_INBOX = `<svg viewBox="0 0 20 20" width="14" height="14" fill=
 export const ICON_SHIELD = `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5l6 2.3v4.7c0 4.1-2.6 6.8-6 8-3.4-1.2-6-3.9-6-8V4.8l6-2.3z"/></svg>`;
 
 export const ICON_PUSH_LAYOUT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.8"/><line x1="9.5" y1="2.5" x2="9.5" y2="13.5"/><polyline points="6.5 6.2 4.7 8 6.5 9.8"/></svg>`;
+
+export const ICON_SUN = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.75"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/><line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/><line x1="4.34" y1="4.34" x2="5.75" y2="5.75"/><line x1="14.25" y1="14.25" x2="15.66" y2="15.66"/><line x1="4.34" y1="15.66" x2="5.75" y2="14.25"/><line x1="14.25" y1="5.75" x2="15.66" y2="4.34"/></svg>`;
+
+export const ICON_MOON = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>`;
+
