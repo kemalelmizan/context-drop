@@ -695,6 +695,10 @@ npm test
 
 # Run backend Ruby engine & MCP specs
 ruby spec/run_all.rb
+
+# Bump synchronized Gem + NPM version and cut a signed unified release (GitHub + RubyGems + NPM)
+bundle exec rake "version:bump[0.2.1]"
+bundle exec rake release
 ```
 
 Further architectural documentation:
