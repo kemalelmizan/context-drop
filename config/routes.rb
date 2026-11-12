@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 ContextDrop::Engine.routes.draw do
+  match "config", to: "configs#cors_preflight", via: :options
+  match "attachments", to: "configs#cors_preflight", via: :options
+  match "feedback", to: "configs#cors_preflight", via: :options
+  match "health", to: "configs#cors_preflight", via: :options
+
   get "config", to: "configs#show"
   get "assets/context_drop.js", to: "configs#widget_bundle"
   post "attachments", to: "attachments#create"

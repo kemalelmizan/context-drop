@@ -1007,7 +1007,7 @@ export class ElementPicker {
   }
 
   private renderScrubbingHudContent(
-    currentCandidate: ElementCandidateInfo,
+    _currentCandidate: ElementCandidateInfo,
     rect: { width: number; height: number }
   ): void {
     if (!this.hudEl) return;

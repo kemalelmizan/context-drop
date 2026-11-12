@@ -118,7 +118,7 @@ export async function captureViewportScreenshot(
 
     // Paint page background
     const bodyBg =
-      window.getComputedStyle && document.body
+      typeof window.getComputedStyle === "function" && document.body
         ? window.getComputedStyle(document.body).backgroundColor
         : "#ffffff";
     ctx.fillStyle = bodyBg && bodyBg !== "rgba(0, 0, 0, 0)" ? bodyBg : "#ffffff";

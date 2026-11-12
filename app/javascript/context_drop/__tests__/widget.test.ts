@@ -384,6 +384,7 @@ class MockUiEvent {
   public readonly deltaY: number;
   public readonly deltaMode: number;
   public readonly key: string;
+  public readonly code: string;
   public readonly shiftKey: boolean;
   public readonly altKey: boolean;
   public readonly ctrlKey: boolean;
@@ -1548,7 +1549,7 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
 
   it("defaults sidebar width to 560px for full container item layout without crowding", async () => {
     await withMountedWidget(
-      async ({ widget, shadowRoot, mockHtml }) => {
+      async ({ shadowRoot, mockHtml }) => {
         const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
         const bookCorner = shadowRoot.querySelector(".cd-book-corner");
         assert.ok(sidebar && bookCorner);

@@ -4,7 +4,10 @@
 /tmp/
 /log/
 /node_modules/
+/dist/
+/.context-drop/
 /coverage/
+*.tgz
 /spec/dummy/db/*.sqlite3*
 /spec/dummy/log/*
 /spec/dummy/tmp/*

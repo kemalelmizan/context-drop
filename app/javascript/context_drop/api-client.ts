@@ -4,6 +4,7 @@ import type {
   AgentKeysUpdatePayload,
   AgentKeysUpdateResponse,
   AgentStatusResponse,
+  ContextDropApiClientOptions,
   CrossEnvFeedbackListResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
@@ -13,11 +14,53 @@ import type {
 
 export class ContextDropApiClient {
   private baseUrl: string;
+  private credentials: RequestCredentials;
+  private customHeaders: Record<string, string>;
   private cachedCsrfToken: string | null = null;
+  private configFetched: boolean = false;
   private inFlightConfigPromise: Promise<WidgetConfig> | null = null;
 
-  constructor(baseUrl: string = "/context_drop") {
+  constructor(baseUrl: string = "/context_drop", options: ContextDropApiClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
+    this.credentials = options.credentials || "same-origin";
+    this.customHeaders = options.headers ? { ...options.headers } : {};
+  }
+
+  public getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  public setCredentials(credentials: RequestCredentials): void {
+    this.credentials = credentials;
+  }
+
+  public setHeaders(headers: Record<string, string>): void {
+    this.customHeaders = { ...headers };
+  }
+
+  private isCrossOriginEndpoint(): boolean {
+    if (!/^https?:\/\//i.test(this.baseUrl)) {
+      return false;
+    }
+    if (typeof window === "undefined" || !window.location || !window.location.origin) {
+      return true;
+    }
+    try {
+      return new URL(this.baseUrl, window.location.origin).origin !== window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  private mergeClientHeaders(base: Record<string, string>): Record<string, string> {
+    const merged: Record<string, string> = {
+      ...this.customHeaders,
+      ...base
+    };
+    if (this.isCrossOriginEndpoint()) {
+      merged["X-Context-Drop-Client"] = "1";
+    }
+    return merged;
   }
 
   public getCsrfToken(): string | null {
@@ -48,10 +91,10 @@ export class ContextDropApiClient {
       try {
         const response = await fetch(`${this.baseUrl}/config`, {
           method: "GET",
-          credentials: "same-origin",
-          headers: {
+          credentials: this.credentials,
+          headers: this.mergeClientHeaders({
             Accept: "application/json"
-          }
+          })
         });
 
         if (!response.ok) {
@@ -59,6 +102,7 @@ export class ContextDropApiClient {
         }
 
         const config = (await response.json()) as WidgetConfig;
+        this.configFetched = true;
         if (config && typeof config.csrf_token === "string" && config.csrf_token.trim().length > 0) {
           this.cachedCsrfToken = config.csrf_token.trim();
           if (typeof document !== "undefined") {
@@ -85,6 +129,9 @@ export class ContextDropApiClient {
       }
       if (this.cachedCsrfToken) {
         return this.cachedCsrfToken;
+      }
+      if (this.configFetched) {
+        return null;
       }
     }
 
@@ -130,7 +177,8 @@ export class ContextDropApiClient {
 
       const errorMessage = parsedError || rawText || "";
       const shouldRetryCsrf =
-        this.isCsrfError(response.status, errorMessage) || (!csrfToken && response.status === 422);
+        this.isCsrfError(response.status, errorMessage) ||
+        (!csrfToken && !this.configFetched && response.status === 422);
 
       if (shouldRetryCsrf) {
         csrfToken = await this.resolveCsrfToken(true);
@@ -161,7 +209,7 @@ export class ContextDropApiClient {
     if (csrfToken) {
       headers["X-CSRF-Token"] = csrfToken;
     }
-    return headers;
+    return this.mergeClientHeaders(headers);
   }
 
   public async uploadAttachment(file: Blob, filename: string): Promise<{ signed_blob_id: string }> {
@@ -178,8 +226,8 @@ export class ContextDropApiClient {
 
       return fetch(`${this.baseUrl}/attachments`, {
         method: "POST",
-        credentials: "same-origin",
-        headers,
+        credentials: this.credentials,
+        headers: this.mergeClientHeaders(headers),
         body: formData
       });
     };
@@ -191,7 +239,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/feedback`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken),
         body: JSON.stringify({ feedback: payload })
       });
@@ -202,10 +250,10 @@ export class ContextDropApiClient {
   public async fetchAgentStatus(): Promise<AgentStatusResponse> {
     const response = await fetch(`${this.baseUrl}/agent/status`, {
       method: "GET",
-      credentials: "same-origin",
-      headers: {
+      credentials: this.credentials,
+      headers: this.mergeClientHeaders({
         Accept: "application/json"
-      }
+      })
     });
 
     if (!response.ok) {
@@ -222,7 +270,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/keys`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken),
         body: JSON.stringify(payload)
       });
@@ -234,7 +282,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/keys?provider=${encodeURIComponent(provider)}`, {
         method: "DELETE",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken)
       });
 
@@ -248,10 +296,10 @@ export class ContextDropApiClient {
     const qs = `environment=${encodeURIComponent(environment)}&status=${encodeURIComponent(status)}`;
     const response = await fetch(`${this.baseUrl}/agent/feedbacks?${qs}`, {
       method: "GET",
-      credentials: "same-origin",
-      headers: {
+      credentials: this.credentials,
+      headers: this.mergeClientHeaders({
         Accept: "application/json"
-      }
+      })
     });
 
     if (!response.ok) {
@@ -268,7 +316,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/chat`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken),
         body: JSON.stringify(payload)
       });
@@ -280,7 +328,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/apply`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken)
       });
 
@@ -291,7 +339,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/reject`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken)
       });
 
@@ -302,7 +350,7 @@ export class ContextDropApiClient {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/revert`, {
         method: "POST",
-        credentials: "same-origin",
+        credentials: this.credentials,
         headers: this.buildJsonHeaders(csrfToken)
       });
 

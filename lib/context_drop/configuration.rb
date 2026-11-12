@@ -39,6 +39,7 @@ module ContextDrop
                   :element_capture_padding,
                   :smart_capture_padding,
                   :excluded_selectors,
+                  :allowed_origins,
                   :current_submitter,
                   :authorize_submission,
                   :authorize_dashboard,
@@ -76,6 +77,7 @@ module ContextDrop
       @smart_capture_padding = 84
 
       @excluded_selectors = MANDATORY_EXCLUDED_SELECTORS.dup
+      @allowed_origins = []
 
       @current_submitter = lambda do |controller|
         controller.respond_to?(:current_user, true) ? controller.send(:current_user) : nil
@@ -275,6 +277,24 @@ module ContextDrop
 
     def effective_excluded_selectors
       (MANDATORY_EXCLUDED_SELECTORS + Array(@excluded_selectors).map(&:to_s)).uniq
+    end
+
+    def origin_allowed?(origin_header)
+      origin = origin_header.to_s.strip
+      return false if origin.empty?
+
+      normalized_origin = origin.chomp("/")
+      Array(@allowed_origins).any? do |rule|
+        case rule
+        when Regexp
+          rule.match?(normalized_origin)
+        when String
+          normalized_rule = rule.strip.chomp("/")
+          !normalized_rule.empty? && normalized_rule != "*" && normalized_rule.casecmp?(normalized_origin)
+        else
+          false
+        end
+      end
     end
 
     def resolve_submitter(controller)

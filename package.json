@@ -1,18 +1,101 @@
 {
-  "name": "@context-drop/widget",
+  "name": "context-drop",
   "version": "0.2.0",
-  "private": true,
-  "description": "Decoupled TypeScript Shadow DOM feedback widget for ContextDrop Rails Engine",
+  "description": "Self-hosted contextual feedback widget, Next.js & Rails integration, and unified multi-environment MCP server for AI coding agents.",
   "type": "module",
-  "main": "app/assets/javascripts/context_drop/context_drop.js",
-  "module": "app/javascript/context_drop/index.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "bin": {
+    "context-drop": "dist/src/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./widget": {
+      "types": "./dist/src/widget/index.d.ts",
+      "default": "./dist/src/widget/index.js"
+    },
+    "./bundle": "./app/assets/javascripts/context_drop/context_drop.js",
+    "./react": {
+      "types": "./dist/src/react/index.d.ts",
+      "default": "./dist/src/react/index.js"
+    },
+    "./next": {
+      "types": "./dist/src/next/index.d.ts",
+      "default": "./dist/src/next/index.js"
+    },
+    "./next/server": {
+      "types": "./dist/src/next/server.d.ts",
+      "default": "./dist/src/next/server.js"
+    },
+    "./server": {
+      "types": "./dist/src/server/index.d.ts",
+      "default": "./dist/src/server/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/src/mcp/index.d.ts",
+      "default": "./dist/src/mcp/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "app/assets/javascripts/context_drop/context_drop.js",
+    "README.md",
+    "MIT-LICENSE"
+  ],
   "scripts": {
-    "build": "node scripts/build_widget.mjs",
+    "build": "node scripts/build_npm.mjs",
+    "build:widget": "node scripts/build_widget.mjs",
+    "typecheck": "tsc --noEmit",
     "demo": "node scripts/build_widget.mjs && node scripts/serve_demo.mjs",
-    "test": "node --test app/javascript/context_drop/__tests__/*.test.ts"
+    "test": "node --test app/javascript/context_drop/__tests__/*.test.ts src/__tests__/*.test.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "peerDependencies": {
+    "next": ">=13.4.0",
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "feedback",
+    "widget",
+    "nextjs",
+    "react",
+    "rails",
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "shadow-dom",
+    "bug-reporting",
+    "dom-inspector",
+    "screenshot"
+  ],
+  "author": "Kemal Elmizan <kemal@elmizan.com>",
+  "homepage": "https://github.com/kemalelmizan/context-drop",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kemalelmizan/context-drop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kemalelmizan/context-drop/issues"
   },
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=20.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
 }

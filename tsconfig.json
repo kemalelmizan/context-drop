@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -12,10 +13,12 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "noEmit": true
   },
   "include": [
-    "app/javascript/context_drop/**/*.ts"
+    "app/javascript/context_drop/**/*.ts",
+    "src/**/*.ts"
   ]
 }

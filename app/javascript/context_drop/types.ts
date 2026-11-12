@@ -78,6 +78,11 @@ export interface SessionFeedbackEntry {
   }>;
 }
 
+export interface ContextDropApiClientOptions {
+  credentials?: RequestCredentials;
+  headers?: Record<string, string>;
+}
+
 export interface WidgetConfig {
   enabled: boolean;
   environment?: string;

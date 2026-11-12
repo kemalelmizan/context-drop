@@ -3049,11 +3049,53 @@
   // --- Module: api-client.ts ---
   class ContextDropApiClient {
             baseUrl        ;
+            credentials                    ;
+            customHeaders                        ;
             cachedCsrfToken                = null;
+            configFetched          = false;
             inFlightConfigPromise                               = null;
   
-    constructor(baseUrl         = "/context_drop") {
+    constructor(baseUrl         = "/context_drop", options                              = {}) {
       this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
+      this.credentials = options.credentials || "same-origin";
+      this.customHeaders = options.headers ? { ...options.headers } : {};
+    }
+  
+           getBaseUrl()         {
+      return this.baseUrl;
+    }
+  
+           setCredentials(credentials                    )       {
+      this.credentials = credentials;
+    }
+  
+           setHeaders(headers                        )       {
+      this.customHeaders = { ...headers };
+    }
+  
+            isCrossOriginEndpoint()          {
+      if (!/^https?:\/\//i.test(this.baseUrl)) {
+        return false;
+      }
+      if (typeof window === "undefined" || !window.location || !window.location.origin) {
+        return true;
+      }
+      try {
+        return new URL(this.baseUrl, window.location.origin).origin !== window.location.origin;
+      } catch {
+        return false;
+      }
+    }
+  
+            mergeClientHeaders(base                        )                         {
+      const merged                         = {
+        ...this.customHeaders,
+        ...base
+      };
+      if (this.isCrossOriginEndpoint()) {
+        merged["X-Context-Drop-Client"] = "1";
+      }
+      return merged;
     }
   
            getCsrfToken()                {
@@ -3084,10 +3126,10 @@
         try {
           const response = await fetch(`${this.baseUrl}/config`, {
             method: "GET",
-            credentials: "same-origin",
-            headers: {
+            credentials: this.credentials,
+            headers: this.mergeClientHeaders({
               Accept: "application/json"
-            }
+            })
           });
   
           if (!response.ok) {
@@ -3095,6 +3137,7 @@
           }
   
           const config = (await response.json())                ;
+          this.configFetched = true;
           if (config && typeof config.csrf_token === "string" && config.csrf_token.trim().length > 0) {
             this.cachedCsrfToken = config.csrf_token.trim();
             if (typeof document !== "undefined") {
@@ -3121,6 +3164,9 @@
         }
         if (this.cachedCsrfToken) {
           return this.cachedCsrfToken;
+        }
+        if (this.configFetched) {
+          return null;
         }
       }
   
@@ -3166,7 +3212,8 @@
   
         const errorMessage = parsedError || rawText || "";
         const shouldRetryCsrf =
-          this.isCsrfError(response.status, errorMessage) || (!csrfToken && response.status === 422);
+          this.isCsrfError(response.status, errorMessage) ||
+          (!csrfToken && !this.configFetched && response.status === 422);
   
         if (shouldRetryCsrf) {
           csrfToken = await this.resolveCsrfToken(true);
@@ -3197,7 +3244,7 @@
       if (csrfToken) {
         headers["X-CSRF-Token"] = csrfToken;
       }
-      return headers;
+      return this.mergeClientHeaders(headers);
     }
   
            async uploadAttachment(file      , filename        )                                      {
@@ -3214,8 +3261,8 @@
   
         return fetch(`${this.baseUrl}/attachments`, {
           method: "POST",
-          credentials: "same-origin",
-          headers,
+          credentials: this.credentials,
+          headers: this.mergeClientHeaders(headers),
           body: formData
         });
       };
@@ -3227,7 +3274,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/feedback`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken),
           body: JSON.stringify({ feedback: payload })
         });
@@ -3238,10 +3285,10 @@
            async fetchAgentStatus()                               {
       const response = await fetch(`${this.baseUrl}/agent/status`, {
         method: "GET",
-        credentials: "same-origin",
-        headers: {
+        credentials: this.credentials,
+        headers: this.mergeClientHeaders({
           Accept: "application/json"
-        }
+        })
       });
   
       if (!response.ok) {
@@ -3258,7 +3305,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/keys`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken),
           body: JSON.stringify(payload)
         });
@@ -3270,7 +3317,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/keys?provider=${encodeURIComponent(provider)}`, {
           method: "DELETE",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken)
         });
   
@@ -3284,10 +3331,10 @@
       const qs = `environment=${encodeURIComponent(environment)}&status=${encodeURIComponent(status)}`;
       const response = await fetch(`${this.baseUrl}/agent/feedbacks?${qs}`, {
         method: "GET",
-        credentials: "same-origin",
-        headers: {
+        credentials: this.credentials,
+        headers: this.mergeClientHeaders({
           Accept: "application/json"
-        }
+        })
       });
   
       if (!response.ok) {
@@ -3304,7 +3351,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/chat`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken),
           body: JSON.stringify(payload)
         });
@@ -3316,7 +3363,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/apply`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken)
         });
   
@@ -3327,7 +3374,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/reject`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken)
         });
   
@@ -3338,7 +3385,7 @@
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/agent/edits/${encodeURIComponent(editId)}/revert`, {
           method: "POST",
-          credentials: "same-origin",
+          credentials: this.credentials,
           headers: this.buildJsonHeaders(csrfToken)
         });
   
@@ -3450,7 +3497,7 @@
   
       // Paint page background
       const bodyBg =
-        window.getComputedStyle && document.body
+        typeof window.getComputedStyle === "function" && document.body
           ? window.getComputedStyle(document.body).backgroundColor
           : "#ffffff";
       ctx.fillStyle = bodyBg && bodyBg !== "rgba(0, 0, 0, 0)" ? bodyBg : "#ffffff";
@@ -4605,7 +4652,7 @@
     }
   
             renderScrubbingHudContent(
-      currentCandidate                      ,
+      _currentCandidate                      ,
       rect                                   
     )       {
       if (!this.hudEl) return;
@@ -5321,12 +5368,24 @@
       : (class {}                                 );
   class ContextDropWidgetElement extends BaseHTMLElement {
            static get observedAttributes()           {
-      return ["data-position", "data-config", "data-theme", "data-cd-theme"];
+      return [
+        "data-endpoint",
+        "data-position",
+        "data-placeholder",
+        "data-config",
+        "data-metadata",
+        "data-credentials",
+        "data-selection-mode",
+        "data-environment",
+        "data-theme",
+        "data-cd-theme"
+      ];
     }
   
            shadow                    = null;
             config               = structuredClone(DEFAULT_CONFIG);
             customMetadata                          = {};
+            customHeaders                         = {};
             apiClient                       = new ContextDropApiClient("/context_drop");
             picker                       = null;
   
@@ -5403,7 +5462,6 @@
             sidebarPinBtn                           = null;
             sidebarEnvPillEl                         = null;
             sidebarPushBtn                           = null;
-            providerPillBtn                           = null;
             keyDotEl                         = null;
             providerPillLabelEl                         = null;
             keysToggleBtn                           = null;
@@ -5437,6 +5495,37 @@
         this.applyTheme(newValue, false);
       } else if (name === "data-position" && newValue) {
         this.setCornerPosition(newValue                  );
+      } else if (name === "data-endpoint" && newValue && this.shadow) {
+        this.setEndpoint(newValue);
+      } else if (name === "data-credentials" && newValue && this.shadow) {
+        if (newValue === "same-origin" || newValue === "include" || newValue === "omit") {
+          this.apiClient.setCredentials(newValue);
+        }
+      } else if (name === "data-placeholder" && newValue && this.shadow) {
+        this.setWidgetConfig({ placeholder: newValue });
+      } else if (name === "data-metadata" && this.shadow) {
+        if (newValue) {
+          try {
+            this.customMetadata = JSON.parse(newValue)                           ;
+          } catch {
+            this.customMetadata = {};
+          }
+        } else {
+          this.customMetadata = {};
+        }
+      } else if (name === "data-selection-mode" && newValue && this.shadow) {
+        if (newValue === "smart" || newValue === "verbose") {
+          this.setWidgetConfig({ features: { ...this.config.features, selection_mode: newValue } });
+        }
+      } else if (name === "data-environment" && newValue && this.shadow) {
+        this.setWidgetConfig({ environment: newValue });
+      } else if (name === "data-config" && newValue && this.shadow) {
+        try {
+          const parsed = JSON.parse(newValue)                         ;
+          this.setWidgetConfig(parsed);
+        } catch {
+          // Ignore malformed JSON
+        }
       }
     }
   
@@ -5591,6 +5680,49 @@
       return this.config;
     }
   
+           setEndpoint(endpoint        , options                              = {})       {
+      const resolvedCredentials =
+        options.credentials ||
+        (this.getAttribute("data-credentials")                             ) ||
+        "same-origin";
+      const resolvedHeaders = options.headers || this.customHeaders;
+      this.customHeaders = { ...resolvedHeaders };
+      this.apiClient = new ContextDropApiClient(endpoint || "/context_drop", {
+        credentials: resolvedCredentials,
+        headers: this.customHeaders
+      });
+    }
+  
+           setHeaders(headers                        )       {
+      this.customHeaders = { ...headers };
+      this.apiClient.setHeaders(this.customHeaders);
+    }
+  
+           setCredentials(credentials                    )       {
+      this.apiClient.setCredentials(credentials);
+    }
+  
+           setCustomMetadata(metadata                         )       {
+      this.customMetadata = { ...metadata };
+    }
+  
+            emitWidgetEvent(name        , detail                          )       {
+      if (typeof CustomEvent !== "function" || typeof this.dispatchEvent !== "function") {
+        return;
+      }
+      try {
+        this.dispatchEvent(
+          new CustomEvent(name, {
+            bubbles: true,
+            composed: true,
+            detail
+          })
+        );
+      } catch {
+        // Non-fatal in synthetic DOM environments
+      }
+    }
+  
            setWidgetConfig(partial                       )       {
       const wasAgentEnabled = Boolean(this.config.agent?.enabled);
       if (
@@ -5691,6 +5823,7 @@
     }
   
            openComposer()       {
+      const wasOpen = this.isOpen && !this.isMinimized;
       this.isOpen = true;
       this.isMinimized = false;
       if (this.isAgentModeActive()) {
@@ -5698,9 +5831,13 @@
       }
       this.syncUiStates();
       this.focusActiveInput();
+      if (!wasOpen) {
+        this.emitWidgetEvent("context-drop:open", { open: true });
+      }
     }
   
            closeComposer()       {
+      const wasOpen = this.isOpen;
       this.isOpen = false;
       this.isMinimized = false;
       if (this.picker && this.picker.isActive()) {
@@ -5708,6 +5845,9 @@
       }
       this.picker?.hideExternalPreview();
       this.syncUiStates();
+      if (wasOpen) {
+        this.emitWidgetEvent("context-drop:close", { open: false });
+      }
     }
   
            toggleComposer()       {
@@ -5968,7 +6108,15 @@
   
             readDataAttributes()       {
       const endpoint = this.getAttribute("data-endpoint") || "/context_drop";
-      this.apiClient = new ContextDropApiClient(endpoint);
+      const rawCredentials = this.getAttribute("data-credentials");
+      const credentials                     =
+        rawCredentials === "include" || rawCredentials === "omit" || rawCredentials === "same-origin"
+          ? rawCredentials
+          : "same-origin";
+      this.apiClient = new ContextDropApiClient(endpoint, {
+        credentials,
+        headers: this.customHeaders
+      });
   
       const rawConfig = this.getAttribute("data-config");
       if (rawConfig) {
@@ -6023,6 +6171,16 @@
       const themeOverride = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
       if (themeOverride === "dark" || themeOverride === "light") {
         this.currentTheme = themeOverride;
+      }
+  
+      const selectionModeOverride = this.getAttribute("data-selection-mode")                        ;
+      if (selectionModeOverride === "smart" || selectionModeOverride === "verbose") {
+        this.config.features.selection_mode = selectionModeOverride;
+      }
+  
+      const envOverride = this.getAttribute("data-environment");
+      if (envOverride && envOverride.trim().length > 0) {
+        this.config.environment = envOverride.trim();
       }
     }
   
@@ -6923,7 +7081,6 @@
       providerPill.appendChild(keyDot);
       providerPill.appendChild(providerLabel);
       providerPill.addEventListener("click", () => this.toggleByokDrawer());
-      this.providerPillBtn = providerPill;
   
       const subbarRight = document.createElement("div");
       subbarRight.className = "cd-subbar-right";
@@ -8732,9 +8889,16 @@
           smartMode ? "Thanks! Your feedback was sent." : "Context drop saved.",
           "success"
         );
+        this.emitWidgetEvent("context-drop:submit", {
+          response: res,
+          payload
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to submit feedback.";
         this.showStatus(msg, "error");
+        this.emitWidgetEvent("context-drop:error", {
+          error: msg
+        });
       } finally {
         this.isSubmitting = false;
         if (this.submitBtn) {

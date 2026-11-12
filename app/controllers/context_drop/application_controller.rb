@@ -4,8 +4,9 @@ require "digest"
 
 module ContextDrop
   class ApplicationController < ActionController::Base
-    protect_from_forgery with: :exception
+    protect_from_forgery with: :exception, unless: :verified_cross_origin_widget_request?
 
+    before_action :apply_widget_cors_headers!
     before_action :ensure_context_drop_enabled!
 
     rescue_from ActionController::InvalidAuthenticityToken, with: :handle_invalid_csrf_token
@@ -109,6 +110,41 @@ module ContextDrop
 
     def handle_sensitive_element_error(exception)
       render json: { error: exception.message }, status: :unprocessable_entity
+    end
+
+    def cors_eligible_widget_endpoint?
+      is_a?(ContextDrop::ConfigsController) ||
+        is_a?(ContextDrop::AttachmentsController) ||
+        is_a?(ContextDrop::FeedbacksController) ||
+        is_a?(ContextDrop::HealthController)
+    end
+
+    def apply_widget_cors_headers!
+      return unless cors_eligible_widget_endpoint?
+
+      origin = request.headers["Origin"].to_s.strip
+      return if origin.empty? || !ContextDrop.config.origin_allowed?(origin)
+
+      response.set_header("Access-Control-Allow-Origin", origin)
+      response.set_header("Vary", "Origin")
+      response.set_header("Access-Control-Allow-Credentials", "true")
+      response.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      response.set_header(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Accept, X-CSRF-Token, X-Context-Drop-Client, Authorization"
+      )
+      response.set_header("Access-Control-Max-Age", "86400")
+    end
+
+    def verified_cross_origin_widget_request?
+      return false unless cors_eligible_widget_endpoint?
+
+      origin = request.headers["Origin"].to_s.strip
+      return false if origin.empty? || !ContextDrop.config.origin_allowed?(origin)
+
+      request.options? ||
+        request.headers["X-Context-Drop-Client"].to_s.strip == "1" ||
+        request.content_type.to_s.downcase.start_with?("application/json")
     end
   end
 end

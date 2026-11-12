@@ -109,4 +109,48 @@ RSpec.describe "ContextDrop::ConfigsController" do
     res = JSON.parse(session.response.body)
     expect(res["status"]).to eq("new")
   end
+
+  it "supports cross-origin Next.js widget submissions when Origin matches config.allowed_origins" do
+    ContextDrop.configure do |config|
+      config.enabled = true
+      config.allowed_origins = ["http://localhost:3000", /\Ahttps:\/\/[a-z0-9-]+\.vercel\.app\z/]
+    end
+
+    # 1. Allowed preflight OPTIONS
+    session.process :options,
+                    "/context_drop/feedback",
+                    headers: {
+                      "HTTP_HOST" => "localhost",
+                      "HTTP_ORIGIN" => "http://localhost:3000"
+                    }
+    expect(session.response.status).to eq(204)
+    expect(session.response.headers["Access-Control-Allow-Origin"]).to eq("http://localhost:3000")
+
+    # 2. Disallowed preflight OPTIONS
+    session.process :options,
+                    "/context_drop/feedback",
+                    headers: {
+                      "HTTP_HOST" => "localhost",
+                      "HTTP_ORIGIN" => "https://evil.example.org"
+                    }
+    expect(session.response.status).to eq(403)
+
+    # 3. Allowed cross-origin JSON submission without session cookie
+    session.post "/context_drop/feedback",
+                 params: {
+                   feedback: {
+                     message: "Cross-origin feedback from Next.js preview",
+                     page_url: "https://my-preview.vercel.app/checkout"
+                   }
+                 }.to_json,
+                 headers: {
+                   "HTTP_HOST" => "localhost",
+                   "HTTP_ORIGIN" => "https://my-preview.vercel.app",
+                   "HTTP_X_CONTEXT_DROP_CLIENT" => "1",
+                   "CONTENT_TYPE" => "application/json",
+                   "HTTP_ACCEPT" => "application/json"
+                 }
+    expect(session.response.status).to eq(201)
+    expect(session.response.headers["Access-Control-Allow-Origin"]).to eq("https://my-preview.vercel.app")
+  end
 end

@@ -307,4 +307,57 @@ describe("ContextDropApiClient CSRF handling & lazy bootstrap", () => {
     assert.equal(fetchCalls[2].url, "/context_drop/config");
     assert.equal(fetchCalls[3].url, "/context_drop/attachments");
   });
+
+  it("avoids redundant /config calls when Next.js backend returns csrf_token: null and sends X-Context-Drop-Client cross-origin", async () => {
+    mockMetaContent = null;
+    mockFetchHandler = async (url: string, _options: RequestInit) => {
+      if (url.endsWith("/config")) {
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            position: "bottom_right",
+            csrf_token: null
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ id: 9, status: "new" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    const client = new ContextDropApiClient("https://api.acme.com/api/context-drop", {
+      credentials: "include",
+      headers: { "X-Tenant-Id": "acme" }
+    });
+
+    await client.submitFeedback({
+      message: "First Next.js feedback",
+      page_url: "https://app.acme.com/home",
+      user_agent: "test-agent",
+      metadata: {},
+      element_references: [],
+      attachments: []
+    });
+
+    await client.submitFeedback({
+      message: "Second Next.js feedback",
+      page_url: "https://app.acme.com/home",
+      user_agent: "test-agent",
+      metadata: {},
+      element_references: [],
+      attachments: []
+    });
+
+    // Only 1 /config bootstrap call + 2 /feedback calls (no redundant /config before second submit)
+    assert.equal(fetchCalls.length, 3);
+    assert.equal(fetchCalls[0].url, "https://api.acme.com/api/context-drop/config");
+    assert.equal(fetchCalls[1].url, "https://api.acme.com/api/context-drop/feedback");
+    assert.equal(fetchCalls[2].url, "https://api.acme.com/api/context-drop/feedback");
+    assert.equal(fetchCalls[1].options.credentials, "include");
+    const sentHeaders = fetchCalls[1].options.headers as Record<string, string>;
+    assert.equal(sentHeaders["X-Context-Drop-Client"], "1");
+    assert.equal(sentHeaders["X-Tenant-Id"], "acme");
+  });
 });

@@ -2,11 +2,13 @@ import type {
   AgentChatMessage,
   AgentProviderInfo,
   AgentStatusResponse,
+  ContextDropApiClientOptions,
   CrossEnvFeedbackItem,
   ElementReferenceSnapshot,
   FeedbackSubmissionPayload,
   PendingAttachmentItem,
   ProposedFileEdit,
+  SelectionMode,
   SessionFeedbackEntry,
   WidgetConfig,
   WidgetPosition,
@@ -144,12 +146,24 @@ const BaseHTMLElement: typeof HTMLElement =
 
 export class ContextDropWidgetElement extends BaseHTMLElement {
   public static get observedAttributes(): string[] {
-    return ["data-position", "data-config", "data-theme", "data-cd-theme"];
+    return [
+      "data-endpoint",
+      "data-position",
+      "data-placeholder",
+      "data-config",
+      "data-metadata",
+      "data-credentials",
+      "data-selection-mode",
+      "data-environment",
+      "data-theme",
+      "data-cd-theme"
+    ];
   }
 
   public shadow: ShadowRoot | null = null;
   private config: WidgetConfig = structuredClone(DEFAULT_CONFIG);
   private customMetadata: Record<string, unknown> = {};
+  private customHeaders: Record<string, string> = {};
   private apiClient: ContextDropApiClient = new ContextDropApiClient("/context_drop");
   private picker: ElementPicker | null = null;
 
@@ -226,7 +240,6 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private sidebarPinBtn: HTMLButtonElement | null = null;
   private sidebarEnvPillEl: HTMLSpanElement | null = null;
   private sidebarPushBtn: HTMLButtonElement | null = null;
-  private providerPillBtn: HTMLButtonElement | null = null;
   private keyDotEl: HTMLSpanElement | null = null;
   private providerPillLabelEl: HTMLSpanElement | null = null;
   private keysToggleBtn: HTMLButtonElement | null = null;
@@ -260,6 +273,37 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.applyTheme(newValue, false);
     } else if (name === "data-position" && newValue) {
       this.setCornerPosition(newValue as WidgetPosition);
+    } else if (name === "data-endpoint" && newValue && this.shadow) {
+      this.setEndpoint(newValue);
+    } else if (name === "data-credentials" && newValue && this.shadow) {
+      if (newValue === "same-origin" || newValue === "include" || newValue === "omit") {
+        this.apiClient.setCredentials(newValue);
+      }
+    } else if (name === "data-placeholder" && newValue && this.shadow) {
+      this.setWidgetConfig({ placeholder: newValue });
+    } else if (name === "data-metadata" && this.shadow) {
+      if (newValue) {
+        try {
+          this.customMetadata = JSON.parse(newValue) as Record<string, unknown>;
+        } catch {
+          this.customMetadata = {};
+        }
+      } else {
+        this.customMetadata = {};
+      }
+    } else if (name === "data-selection-mode" && newValue && this.shadow) {
+      if (newValue === "smart" || newValue === "verbose") {
+        this.setWidgetConfig({ features: { ...this.config.features, selection_mode: newValue } });
+      }
+    } else if (name === "data-environment" && newValue && this.shadow) {
+      this.setWidgetConfig({ environment: newValue });
+    } else if (name === "data-config" && newValue && this.shadow) {
+      try {
+        const parsed = JSON.parse(newValue) as Partial<WidgetConfig>;
+        this.setWidgetConfig(parsed);
+      } catch {
+        // Ignore malformed JSON
+      }
     }
   }
 
@@ -414,6 +458,49 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     return this.config;
   }
 
+  public setEndpoint(endpoint: string, options: ContextDropApiClientOptions = {}): void {
+    const resolvedCredentials =
+      options.credentials ||
+      (this.getAttribute("data-credentials") as RequestCredentials | null) ||
+      "same-origin";
+    const resolvedHeaders = options.headers || this.customHeaders;
+    this.customHeaders = { ...resolvedHeaders };
+    this.apiClient = new ContextDropApiClient(endpoint || "/context_drop", {
+      credentials: resolvedCredentials,
+      headers: this.customHeaders
+    });
+  }
+
+  public setHeaders(headers: Record<string, string>): void {
+    this.customHeaders = { ...headers };
+    this.apiClient.setHeaders(this.customHeaders);
+  }
+
+  public setCredentials(credentials: RequestCredentials): void {
+    this.apiClient.setCredentials(credentials);
+  }
+
+  public setCustomMetadata(metadata: Record<string, unknown>): void {
+    this.customMetadata = { ...metadata };
+  }
+
+  private emitWidgetEvent(name: string, detail?: Record<string, unknown>): void {
+    if (typeof CustomEvent !== "function" || typeof this.dispatchEvent !== "function") {
+      return;
+    }
+    try {
+      this.dispatchEvent(
+        new CustomEvent(name, {
+          bubbles: true,
+          composed: true,
+          detail
+        })
+      );
+    } catch {
+      // Non-fatal in synthetic DOM environments
+    }
+  }
+
   public setWidgetConfig(partial: Partial<WidgetConfig>): void {
     const wasAgentEnabled = Boolean(this.config.agent?.enabled);
     if (
@@ -514,6 +601,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   }
 
   public openComposer(): void {
+    const wasOpen = this.isOpen && !this.isMinimized;
     this.isOpen = true;
     this.isMinimized = false;
     if (this.isAgentModeActive()) {
@@ -521,9 +609,13 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
     this.syncUiStates();
     this.focusActiveInput();
+    if (!wasOpen) {
+      this.emitWidgetEvent("context-drop:open", { open: true });
+    }
   }
 
   public closeComposer(): void {
+    const wasOpen = this.isOpen;
     this.isOpen = false;
     this.isMinimized = false;
     if (this.picker && this.picker.isActive()) {
@@ -531,6 +623,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
     this.picker?.hideExternalPreview();
     this.syncUiStates();
+    if (wasOpen) {
+      this.emitWidgetEvent("context-drop:close", { open: false });
+    }
   }
 
   public toggleComposer(): void {
@@ -791,7 +886,15 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
   private readDataAttributes(): void {
     const endpoint = this.getAttribute("data-endpoint") || "/context_drop";
-    this.apiClient = new ContextDropApiClient(endpoint);
+    const rawCredentials = this.getAttribute("data-credentials");
+    const credentials: RequestCredentials =
+      rawCredentials === "include" || rawCredentials === "omit" || rawCredentials === "same-origin"
+        ? rawCredentials
+        : "same-origin";
+    this.apiClient = new ContextDropApiClient(endpoint, {
+      credentials,
+      headers: this.customHeaders
+    });
 
     const rawConfig = this.getAttribute("data-config");
     if (rawConfig) {
@@ -846,6 +949,16 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const themeOverride = this.getAttribute("data-cd-theme") || this.getAttribute("data-theme");
     if (themeOverride === "dark" || themeOverride === "light") {
       this.currentTheme = themeOverride;
+    }
+
+    const selectionModeOverride = this.getAttribute("data-selection-mode") as SelectionMode | null;
+    if (selectionModeOverride === "smart" || selectionModeOverride === "verbose") {
+      this.config.features.selection_mode = selectionModeOverride;
+    }
+
+    const envOverride = this.getAttribute("data-environment");
+    if (envOverride && envOverride.trim().length > 0) {
+      this.config.environment = envOverride.trim();
     }
   }
 
@@ -1746,7 +1859,6 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     providerPill.appendChild(keyDot);
     providerPill.appendChild(providerLabel);
     providerPill.addEventListener("click", () => this.toggleByokDrawer());
-    this.providerPillBtn = providerPill;
 
     const subbarRight = document.createElement("div");
     subbarRight.className = "cd-subbar-right";
@@ -3555,9 +3667,16 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         smartMode ? "Thanks! Your feedback was sent." : "Context drop saved.",
         "success"
       );
+      this.emitWidgetEvent("context-drop:submit", {
+        response: res,
+        payload
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to submit feedback.";
       this.showStatus(msg, "error");
+      this.emitWidgetEvent("context-drop:error", {
+        error: msg
+      });
     } finally {
       this.isSubmitting = false;
       if (this.submitBtn) {

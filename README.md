@@ -1,27 +1,30 @@
 <p align="center">
-  <img src="docs/images/context-drop-hero.svg" alt="ContextDrop, Self-hosted contextual feedback engine, tactile DOM pin-drop widget, and IDE MCP server for Ruby on Rails" width="100%" />
+  <img src="https://raw.githubusercontent.com/kemalelmizan/context-drop/main/docs/images/context-drop-hero.svg" alt="ContextDrop, Self-hosted contextual feedback engine, tactile DOM pin-drop widget, and IDE MCP server for Ruby on Rails" width="100%" />
 </p>
 
 <p align="center">
-  <strong>Stop decoding vague bug reports! Let users pin the problem—and fix it right beside your Rails app</strong><br />
-  Mountable Rails Engine · Book-Corner Peel-to-Pin Widget · Local BYOK Agentic Sidebar · Unified Multi-Env MCP Hub
+  <strong>Stop decoding vague bug reports! Let users pin the problem—and fix it right beside your Next.js or Rails app</strong><br />
+  Next.js &amp; Rails Engines · Book-Corner Peel-to-Pin Widget · Local BYOK Agentic Sidebar · Unified Multi-Env MCP Hub
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/context-drop"><img src="https://img.shields.io/npm/v/context-drop?label=NPM&color=cb3837&logo=npm" alt="NPM Version" /></a>
   <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/v/context_drop?label=RubyGems&color=2563eb" alt="Gem Version" /></a>
   <a href="https://rubygems.org/gems/context_drop"><img src="https://img.shields.io/gem/dt/context_drop?label=Downloads&color=0f172a" alt="Gem Downloads" /></a>
+  <img src="https://img.shields.io/badge/Next.js-%3E%3D%2013.4-000000?logo=next.js&logoColor=white" alt="Next.js >= 13.4" />
   <img src="https://img.shields.io/badge/Ruby-%3E%3D%203.1-CC342D?logo=ruby&logoColor=white" alt="Ruby >= 3.1" />
   <img src="https://img.shields.io/badge/Rails-%3E%3D%207.1-D30001?logo=rubyonrails&logoColor=white" alt="Rails >= 7.1" />
   <a href="MIT-LICENSE"><img src="https://img.shields.io/badge/License-MIT-16a34a" alt="MIT License" /></a>
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/context-drop">NPM</a> ·
   <a href="https://rubygems.org/gems/context_drop">RubyGems</a> ·
+  <a href="#nextjs--react-quickstart">Next.js Quickstart</a> ·
+  <a href="#quickstart">Rails Quickstart</a> ·
   <a href="#environment-adaptive-workflow">3-Tier Workflow</a> ·
-  <a href="#quickstart">Quickstart</a> ·
   <a href="#interactive-playground">Live Demo</a> ·
   <a href="#smart--verbose-element-selection">Smart &amp; Verbose Selectors</a> ·
-  <a href="#local-byok-agentic-sidebar-development-mode">Local Agentic Sidebar</a> ·
   <a href="#mcp">Unified MCP Hub</a> ·
   <a href="#zero-trust-privacy--redaction">Privacy &amp; Redaction</a> ·
   <a href="#configuration">Configuration</a>
@@ -80,7 +83,7 @@ flowchart TD
 > **Zero Signal Lost in Production!** Even though production users only see friendly labels like `“Complete Order” button` and an automatic surrounding-context screenshot, ContextDrop still captures the full sanitized `selector` (`#checkout-btn`), `dom_path`, `bounding_rect`, `metadata.friendly_label`, and `metadata.original_target_selector` (`span.inner-label`) under the hood—so engineers triaging `production:108` in their IDE via MCP get 100% exact technical coordinates. Need verbose mode in an internal-only production tool (or smart mode in staging)? Override `config.selection_mode = :verbose` or `:smart` in `config/initializers/context_drop.rb`.
 
 <p align="center">
-  <img src="docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
+  <img src="https://raw.githubusercontent.com/kemalelmizan/context-drop/main/docs/images/demo-pinning-layers.jpg" alt="ContextDrop Pin Mode highlighting an overlapping DOM layer with live dimensions and the Compact Pinning Bar" width="100%" />
 </p>
 
 > **Above:** Active **Pin Mode** on the live demo page. While hovering over a stacked UI card (`section #scenario-overlapping-layers · 681×350 · 1/6 layers`), ContextDrop frames the target in Inspector Cobalt, displays layer depth for mouse-wheel cycling, and collapses the chatbox into the **Compact Pinning Bar** (`Pinning`, live DOM ancestor breadcrumbs, Up/Down layer controls, and `Chat` toggle) so the host page stays completely unobstructed.
@@ -95,13 +98,13 @@ flowchart TD
   <tbody>
     <tr>
       <td valign="top">
-        <img src="docs/images/demo-chatbox-composer.jpg" alt="ContextDrop floating chatbox composer with top-left Pin Element trigger and toolbar" width="100%" />
+        <img src="https://raw.githubusercontent.com/kemalelmizan/context-drop/main/docs/images/demo-chatbox-composer.jpg" alt="ContextDrop floating chatbox composer with top-left Pin Element trigger and toolbar" width="100%" />
         <p>
           Drop <code>&lt;%= context_drop_widget %&gt;</code> into your layout to render a flush <code>38×38px</code> folded <strong>Book Corner</strong>. Click the corner to open the normal feedback chatbox (or docked local Agentic Sidebar), or drag the corner to morph it into a pushpin and drop it straight onto an element.
         </p>
       </td>
       <td valign="top">
-        <img src="docs/images/demo-pinned-element-chip.png" alt="ContextDrop chatbox with a pinned DOM element chip, camera screenshot button, and confirmation banner" width="100%" />
+        <img src="https://raw.githubusercontent.com/kemalelmizan/context-drop/main/docs/images/demo-pinned-element-chip.png" alt="ContextDrop chatbox with a pinned DOM element chip, camera screenshot button, and confirmation banner" width="100%" />
         <p>
           Every pinned element is added to the context tray (`#scenario-overlapping-layers`) with a live count badge (`Pin Element 1`). Hover the chip to highlight the element on the page, click the camera icon to crop a screenshot of that exact node, and hit <strong>Send</strong>.
         </p>
@@ -129,7 +132,140 @@ flowchart TD
 
 ---
 
-## Quickstart
+## Next.js & React Quickstart
+
+ContextDrop ships as a **zero-dependency** NPM package ([`context-drop`](https://www.npmjs.com/package/context-drop)) supporting both **standalone full-stack Next.js** (App Router & Pages Router + pluggable storage + `npx context-drop mcp`) and **decoupled Next.js / React frontends** connected to a Ruby on Rails `context_drop` backend.
+
+### 1. Install & Scaffold Route Handler
+
+```bash
+npm install context-drop
+npx context-drop init
+```
+
+`npx context-drop init` auto-detects **App Router** (`app/api/context-drop/[[...path]]/route.ts`) or **Pages Router** (`pages/api/context-drop/[[...path]].ts`) and adds `.context-drop/` to `.gitignore`:
+
+```ts
+// app/api/context-drop/[[...path]]/route.ts
+import { createContextDropNextHandler } from "context-drop/next/server";
+
+export const { GET, POST, OPTIONS } = createContextDropNextHandler({
+  // Zero-config local default stores SQLite/JSON + redacted screenshots in .context-drop/
+  mcp: {
+    enabled: Boolean(process.env.CONTEXT_DROP_MCP_API_KEY),
+    apiKey: process.env.CONTEXT_DROP_MCP_API_KEY
+  }
+});
+```
+
+### 2. Mount `<ContextDrop />` in Your Root Layout
+
+`context-drop/next` includes `"use client"` out of the box—drop `<ContextDrop />` directly into your Server Component `app/layout.tsx` with zero wrapper boilerplate and zero hydration mismatches:
+
+```tsx
+// app/layout.tsx
+import { ContextDrop } from "context-drop/next";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <ContextDrop
+          position="bottom_right"
+          metadata={{ release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA }}
+        />
+      </body>
+    </html>
+  );
+}
+```
+
+Want to open ContextDrop from your own navbar or help menu? Call `useContextDrop()` from any client component:
+
+```tsx
+"use client";
+import { useContextDrop } from "context-drop/next";
+
+export function ReportBugButton() {
+  const { open } = useContextDrop();
+  return <button onClick={open}>Report an issue</button>;
+}
+```
+
+### 3. Connect Your IDE Coding Agent via MCP (`npx context-drop mcp`)
+
+Register **one** unified `stdio` MCP server in `.mcp.json` (Claude Code), `~/.cursor/mcp.json` (Cursor), or `mcp_config.json` (Antigravity / Windsurf). It automatically loads `.env.local` / `.env` and federates `local` + remote `staging` & `production` Next.js (or Rails!) deployments:
+
+```json
+{
+  "mcpServers": {
+    "context-drop": {
+      "command": "npx",
+      "args": ["context-drop", "mcp"],
+      "env": {
+        "CONTEXT_DROP_STAGING_MCP_URL": "https://staging.your-app.com/api/context-drop/mcp",
+        "CONTEXT_DROP_STAGING_MCP_API_KEY": "your-staging-mcp-bearer-token",
+        "CONTEXT_DROP_PRODUCTION_MCP_URL": "https://your-app.com/api/context-drop/mcp",
+        "CONTEXT_DROP_PRODUCTION_MCP_API_KEY": "your-production-mcp-bearer-token"
+      }
+    }
+  }
+}
+```
+
+### 4. Production Storage Adapters (PostgreSQL, S3 / Vercel Blob, or Custom ORM)
+
+Locally, ContextDrop works with zero configuration using Node's built-in SQLite (`node:sqlite`, or atomic JSON fallback) inside `.context-drop/`. For staging and production Next.js deployments (Vercel, Fly, AWS, Render, Railway), plug in `createPostgresStorageAdapter` (compatible with `pg.Pool`, `@vercel/postgres`, Neon, and Supabase) or implement the `StorageAdapter` interface for Prisma / Drizzle:
+
+```ts
+// app/api/context-drop/[[...path]]/route.ts
+import { Pool } from "pg";
+import {
+  createContextDropNextHandler,
+  createPostgresStorageAdapter
+} from "context-drop/next/server";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const { GET, POST, OPTIONS } = createContextDropNextHandler({
+  storage: createPostgresStorageAdapter({
+    pool,
+    autoMigrate: true // Creates context_drop_* tables automatically if missing
+    // Optional blobStore: { putBlob, getBlob, deleteBlob } for S3 / R2 / Vercel Blob
+  }),
+  resolveSubmitter: async (request) => {
+    // Optional: attach your NextAuth / Clerk / Supabase user identity
+    return null;
+  },
+  mcp: {
+    enabled: true,
+    apiKey: process.env.CONTEXT_DROP_MCP_API_KEY
+  }
+});
+```
+
+### 5. Connecting Next.js to a Ruby on Rails Backend
+
+Already running `ContextDrop::Engine` on Rails? Point `<ContextDrop />` at your Rails mount path:
+- **Via Next.js Rewrites (Same-Origin, Recommended):** Proxy `/context_drop/:path*` to your Rails API in `next.config.ts` and render `<ContextDrop endpoint="/context_drop" />`.
+- **Cross-Origin CORS:** Add `config.allowed_origins = ["http://localhost:3000", "https://app.example.com"]` in `config/initializers/context_drop.rb` and render `<ContextDrop endpoint="https://api.example.com/context_drop" credentials="include" />`.
+
+### NPM Package Exports Reference
+
+| Import Path | Environment | Exports |
+|---|---|---|
+| `context-drop/next` | Client (`"use client"`) | Next.js `<ContextDrop />`, `<ContextDropWidget />`, `useContextDrop()` (defaults to `/api/context-drop`) |
+| `context-drop/next/server` | Node / Server | `createContextDropNextHandler`, `createContextDropPagesHandler`, `createContextDropFetchHandler`, `createLocalStorageAdapter`, `createPostgresStorageAdapter`, `createMemoryStorageAdapter` |
+| `context-drop/react` | Client (`"use client"`) | Framework-agnostic React `<ContextDrop />`, `useContextDrop()` (defaults to `/context_drop`) |
+| `context-drop/mcp` | Node / Server | `createContextDropMcpServer`, `runContextDropMcpStdio`, `ContextDropMcpDispatcher`, `EnvironmentRouter` |
+| `context-drop/widget` | Browser | Auto-registering `<context-drop-widget>` Web Component & `ContextDropApiClient` |
+| `context-drop/bundle` | Browser IIFE | Self-contained `<script>` bundle (`context_drop.js`) |
+| `npx context-drop` | CLI | `npx context-drop mcp` (stdio MCP server) & `npx context-drop init` (Next.js scaffolder) |
+
+---
+
+## Quickstart (Ruby on Rails)
 
 ### Requirements
 
@@ -289,7 +425,7 @@ Because user-submitted feedback messages from `staging` or `production` are untr
 ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`ContextDrop::MCP::Server`) so you or your AI coding agent can pull bug reports, inspect exact CSS selectors and DOM paths, view multimodal screenshots, and mark issues resolved without leaving your editor.
 
 <p align="center">
-  <img src="docs/images/demo-mcp-agent.png" alt="ContextDrop MCP server tool calls (list_feedbacks and get_feedback) and root-cause diagnosis inside an AI coding agent" width="100%" />
+  <img src="https://raw.githubusercontent.com/kemalelmizan/context-drop/main/docs/images/demo-mcp-agent.png" alt="ContextDrop MCP server tool calls (list_feedbacks and get_feedback) and root-cause diagnosis inside an AI coding agent" width="100%" />
 </p>
 
 > **Above:** Triage flow inside an AI coding agent connected to the `context-drop` MCP server on the live playground. The agent invokes `list_feedbacks` (`{ status: "new" }`) and `get_feedback` (`{ id: 12, include_images: true }`), inspects both the structured `ElementReference` geometry (`button#upgrade-cluster-btn`, `169.1×33px`) and the redacted multimodal `image/png` screenshot block, and pinpoints the exact overlapping CSS rule in `demo/index.html`.
