@@ -24,6 +24,10 @@ module ContextDrop
               include_images: {
                 type: "boolean",
                 description: "When true (default), includes attached screenshots and images as base64 MCP image content blocks."
+              },
+              include_deleted: {
+                type: "boolean",
+                description: "When true, allows retrieving a soft-deleted feedback record. Defaults to false."
               }
             }
           }
@@ -35,6 +39,7 @@ module ContextDrop
           return error_result("Missing required parameter: id") if raw_id.nil? || raw_id.to_s.strip.empty?
 
           include_images = params.key?("include_images") ? !!params["include_images"] : true
+          include_deleted = params["include_deleted"] == true || %w[true 1 yes].include?(params["include_deleted"].to_s.strip.downcase)
           target_env, feedback_id = ContextDrop::MCP::EnvironmentRouter.parse_target(raw_id, params["environment"])
 
           unless ContextDrop::MCP::EnvironmentRouter.local_target?(target_env)
@@ -43,14 +48,16 @@ module ContextDrop
               return error_result("Unknown remote environment '#{target_env}'")
             end
 
-            return fetch_remote_feedback(target_env, remote_cfg, feedback_id, include_images: include_images)
+            return fetch_remote_feedback(target_env, remote_cfg, feedback_id, include_images: include_images, include_deleted: include_deleted)
           end
 
           feedback = ContextDrop::Feedback
                      .includes(:submitter, :element_references, :attachments)
                      .find_by(id: feedback_id)
 
-          return error_result("Feedback ##{feedback_id} not found") unless feedback
+          if !feedback || (!include_deleted && feedback.respond_to?(:deleted?) && feedback.deleted?)
+            return error_result("Feedback ##{feedback_id} not found")
+          end
 
           payload = serialize_feedback(feedback)
           content_blocks = [
@@ -73,11 +80,13 @@ module ContextDrop
           }
         end
 
-        def self.fetch_remote_feedback(env_name, remote_cfg, feedback_id, include_images: true)
-          res = ContextDrop::MCP::RemoteClient.call_tool(env_name, remote_cfg, "get_feedback", {
+        def self.fetch_remote_feedback(env_name, remote_cfg, feedback_id, include_images: true, include_deleted: false)
+          remote_args = {
             "id" => feedback_id,
             "include_images" => include_images
-          })
+          }
+          remote_args["include_deleted"] = true if include_deleted
+          res = ContextDrop::MCP::RemoteClient.call_tool(env_name, remote_cfg, "get_feedback", remote_args)
           return res if res[:isError]
 
           updated_blocks = Array(res[:content]).map do |block|
@@ -119,6 +128,8 @@ module ContextDrop
             metadata: feedback.metadata || {},
             created_at: feedback.created_at&.iso8601,
             updated_at: feedback.updated_at&.iso8601,
+            deleted: (feedback.respond_to?(:deleted?) ? feedback.deleted? : false),
+            deleted_at: (feedback.respond_to?(:deleted_at_value) ? feedback.deleted_at_value&.iso8601 : nil),
             element_references: feedback.element_references.map do |el|
               {
                 id: el.id,

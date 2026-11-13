@@ -4,12 +4,18 @@ ContextDrop::Engine.routes.draw do
   match "config", to: "configs#cors_preflight", via: :options
   match "attachments", to: "configs#cors_preflight", via: :options
   match "feedback", to: "configs#cors_preflight", via: :options
+  match "feedback/:id", to: "configs#cors_preflight", via: :options
+  match "feedback/:feedback_id/attachments/:id", to: "configs#cors_preflight", via: :options
   match "health", to: "configs#cors_preflight", via: :options
 
   get "config", to: "configs#show"
   get "assets/context_drop.js", to: "configs#widget_bundle"
   post "attachments", to: "attachments#create"
+  get "feedback", to: "feedbacks#index"
   post "feedback", to: "feedbacks#create"
+  match "feedback/:id", to: "feedbacks#update", via: %i[patch put]
+  delete "feedback/:id", to: "feedbacks#destroy"
+  get "feedback/:feedback_id/attachments/:id", to: "feedbacks#attachment"
   get "health", to: "health#show"
   post "mcp", to: "mcp#create"
 

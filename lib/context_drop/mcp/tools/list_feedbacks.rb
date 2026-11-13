@@ -37,6 +37,10 @@ module ContextDrop
               offset: {
                 type: "integer",
                 description: "Pagination offset (default 0)."
+              },
+              include_deleted: {
+                type: "boolean",
+                description: "When true, includes soft-deleted feedback records. Defaults to false."
               }
             }
           }
@@ -167,7 +171,13 @@ module ContextDrop
         end
 
         def self.query_local(params, status:, limit:, offset:, env_filter: nil)
-          scope = ContextDrop::Feedback.includes(:submitter, :element_references, :attachments).recent
+          include_deleted = truthy?(params["include_deleted"])
+          base = if !include_deleted && ContextDrop::Feedback.respond_to?(:active)
+                   ContextDrop::Feedback.active
+                 else
+                   ContextDrop::Feedback
+                 end
+          scope = base.includes(:submitter, :element_references, :attachments).recent
 
           if env_filter.present? && local_supports_environment_column?
             scope = scope.where(environment: env_filter)
@@ -202,6 +212,7 @@ module ContextDrop
           %w[status page_url query limit offset].each do |key|
             remote_args[key] = params[key] if params.key?(key) && !params[key].nil? && params[key].to_s != ""
           end
+          remote_args["include_deleted"] = true if truthy?(params["include_deleted"])
 
           tool_res = ContextDrop::MCP::RemoteClient.call_tool(env_name, env_config, "list_feedbacks", remote_args)
           text_block = Array(tool_res[:content]).find { |b| b.is_a?(Hash) && b[:type].to_s == "text" }
@@ -228,7 +239,7 @@ module ContextDrop
 
         def self.serialize_summary(feedback)
           env_name = ContextDrop::MCP::EnvironmentRouter.record_environment(feedback)
-          {
+          summary = {
             id: feedback.id,
             qualified_id: ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, feedback.id),
             environment: env_name,
@@ -241,6 +252,15 @@ module ContextDrop
             element_selectors: feedback.element_references.map(&:selector),
             created_at: feedback.created_at&.iso8601
           }
+          if feedback.respond_to?(:deleted?) && feedback.deleted?
+            summary[:deleted] = true
+            summary[:deleted_at] = feedback.respond_to?(:deleted_at_value) ? feedback.deleted_at_value&.iso8601 : nil
+          end
+          summary
+        end
+
+        def self.truthy?(val)
+          val == true || %w[true 1 yes].include?(val.to_s.strip.downcase)
         end
 
         def self.local_supports_environment_column?

@@ -64,6 +64,7 @@ export interface StoredFeedbackRecord {
   attachments: StoredAttachment[];
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface FeedbackSummaryItem {
@@ -78,6 +79,8 @@ export interface FeedbackSummaryItem {
   element_references_count: number;
   element_selectors: string[];
   created_at: string;
+  deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 export interface FeedbackQueryFilter {
@@ -87,6 +90,7 @@ export interface FeedbackQueryFilter {
   query?: string | null;
   limit?: number;
   offset?: number;
+  include_deleted?: boolean;
 }
 
 export interface ValidatedUpload {
@@ -120,6 +124,17 @@ export interface CreateAttachmentInput {
   metadata: Record<string, unknown>;
 }
 
+export interface RetainedAttachmentInput {
+  existing_id: string | number;
+  element_client_ref?: string | null;
+  metadata?: Record<string, unknown>;
+  update_metadata?: boolean;
+}
+
+export type UpdateAttachmentSpec =
+  | ({ kind: "retain" } & RetainedAttachmentInput)
+  | ({ kind: "create" } & CreateAttachmentInput);
+
 export interface CreateFeedbackRecordInput {
   environment: string;
   message: string | null;
@@ -130,6 +145,20 @@ export interface CreateFeedbackRecordInput {
   metadata: Record<string, unknown>;
   element_references: SanitizedElementInput[];
   attachments: CreateAttachmentInput[];
+}
+
+export interface UpdateFeedbackRecordInput {
+  message?: string | null;
+  metadata?: Record<string, unknown>;
+  element_references?: SanitizedElementInput[];
+  attachments?: UpdateAttachmentSpec[];
+}
+
+export interface OwnFeedbackLookupQuery {
+  submitter?: SubmitterIdentity | null;
+  session_id?: string | null;
+  token_ids?: Array<string | number>;
+  limit?: number;
 }
 
 export interface BlobStorageAdapter {
@@ -151,7 +180,16 @@ export interface StorageAdapter {
     total: number;
     records: FeedbackSummaryItem[];
   }>;
+  listOwnFeedbacks(query: OwnFeedbackLookupQuery): Promise<{
+    total: number;
+    records: StoredFeedbackRecord[];
+  }>;
   getFeedback(id: string | number): Promise<StoredFeedbackRecord | null>;
+  updateFeedback(
+    id: string | number,
+    input: UpdateFeedbackRecordInput
+  ): Promise<StoredFeedbackRecord | null>;
+  softDeleteFeedback(id: string | number): Promise<StoredFeedbackRecord | null>;
   getAttachment(attachmentId: string | number): Promise<{
     attachment: StoredAttachment;
     element_selector: string | null;
@@ -162,6 +200,7 @@ export interface StorageAdapter {
     id: string | number,
     status: FeedbackStatus
   ): Promise<{ previous_status: FeedbackStatus; feedback: StoredFeedbackRecord } | null>;
+  getOwnershipSecret?(): Buffer;
 }
 
 export interface RemoteMcpEnvironmentConfig {
@@ -179,6 +218,7 @@ export interface ContextDropServerConfig {
   selectionMode?: "auto" | SelectionMode;
   allowAnonymous?: boolean;
   allowedOrigins?: Array<string | RegExp>;
+  ownershipSecret?: string;
   storage?: StorageAdapter;
   storageDir?: string;
   features?: {
@@ -209,6 +249,8 @@ export interface ContextDropServerConfig {
     submitter: SubmitterIdentity | null
   ) => Promise<boolean> | boolean;
   onFeedbackCreated?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
+  onFeedbackUpdated?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
+  onFeedbackDeleted?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
   mcp?: {
     enabled?: boolean;
     apiKey?: string;
@@ -216,4 +258,3 @@ export interface ContextDropServerConfig {
     environments?: Record<string, RemoteMcpEnvironmentConfig>;
   };
 }
-

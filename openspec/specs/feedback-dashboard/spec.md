@@ -14,12 +14,13 @@ All dashboard routes (`GET /context_drop/dashboard/feedbacks`, `GET /context_dro
 - **THEN** the controller responds with `403 Forbidden` (or `401 Unauthorized`) without rendering any feedback records
 
 ### Requirement: Feedback List & Filtering View
-The engine SHALL provide an index view (`GET /context_drop/dashboard/feedbacks`) displaying paginated feedback submissions ordered newest first, with filtering by `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url` substring, and search query, along with summary badges for attachment counts, element reference counts, and submitter attribution.
+The engine SHALL provide an index view (`GET /context_drop/dashboard/feedbacks`) displaying paginated active feedback submissions ordered newest first, with filtering by `status` (`new`, `reviewed`, `resolved`, `dismissed`, plus an optional `deleted` filter for soft-deleted records), `page_url` substring, and search query, excluding soft-deleted records from default tabs and counts.
 
-#### Scenario: Filtering dashboard feedbacks by status
+#### Scenario: Filtering dashboard feedbacks by status and inspecting soft-deleted records
 - **GIVEN** an authorized developer visits `GET /context_drop/dashboard/feedbacks?status=new`
 - **WHEN** the page renders
-- **THEN** only feedback records with `status: "new"` are listed along with status filter tabs and counts
+- **THEN** only active feedback records with `status: "new"` are listed along with status filter tabs and counts
+- **AND** visiting `GET /context_drop/dashboard/feedbacks?status=deleted` lists only soft-deleted feedback records (`deleted_at` present)
 
 ### Requirement: Feedback Detail, Screenshot Gallery & Element Reference Inspector View
 The engine SHALL provide a detail view (`GET /context_drop/dashboard/feedbacks/:id`) displaying the full feedback `message`, originating `page_url`, `submitter` details, `user_agent`, viewport `metadata`, an image/screenshot gallery rendered via Active Storage, and structured inspector cards for each `ContextDrop::ElementReference` (`tag_name`, `selector`, `dom_path`, `text_content`, `attributes_snapshot`, `bounding_rect`).

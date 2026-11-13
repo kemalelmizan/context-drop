@@ -53,6 +53,9 @@
         Feedback #<%= @feedback.id %>
       </h1>
       <span class="cd-badge cd-badge-<%= @feedback.status %>"><%= @feedback.status %></span>
+      <% if @feedback.respond_to?(:deleted?) && @feedback.deleted? %>
+        <span class="cd-badge cd-badge-deleted">deleted</span>
+      <% end %>
     </div>
   </div>
 
@@ -109,6 +112,12 @@
     <dd style="font-family: var(--cd-font-mono); font-variant-numeric: tabular-nums;">
       <%= @feedback.created_at&.strftime("%Y-%m-%d %H:%M:%S UTC") %>
     </dd>
+    <% if @feedback.respond_to?(:deleted?) && @feedback.deleted? %>
+      <dt>Deleted At</dt>
+      <dd style="font-family: var(--cd-font-mono); font-variant-numeric: tabular-nums; color: #b91c1c;">
+        <%= @feedback.deleted_at_value&.strftime("%Y-%m-%d %H:%M:%S UTC") %>
+      </dd>
+    <% end %>
     <dt>User Agent</dt>
     <dd style="font-size: 0.75rem; color: var(--cd-text-secondary);"><%= @feedback.user_agent.presence || "N/A" %></dd>
     <dt>Metadata</dt>

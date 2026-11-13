@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "securerandom"
 
 module ContextDrop
   class ApplicationController < ActionController::Base
@@ -91,8 +92,19 @@ module ContextDrop
       end
     end
 
-    def hashed_session_identifier
-      raw_id = session.id.to_s if respond_to?(:session) && session.respond_to?(:id) && session.id
+    def hashed_session_identifier(initialize_if_missing: false)
+      raw_id = nil
+      if respond_to?(:session) && session
+        raw_id = session[:cd_sid].to_s if session.respond_to?(:[])
+        if raw_id.to_s.empty? && initialize_if_missing && session.respond_to?(:[]=)
+          generated = SecureRandom.hex(16)
+          session[:cd_sid] = generated
+          raw_id = generated
+        end
+        if raw_id.to_s.empty? && session.respond_to?(:id) && session.id
+          raw_id = session.id.to_s
+        end
+      end
       return nil if raw_id.nil? || raw_id.empty?
 
       Digest::SHA256.hexdigest(raw_id)[0, 32]
@@ -128,10 +140,10 @@ module ContextDrop
       response.set_header("Access-Control-Allow-Origin", origin)
       response.set_header("Vary", "Origin")
       response.set_header("Access-Control-Allow-Credentials", "true")
-      response.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      response.set_header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
       response.set_header(
         "Access-Control-Allow-Headers",
-        "Content-Type, Accept, X-CSRF-Token, X-Context-Drop-Client, Authorization"
+        "Content-Type, Accept, X-CSRF-Token, X-Context-Drop-Client, X-Context-Drop-Ownership-Token, X-Context-Drop-Ownership-Tokens, Authorization"
       )
       response.set_header("Access-Control-Max-Age", "86400")
     end
@@ -144,6 +156,7 @@ module ContextDrop
 
       request.options? ||
         request.headers["X-Context-Drop-Client"].to_s.strip == "1" ||
+        request.headers["X-Context-Drop-Ownership-Token"].to_s.strip.present? ||
         request.content_type.to_s.downcase.start_with?("application/json")
     end
   end

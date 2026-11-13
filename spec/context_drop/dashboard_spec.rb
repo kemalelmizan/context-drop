@@ -127,6 +127,32 @@ RSpec.describe "ContextDrop::Dashboard" do
       expect(body).to include("these menus should be more like this")
       expect(body).not_to include("fix the bug of the dimension data")
     end
+
+    it "excludes soft-deleted feedbacks by default and reveals them under ?status=deleted" do
+      deleted_fb = ContextDrop::Feedback.create!(
+        status: "new",
+        message: "soft-deleted feedback item",
+        page_url: "https://mcp-itpac.gotocompany.net/rails/deleted-page",
+        deleted_at: Time.current
+      )
+
+      session.get "/context_drop/dashboard/feedbacks",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+      expect(session.response.body).not_to include("soft-deleted feedback item")
+      expect(session.response.body).to include("Showing <strong>1–2</strong> of <strong>2</strong> feedbacks")
+
+      session.get "/context_drop/dashboard/feedbacks?status=deleted",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+      expect(session.response.body).to include("soft-deleted feedback item")
+      expect(session.response.body).not_to include("fix the bug of the dimension data")
+
+      session.get "/context_drop/dashboard/feedbacks/#{deleted_fb.id}",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+      expect(session.response.body).to include("Deleted")
+    end
   end
 
   describe "GET /context_drop/dashboard/feedbacks/:id" do

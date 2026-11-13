@@ -2,8 +2,11 @@
 
 import * as React from "react";
 import type {
+  FeedbackDeleteResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
+  FeedbackUpdatePayload,
+  FeedbackUpdateResponse,
   SelectionMode,
   WidgetConfig,
   WidgetPosition
@@ -14,8 +17,11 @@ import {
 } from "../../app/javascript/context_drop/widget.ts";
 
 export type {
+  FeedbackDeleteResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
+  FeedbackUpdatePayload,
+  FeedbackUpdateResponse,
   SelectionMode,
   WidgetConfig,
   WidgetPosition
@@ -92,6 +98,20 @@ export interface ContextDropProps {
     payload: FeedbackSubmissionPayload;
   }) => void;
   /**
+   * Fired after a user updates one of their own feedbacks.
+   */
+  onUpdated?: (event: {
+    response: FeedbackUpdateResponse;
+    payload: FeedbackUpdatePayload;
+  }) => void;
+  /**
+   * Fired after a user soft-deletes one of their own feedbacks.
+   */
+  onDeleted?: (event: {
+    response: FeedbackDeleteResponse;
+    id: number | string;
+  }) => void;
+  /**
    * Fired when a feedback submission fails.
    */
   onError?: (event: { error: string }) => void;
@@ -116,6 +136,8 @@ export const ContextDrop = React.forwardRef<ContextDropHandle, ContextDropProps>
       headers,
       disabled = false,
       onSubmitted,
+      onUpdated,
+      onDeleted,
       onError,
       onOpenChange
     } = props;
@@ -124,9 +146,13 @@ export const ContextDrop = React.forwardRef<ContextDropHandle, ContextDropProps>
     const elementRef = React.useRef<ContextDropWidgetElement | null>(null);
 
     const onSubmittedRef = React.useRef(onSubmitted);
+    const onUpdatedRef = React.useRef(onUpdated);
+    const onDeletedRef = React.useRef(onDeleted);
     const onErrorRef = React.useRef(onError);
     const onOpenChangeRef = React.useRef(onOpenChange);
     onSubmittedRef.current = onSubmitted;
+    onUpdatedRef.current = onUpdated;
+    onDeletedRef.current = onDeleted;
     onErrorRef.current = onError;
     onOpenChangeRef.current = onOpenChange;
 
@@ -180,6 +206,24 @@ export const ContextDrop = React.forwardRef<ContextDropHandle, ContextDropProps>
         }
       };
 
+      const handleUpdate = (ev: Event) => {
+        const detail = (ev as CustomEvent).detail as
+          | { response: FeedbackUpdateResponse; payload: FeedbackUpdatePayload }
+          | undefined;
+        if (detail && onUpdatedRef.current) {
+          onUpdatedRef.current(detail);
+        }
+      };
+
+      const handleDelete = (ev: Event) => {
+        const detail = (ev as CustomEvent).detail as
+          | { response: FeedbackDeleteResponse; id: number | string }
+          | undefined;
+        if (detail && onDeletedRef.current) {
+          onDeletedRef.current(detail);
+        }
+      };
+
       const handleError = (ev: Event) => {
         const detail = (ev as CustomEvent).detail as { error: string } | undefined;
         if (detail && onErrorRef.current) {
@@ -196,12 +240,16 @@ export const ContextDrop = React.forwardRef<ContextDropHandle, ContextDropProps>
       };
 
       el.addEventListener("context-drop:submit", handleSubmit);
+      el.addEventListener("context-drop:update", handleUpdate);
+      el.addEventListener("context-drop:delete", handleDelete);
       el.addEventListener("context-drop:error", handleError);
       el.addEventListener("context-drop:open", handleOpen);
       el.addEventListener("context-drop:close", handleClose);
 
       return () => {
         el.removeEventListener("context-drop:submit", handleSubmit);
+        el.removeEventListener("context-drop:update", handleUpdate);
+        el.removeEventListener("context-drop:delete", handleDelete);
         el.removeEventListener("context-drop:error", handleError);
         el.removeEventListener("context-drop:open", handleOpen);
         el.removeEventListener("context-drop:close", handleClose);

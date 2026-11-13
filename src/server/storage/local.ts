@@ -7,13 +7,15 @@ import type {
   CreateFeedbackRecordInput,
   FeedbackQueryFilter,
   FeedbackStatus,
+  OwnFeedbackLookupQuery,
   StorageAdapter,
   StoredAttachment,
   StoredElementReference,
   StoredFeedbackRecord,
+  UpdateFeedbackRecordInput,
   ValidatedUpload
 } from "../types.ts";
-import { matchesFeedbackFilter, toFeedbackSummary } from "./memory.ts";
+import { matchesFeedbackFilter, matchesOwnFeedback, toFeedbackSummary } from "./memory.ts";
 
 export interface LocalStorageAdapterOptions {
   /**
@@ -27,7 +29,7 @@ export interface LocalStorageAdapterOptions {
    */
   backend?: "auto" | "sqlite" | "json";
   /**
-   * Optional HMAC secret for signing pending upload blob IDs.
+   * Optional HMAC secret for signing pending upload blob IDs and ownership tokens.
    */
   secret?: string;
   /**
@@ -69,7 +71,6 @@ interface JsonStoreShape {
 function tryOpenNodeSqlite(dbPath: string): SqliteDatabaseLike | null {
   try {
     const req = createRequire(import.meta.url);
-    // Suppress Node experimental SQLite warning when probing built-in module
     const sqliteMod = req("node:sqlite") as {
       DatabaseSync?: new (filename: string) => SqliteDatabaseLike;
     };
@@ -195,7 +196,8 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         submitter_json TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_cd_feedbacks_env_status
@@ -230,6 +232,11 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
       );
     `);
 
+    const cols = sqliteDb.prepare("PRAGMA table_info(context_drop_feedbacks)").all();
+    if (!cols.some((c) => String(c["name"]) === "deleted_at")) {
+      sqliteDb.exec("ALTER TABLE context_drop_feedbacks ADD COLUMN deleted_at TEXT;");
+    }
+
     const hydrateFeedbackRow = (row: Record<string, unknown>): StoredFeedbackRecord => {
       const fbId = Number(row["id"]);
       const elRows = sqliteDb
@@ -261,7 +268,7 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
           att["element_reference_id"] !== null && att["element_reference_id"] !== undefined
             ? Number(att["element_reference_id"])
             : null,
-        attachment_type: (att["attachment_type"] === "screenshot" ? "screenshot" : "image"),
+        attachment_type: att["attachment_type"] === "screenshot" ? "screenshot" : "image",
         filename: (att["filename"] as string | null) ?? null,
         content_type: (att["content_type"] as string | null) ?? null,
         byte_size:
@@ -286,11 +293,16 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         element_references: elements,
         attachments,
         created_at: String(row["created_at"]),
-        updated_at: String(row["updated_at"])
+        updated_at: String(row["updated_at"]),
+        deleted_at: (row["deleted_at"] as string | null) ?? null
       };
     };
 
     return {
+      getOwnershipSecret(): Buffer {
+        return secretKey;
+      },
+
       async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
         const rawId = crypto.randomUUID();
         const stored = await blobStore.putBlob({
@@ -445,12 +457,168 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         };
       },
 
+      async listOwnFeedbacks(query: OwnFeedbackLookupQuery) {
+        const limit = Math.max(1, Math.min(50, query.limit ?? 20));
+        const rows = sqliteDb
+          .prepare("SELECT * FROM context_drop_feedbacks WHERE deleted_at IS NULL ORDER BY created_at DESC, id DESC")
+          .all();
+
+        const matching = rows.map(hydrateFeedbackRow).filter((fb) => matchesOwnFeedback(fb, query));
+        return {
+          total: matching.length,
+          records: matching.slice(0, limit)
+        };
+      },
+
       async getFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
         const row = sqliteDb
           .prepare("SELECT * FROM context_drop_feedbacks WHERE id = ?")
           .get(Number(id));
         if (!row) return null;
         return hydrateFeedbackRow(row);
+      },
+
+      async updateFeedback(
+        id: string | number,
+        input: UpdateFeedbackRecordInput
+      ): Promise<StoredFeedbackRecord | null> {
+        const fbId = Number(id);
+        const existing = await this.getFeedback(fbId);
+        if (!existing || existing.deleted_at) return null;
+
+        const now = new Date().toISOString();
+        const nextMessage = input.message !== undefined ? input.message : existing.message;
+        const nextMetadata = input.metadata !== undefined ? input.metadata : existing.metadata;
+
+        sqliteDb
+          .prepare(
+            "UPDATE context_drop_feedbacks SET message = ?, metadata_json = ?, updated_at = ? WHERE id = ?"
+          )
+          .run(nextMessage, JSON.stringify(nextMetadata || {}), now, fbId);
+
+        const elIdByRef = new Map<string, number>();
+        if (input.element_references !== undefined) {
+          sqliteDb
+            .prepare("DELETE FROM context_drop_element_references WHERE feedback_id = ?")
+            .run(fbId);
+
+          const insertElStmt = sqliteDb.prepare(
+            `INSERT INTO context_drop_element_references
+             (feedback_id, client_ref, tag_name, selector, dom_path, text_content, attributes_json, bounding_rect_json, viewport_json, metadata_json, captured_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          input.element_references.forEach((el, idx) => {
+            const elRes = insertElStmt.run(
+              fbId,
+              el.client_ref,
+              el.tag_name,
+              el.selector,
+              el.dom_path,
+              el.text_content,
+              JSON.stringify(el.attributes_snapshot || {}),
+              JSON.stringify(el.bounding_rect || {}),
+              JSON.stringify(el.viewport || {}),
+              JSON.stringify(el.metadata || {}),
+              el.captured_at
+            );
+            elIdByRef.set(el.client_ref || String(idx), Number(elRes.lastInsertRowid));
+          });
+        } else {
+          existing.element_references.forEach((el, idx) => {
+            elIdByRef.set(el.client_ref || String(idx), Number(el.id));
+          });
+        }
+
+        if (input.attachments !== undefined) {
+          const retainedIds = new Set<number>();
+          const prevById = new Map<string, StoredAttachment>();
+          for (const a of existing.attachments) {
+            prevById.set(String(a.id), a);
+          }
+
+          for (const spec of input.attachments) {
+            if (spec.kind === "retain") {
+              const prev = prevById.get(String(spec.existing_id));
+              if (!prev) continue;
+              retainedIds.add(Number(prev.id));
+              const linkedElId =
+                spec.element_client_ref !== undefined
+                  ? spec.element_client_ref
+                    ? elIdByRef.get(spec.element_client_ref) ?? null
+                    : null
+                  : input.element_references === undefined && prev.element_reference_id !== null
+                    ? Number(prev.element_reference_id)
+                    : null;
+              const nextAttMeta =
+                spec.update_metadata && spec.metadata ? spec.metadata : prev.metadata;
+              sqliteDb
+                .prepare(
+                  "UPDATE context_drop_attachments SET element_reference_id = ?, metadata_json = ? WHERE id = ?"
+                )
+                .run(linkedElId, JSON.stringify(nextAttMeta || {}), Number(prev.id));
+            }
+          }
+
+          for (const prev of existing.attachments) {
+            if (!retainedIds.has(Number(prev.id))) {
+              sqliteDb
+                .prepare("DELETE FROM context_drop_attachments WHERE id = ?")
+                .run(Number(prev.id));
+              if (prev.blob_key && blobStore.deleteBlob) {
+                await blobStore.deleteBlob(prev.blob_key);
+              }
+            }
+          }
+
+          const insertAttStmt = sqliteDb.prepare(
+            `INSERT INTO context_drop_attachments
+             (feedback_id, element_reference_id, attachment_type, filename, content_type, byte_size, blob_key, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          for (const spec of input.attachments) {
+            if (spec.kind !== "create") continue;
+            const linkedElId = spec.element_client_ref
+              ? elIdByRef.get(spec.element_client_ref) ?? null
+              : null;
+            let blobKey: string | null = null;
+            if (spec.data) {
+              const saved = await blobStore.putBlob({
+                key: `att_${fbId}_${crypto.randomUUID()}`,
+                data: spec.data,
+                contentType: spec.content_type || "image/png",
+                filename: spec.filename || "attachment.png"
+              });
+              blobKey = saved.key;
+            }
+            insertAttStmt.run(
+              fbId,
+              linkedElId,
+              spec.attachment_type,
+              spec.filename,
+              spec.content_type,
+              spec.byte_size,
+              blobKey,
+              JSON.stringify(spec.metadata || {}),
+              now
+            );
+          }
+        }
+
+        return this.getFeedback(fbId);
+      },
+
+      async softDeleteFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
+        const fbId = Number(id);
+        const existing = await this.getFeedback(fbId);
+        if (!existing || existing.deleted_at) return null;
+
+        const now = new Date().toISOString();
+        sqliteDb
+          .prepare(
+            "UPDATE context_drop_feedbacks SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL"
+          )
+          .run(now, now, fbId);
+        return this.getFeedback(fbId);
       },
 
       async getAttachment(attachmentId: string | number) {
@@ -500,7 +668,7 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
 
       async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {
         const existing = await this.getFeedback(id);
-        if (!existing) return null;
+        if (!existing || existing.deleted_at) return null;
 
         const now = new Date().toISOString();
         sqliteDb
@@ -551,6 +719,10 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
   }
 
   return {
+    getOwnershipSecret(): Buffer {
+      return secretKey;
+    },
+
     async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
       const rawId = crypto.randomUUID();
       const stored = await blobStore.putBlob({
@@ -665,7 +837,8 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         element_references: storedElements,
         attachments: storedAttachments,
         created_at: now,
-        updated_at: now
+        updated_at: now,
+        deleted_at: null
       };
 
       state.feedbacks.push(record);
@@ -691,10 +864,152 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
       };
     },
 
+    async listOwnFeedbacks(query: OwnFeedbackLookupQuery) {
+      const state = readJsonStore();
+      const limit = Math.max(1, Math.min(50, query.limit ?? 20));
+      const matching = state.feedbacks
+        .filter((fb) => matchesOwnFeedback(fb, query))
+        .sort((a, b) => {
+          const dt = Date.parse(b.created_at) - Date.parse(a.created_at);
+          return dt !== 0 ? dt : Number(b.id) - Number(a.id);
+        });
+
+      return {
+        total: matching.length,
+        records: matching.slice(0, limit).map((fb) => structuredClone(fb))
+      };
+    },
+
     async getFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
       const state = readJsonStore();
       const found = state.feedbacks.find((fb) => String(fb.id) === String(id));
       return found ? structuredClone(found) : null;
+    },
+
+    async updateFeedback(
+      id: string | number,
+      input: UpdateFeedbackRecordInput
+    ): Promise<StoredFeedbackRecord | null> {
+      const state = readJsonStore();
+      const found = state.feedbacks.find((fb) => String(fb.id) === String(id));
+      if (!found || found.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      if (input.message !== undefined) {
+        found.message = input.message;
+      }
+      if (input.metadata !== undefined) {
+        found.metadata = { ...input.metadata };
+      }
+
+      const elementsByRef = new Map<string, StoredElementReference>();
+      if (input.element_references !== undefined) {
+        found.element_references = input.element_references.map((el, idx) => {
+          const elRec: StoredElementReference = {
+            id: state.nextElementId++,
+            feedback_id: found.id,
+            client_ref: el.client_ref,
+            tag_name: el.tag_name,
+            selector: el.selector,
+            dom_path: el.dom_path,
+            text_content: el.text_content,
+            attributes_snapshot: { ...el.attributes_snapshot },
+            bounding_rect: { ...el.bounding_rect },
+            viewport: { ...el.viewport },
+            metadata: { ...el.metadata },
+            captured_at: el.captured_at
+          };
+          elementsByRef.set(el.client_ref || String(idx), elRec);
+          return elRec;
+        });
+      } else {
+        found.element_references.forEach((el, idx) => {
+          elementsByRef.set(el.client_ref || String(idx), el);
+        });
+      }
+
+      if (input.attachments !== undefined) {
+        const prevById = new Map<string, StoredAttachment>();
+        for (const a of found.attachments) {
+          prevById.set(String(a.id), a);
+        }
+
+        const nextAttachments: StoredAttachment[] = [];
+        const retainedBlobKeys = new Set<string>();
+
+        for (const spec of input.attachments) {
+          if (spec.kind === "retain") {
+            const prev = prevById.get(String(spec.existing_id));
+            if (!prev) continue;
+            if (prev.blob_key) retainedBlobKeys.add(prev.blob_key);
+            const linkedEl =
+              spec.element_client_ref !== undefined
+                ? spec.element_client_ref
+                  ? elementsByRef.get(spec.element_client_ref) ?? null
+                  : null
+                : input.element_references === undefined
+                  ? found.element_references.find((e) => e.id === prev.element_reference_id) ?? null
+                  : null;
+            nextAttachments.push({
+              ...prev,
+              element_reference_id: linkedEl ? linkedEl.id : null,
+              metadata: spec.update_metadata && spec.metadata ? { ...spec.metadata } : { ...prev.metadata }
+            });
+          } else {
+            const attId = state.nextAttachmentId++;
+            const linkedEl = spec.element_client_ref
+              ? elementsByRef.get(spec.element_client_ref) ?? null
+              : null;
+            let blobKey: string | null = null;
+            if (spec.data) {
+              const saved = await blobStore.putBlob({
+                key: `att_${found.id}_${attId}_${crypto.randomUUID()}`,
+                data: spec.data,
+                contentType: spec.content_type || "image/png",
+                filename: spec.filename || "attachment.png"
+              });
+              blobKey = saved.key;
+              retainedBlobKeys.add(blobKey);
+            }
+            nextAttachments.push({
+              id: attId,
+              feedback_id: found.id,
+              element_reference_id: linkedEl ? linkedEl.id : null,
+              attachment_type: spec.attachment_type,
+              filename: spec.filename,
+              content_type: spec.content_type,
+              byte_size: spec.byte_size,
+              blob_key: blobKey,
+              metadata: { ...spec.metadata },
+              created_at: now
+            });
+          }
+        }
+
+        for (const prev of found.attachments) {
+          if (prev.blob_key && !retainedBlobKeys.has(prev.blob_key) && blobStore.deleteBlob) {
+            await blobStore.deleteBlob(prev.blob_key);
+          }
+        }
+
+        found.attachments = nextAttachments;
+      }
+
+      found.updated_at = now;
+      writeJsonStore(state);
+      return structuredClone(found);
+    },
+
+    async softDeleteFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
+      const state = readJsonStore();
+      const found = state.feedbacks.find((fb) => String(fb.id) === String(id));
+      if (!found || found.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      found.deleted_at = now;
+      found.updated_at = now;
+      writeJsonStore(state);
+      return structuredClone(found);
     },
 
     async getAttachment(attachmentId: string | number) {
@@ -725,7 +1040,7 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
     async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {
       const state = readJsonStore();
       const found = state.feedbacks.find((fb) => String(fb.id) === String(id));
-      if (!found) return null;
+      if (!found || found.deleted_at) return null;
 
       const previous_status = found.status;
       found.status = status;
@@ -739,4 +1054,3 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
     }
   };
 }
-

@@ -59,3 +59,7 @@ export const ICON_SUN = `<svg viewBox="0 0 20 20" width="14" height="14" fill="n
 
 export const ICON_MOON = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>`;
 
+export const ICON_EDIT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.5a1.5 1.5 0 0 1 2.1 2.1L5.8 12.1 2.7 13l.9-3.1 7.6-7.4z"/></svg>`;
+
+export const ICON_TRASH = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 4.5h10.4"/><path d="M6.2 4.5V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.3"/><path d="M4.2 4.5l.6 8.3a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.6-8.3"/></svg>`;
+

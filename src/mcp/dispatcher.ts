@@ -88,6 +88,10 @@ const TOOL_DEFINITIONS = [
         offset: {
           type: "integer",
           description: "Pagination offset (default 0)."
+        },
+        include_deleted: {
+          type: "boolean",
+          description: "When true, includes soft-deleted feedback records. Defaults to false."
         }
       }
     }
@@ -114,6 +118,10 @@ const TOOL_DEFINITIONS = [
           type: "boolean",
           description:
             "When true (default), includes attached screenshots and images as base64 MCP image content blocks."
+        },
+        include_deleted: {
+          type: "boolean",
+          description: "When true, allows retrieving a soft-deleted feedback record. Defaults to false."
         }
       }
     }
@@ -264,6 +272,8 @@ function serializeFullFeedback(record: StoredFeedbackRecord, router: Environment
     metadata: record.metadata ?? {},
     created_at: record.created_at,
     updated_at: record.updated_at,
+    deleted: Boolean(record.deleted_at),
+    deleted_at: record.deleted_at ?? null,
     element_references: record.element_references.map((el) => ({
       id: el.id,
       client_ref: el.client_ref,
@@ -450,6 +460,7 @@ export class ContextDropMcpDispatcher {
 
     const pageUrl = String(args["page_url"] ?? "").trim() || null;
     const query = String(args["query"] ?? "").trim() || null;
+    const includeDeleted = Boolean(args["include_deleted"]);
     const requestedEnv = (String(args["environment"] ?? "").trim().toLowerCase()) || "all";
 
     const remotes = this.router.getRemoteEnvironments();
@@ -462,7 +473,8 @@ export class ContextDropMcpDispatcher {
         page_url: pageUrl,
         query,
         limit: fetchWindow,
-        offset: 0
+        offset: 0,
+        include_deleted: includeDeleted
       });
 
       const remoteEntries = Object.entries(remotes);
@@ -485,7 +497,8 @@ export class ContextDropMcpDispatcher {
               page_url: pageUrl,
               query,
               limit: fetchWindow,
-              offset: 0
+              offset: 0,
+              include_deleted: includeDeleted
             });
           } catch (err) {
             warnings.push({ environment: envName, error: (err as Error).message });
@@ -529,7 +542,8 @@ export class ContextDropMcpDispatcher {
         page_url: pageUrl,
         query,
         limit,
-        offset
+        offset,
+        include_deleted: includeDeleted
       });
       return successJsonTool({
         environment: hostEnv,
@@ -548,7 +562,8 @@ export class ContextDropMcpDispatcher {
           page_url: pageUrl,
           query,
           limit,
-          offset
+          offset,
+          include_deleted: includeDeleted
         });
         return successJsonTool({
           environment: requestedEnv,
@@ -569,7 +584,8 @@ export class ContextDropMcpDispatcher {
       page_url: pageUrl,
       query,
       limit,
-      offset
+      offset,
+      include_deleted: includeDeleted
     });
     if (fallbackRes.total > 0) {
       return successJsonTool({
@@ -596,6 +612,7 @@ export class ContextDropMcpDispatcher {
       query: string | null;
       limit: number;
       offset: number;
+      include_deleted?: boolean;
     }
   ): Promise<{ total: number; records: FeedbackSummaryItem[] }> {
     const remoteArgs: Record<string, unknown> = {
@@ -605,6 +622,7 @@ export class ContextDropMcpDispatcher {
     if (filter.status) remoteArgs["status"] = filter.status;
     if (filter.page_url) remoteArgs["page_url"] = filter.page_url;
     if (filter.query) remoteArgs["query"] = filter.query;
+    if (filter.include_deleted) remoteArgs["include_deleted"] = true;
 
     const toolRes = await this.remoteClient.callTool(envName, cfg, "list_feedbacks", remoteArgs);
     const textBlock = toolRes.content.find((b) => b.type === "text");
@@ -642,6 +660,7 @@ export class ContextDropMcpDispatcher {
 
     const includeImages =
       args["include_images"] !== undefined ? Boolean(args["include_images"]) : true;
+    const includeDeleted = Boolean(args["include_deleted"]);
     const [targetEnv, feedbackId] = this.router.parseTarget(
       rawId as string | number,
       args["environment"] as string | undefined
@@ -652,11 +671,17 @@ export class ContextDropMcpDispatcher {
       if (!remoteCfg || !targetEnv) {
         return errorTool(`Unknown remote environment '${targetEnv}'`);
       }
-      return this.fetchRemoteFeedback(targetEnv, remoteCfg, feedbackId, includeImages);
+      return this.fetchRemoteFeedback(
+        targetEnv,
+        remoteCfg,
+        feedbackId,
+        includeImages,
+        includeDeleted
+      );
     }
 
     const feedback = await this.storage.getFeedback(feedbackId);
-    if (!feedback) {
+    if (!feedback || (!includeDeleted && feedback.deleted_at)) {
       return errorTool(`Feedback #${feedbackId} not found`);
     }
 
@@ -692,13 +717,21 @@ export class ContextDropMcpDispatcher {
     envName: string,
     remoteCfg: NonNullable<ReturnType<EnvironmentRouter["getRemoteConfig"]>>,
     feedbackId: string,
-    includeImages: boolean
+    includeImages: boolean,
+    includeDeleted = false
   ): Promise<McpToolResult> {
     try {
-      const res = await this.remoteClient.callTool(envName, remoteCfg, "get_feedback", {
+      const remoteArgs: Record<string, unknown> = {
         id: feedbackId,
         include_images: includeImages
-      });
+      };
+      if (includeDeleted) remoteArgs["include_deleted"] = true;
+      const res = await this.remoteClient.callTool(
+        envName,
+        remoteCfg,
+        "get_feedback",
+        remoteArgs
+      );
       if (res.isError) return res;
 
       const updatedBlocks = res.content.map((block) => {
@@ -751,6 +784,10 @@ export class ContextDropMcpDispatcher {
 
     const found = await this.storage.getAttachment(attId);
     if (!found) {
+      return errorTool(`Attachment #${attId} not found`);
+    }
+    const parentFb = await this.storage.getFeedback(found.attachment.feedback_id);
+    if (parentFb?.deleted_at) {
       return errorTool(`Attachment #${attId} not found`);
     }
 

@@ -6,26 +6,26 @@ Defines the three engine-owned Active Record models (`ContextDrop::Feedback`, `C
 ## Requirements
 
 ### Requirement: Engine-Owned Feedback Record Persistence (`ContextDrop::Feedback`)
-The engine SHALL persist each feedback submission in `context_drop_feedbacks` (`ContextDrop::Feedback`) with columns `id`, polymorphic `submitter_type` and `submitter_id` (`belongs_to :submitter, polymorphic: true, optional: true`), `session_id` (nullable), `message`, `page_url`, `user_agent`, `metadata` (JSON/JSONB), `status`, `created_at`, and `updated_at`.
+The engine SHALL persist each feedback submission in `context_drop_feedbacks` (`ContextDrop::Feedback`) with columns `id`, polymorphic `submitter_type` and `submitter_id` (`belongs_to :submitter, polymorphic: true, optional: true`), `session_id` (nullable), `environment`, `message`, `page_url`, `user_agent`, `metadata` (JSON/JSONB), `status`, `deleted_at` (nullable soft-delete timestamp), `created_at`, and `updated_at`.
 
 #### Scenario: Persisting feedback with a polymorphic host submitter
 - **GIVEN** an authenticated host user (`User#15`) submits feedback containing a message, originating `page_url`, browser `user_agent`, and viewport `metadata`
 - **WHEN** `ContextDrop::Feedback.create!` is invoked
-- **THEN** the record is saved to `context_drop_feedbacks` with `submitter_type: "User"`, `submitter_id: 15`, and default `status: "new"`
+- **THEN** the record is saved to `context_drop_feedbacks` with `submitter_type: "User"`, `submitter_id: 15`, `deleted_at: nil`, and default `status: "new"`
 
 #### Scenario: Requiring either a non-blank message, an attachment, or an element reference
 - **GIVEN** a feedback submission with a blank `message`, zero `attachments`, and zero `element_references`
 - **WHEN** validation runs on `ContextDrop::Feedback`
 - **THEN** the record is invalid and rejected with a validation error
 
-### Requirement: Feedback Status Lifecycle & Query API
-`ContextDrop::Feedback` SHALL support the statuses `"new"`, `"reviewed"`, `"resolved"`, and `"dismissed"`, and MUST expose query scopes (`new_records`, `reviewed`, `resolved`, `dismissed`, `recent`) and status transition methods (`mark_reviewed!`, `mark_resolved!`, `mark_dismissed!`).
+### Requirement: Feedback Status Lifecycle, Soft Delete & Query API
+`ContextDrop::Feedback` SHALL support the statuses `"new"`, `"reviewed"`, `"resolved"`, and `"dismissed"`, expose active-scoped query scopes (`active`, `deleted`, `new_records`, `reviewed`, `resolved`, `dismissed`, `recent`), status transition methods (`mark_reviewed!`, `mark_resolved!`, `mark_dismissed!`), and soft-delete lifecycle methods (`soft_delete!`, `restore!`, `deleted?`).
 
-#### Scenario: Querying and transitioning feedback status from the host app
-- **GIVEN** two feedback records exist with status `"new"` and one with status `"resolved"`
+#### Scenario: Querying and transitioning feedback status while excluding soft-deleted records
+- **GIVEN** two active feedback records exist with status `"new"`, one active record with `"resolved"`, and one soft-deleted record (`deleted_at` present) with status `"new"`
 - **WHEN** the host application calls `ContextDrop::Feedback.new_records`
-- **THEN** only the two `"new"` feedback records are returned
-- **AND** calling `feedback.mark_reviewed!` updates the record's `status` to `"reviewed"`
+- **THEN** only the two active `"new"` feedback records are returned
+- **AND** calling `feedback.soft_delete!` stamps `deleted_at` without destroying the row, excluding it from `ContextDrop::Feedback.active` while exposing it via `ContextDrop::Feedback.deleted`
 
 ### Requirement: Engine-Owned Binary Attachment Persistence (`ContextDrop::Attachment`)
 The engine SHALL persist binary attachments in `context_drop_attachments` (`ContextDrop::Attachment`) belonging to `ContextDrop::Feedback` (and optionally belonging to a `ContextDrop::ElementReference` for element-scoped screenshots), classified by `attachment_type` (`"image"`, `"screenshot"`, or `"file"`), with structured `metadata` and an Active Storage `has_one_attached :file` blob stored in the host application's Active Storage tables.

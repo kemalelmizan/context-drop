@@ -11,6 +11,11 @@
       <span class="cd-tab-count"><%= @status_counts[status_name] || 0 %></span>
     </a>
   <% end %>
+  <a href="<%= dashboard_feedbacks_path(status: 'deleted', q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+     class="cd-tab <%= 'active' if @current_status == 'deleted' %>">
+    <span>Deleted</span>
+    <span class="cd-tab-count"><%= @status_counts["deleted"] || 0 %></span>
+  </a>
 </div>
 
 <div class="cd-card cd-card-tight">
@@ -80,6 +85,9 @@
               </td>
               <td>
                 <span class="cd-badge cd-badge-<%= fb.status %>"><%= fb.status %></span>
+                <% if fb.respond_to?(:deleted?) && fb.deleted? %>
+                  <span class="cd-badge cd-badge-deleted" style="margin-top: 0.2rem;">deleted</span>
+                <% end %>
               </td>
               <td>
                 <div style="font-weight: 500; color: var(--cd-text); margin-bottom: 0.25rem; line-height: 1.4;">

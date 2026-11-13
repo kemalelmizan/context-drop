@@ -54,6 +54,7 @@ export interface SmartComponentDescription {
 
 export interface PendingAttachmentItem {
   id: string;
+  existing_attachment_id?: number | string;
   attachment_type: "image" | "screenshot";
   label: string;
   preview_url: string;
@@ -65,17 +66,31 @@ export interface PendingAttachmentItem {
   metadata: Record<string, unknown>;
 }
 
+export interface SessionFeedbackAttachmentItem {
+  id: string;
+  server_id?: number | string;
+  label: string;
+  preview_url: string;
+  attachment_type: "image" | "screenshot";
+  filename?: string | null;
+  signed_blob_id?: string;
+  data_url?: string;
+  element_reference_ref?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface SessionFeedbackEntry {
   id: number | string;
   message: string;
+  rawMessage?: string;
   createdAt: string;
+  rawCreatedAt?: string;
+  rawUpdatedAt?: string;
+  isEdited?: boolean;
+  status?: string;
+  ownershipToken?: string;
   elements: ElementReferenceSnapshot[];
-  attachments: Array<{
-    id: string;
-    label: string;
-    preview_url: string;
-    attachment_type: "image" | "screenshot";
-  }>;
+  attachments: SessionFeedbackAttachmentItem[];
 }
 
 export interface ContextDropApiClientOptions {
@@ -127,6 +142,73 @@ export interface FeedbackSubmissionPayload {
   }>;
 }
 
+export interface OwnFeedbackAttachment {
+  id: number | string;
+  attachment_type: "image" | "screenshot";
+  filename: string | null;
+  content_type?: string | null;
+  byte_size?: number | null;
+  element_reference_ref?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface OwnFeedbackRecord {
+  id: number;
+  environment?: string;
+  message: string;
+  page_url?: string;
+  status: string;
+  metadata?: Record<string, unknown>;
+  attachments_count: number;
+  element_references_count: number;
+  element_references: ElementReferenceSnapshot[];
+  attachments: OwnFeedbackAttachment[];
+  created_at: string;
+  updated_at: string;
+  ownership_token?: string;
+}
+
+export interface OwnFeedbackListResponse {
+  total_count: number;
+  feedbacks: OwnFeedbackRecord[];
+}
+
+export interface FeedbackAttachmentUpdateInput {
+  existing_id?: number | string;
+  attachment_type?: "image" | "screenshot";
+  filename?: string;
+  signed_blob_id?: string;
+  data_url?: string;
+  element_reference_ref?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface FeedbackUpdatePayload {
+  message: string;
+  metadata?: Record<string, unknown>;
+  element_references: ElementReferenceSnapshot[];
+  attachments: FeedbackAttachmentUpdateInput[];
+}
+
+export interface FeedbackUpdateResponse {
+  id: number;
+  environment?: string;
+  status: string;
+  attachments_count: number;
+  element_references_count: number;
+  created_at: string;
+  updated_at: string;
+  ownership_token?: string;
+  feedback?: OwnFeedbackRecord;
+}
+
+export interface FeedbackDeleteResponse {
+  id: number;
+  deleted: boolean;
+  deleted_at: string;
+}
+
 export interface FeedbackSubmissionResponse {
   id: number;
   environment?: string;
@@ -134,6 +216,9 @@ export interface FeedbackSubmissionResponse {
   attachments_count: number;
   element_references_count: number;
   created_at: string;
+  updated_at?: string;
+  ownership_token?: string;
+  feedback?: OwnFeedbackRecord;
 }
 
 export interface AgentProviderInfo {

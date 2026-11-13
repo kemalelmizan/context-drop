@@ -132,7 +132,7 @@ function runInitCommand(args: string[], cwd: string = process.cwd()): void {
         [
           'import { createContextDropNextHandler } from "context-drop/next/server";',
           "",
-          "export const { GET, POST, OPTIONS } = createContextDropNextHandler({",
+          "export const { GET, POST, PATCH, PUT, DELETE, OPTIONS } = createContextDropNextHandler({",
           "  mcp: {",
           "    enabled: Boolean(process.env.CONTEXT_DROP_MCP_API_KEY),",
           "    apiKey: process.env.CONTEXT_DROP_MCP_API_KEY",

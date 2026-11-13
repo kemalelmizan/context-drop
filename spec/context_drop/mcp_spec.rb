@@ -20,7 +20,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
 
   class FakeFeedbackRecord
     attr_accessor :id, :status, :message, :page_url, :user_agent, :submitter_type, :submitter_id,
-                  :metadata, :element_references, :attachments, :created_at, :updated_at
+                  :metadata, :element_references, :attachments, :created_at, :updated_at, :deleted_at
 
     def initialize(attrs = {})
       attrs.each { |k, v| public_send("#{k}=", v) }
@@ -29,6 +29,14 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       @metadata ||= {}
       @created_at ||= Time.utc(2026, 11, 9, 12, 0, 0)
       @updated_at ||= @created_at
+    end
+
+    def deleted?
+      !@deleted_at.nil?
+    end
+
+    def deleted_at_value
+      @deleted_at
     end
 
     def submitter_label
@@ -51,6 +59,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
 
     def each(&block) = @records.each(&block)
     def includes(*_args) = self
+    def active = FakeRelation.new(@records.reject(&:deleted?))
     def recent = FakeRelation.new(@records.sort_by { |r| [-r.created_at.to_i, -r.id.to_i] })
     def new_records = where(status: "new")
     def left_outer_joins(*_args) = self
@@ -148,6 +157,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       end)
     end
 
+    ContextDrop::Feedback.define_singleton_method(:active) { FakeRelation.new(records).active }
     ContextDrop::Feedback.define_singleton_method(:includes) { |*_a| FakeRelation.new(records) }
     ContextDrop::Feedback.define_singleton_method(:find_by) { |id:| records.find { |r| r.id.to_s == id.to_s } }
 
@@ -160,6 +170,22 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
           items.find { |a| a.id.to_s == id.to_s }
         end
       end.new(attachments)
+    end
+  end
+
+  after do
+    if defined?(ActiveRecord::Base) && ContextDrop::Feedback < ActiveRecord::Base
+      %i[active includes find_by].each do |m|
+        ContextDrop::Feedback.singleton_class.send(:remove_method, m) if ContextDrop::Feedback.singleton_class.method_defined?(m, false)
+      end
+      ContextDrop::Feedback.scope :active, lambda {
+        column_names.include?("deleted_at") ? where(deleted_at: nil) : all
+      }
+    end
+    if defined?(ActiveRecord::Base) && ContextDrop::Attachment < ActiveRecord::Base
+      if ContextDrop::Attachment.singleton_class.method_defined?(:includes, false)
+        ContextDrop::Attachment.singleton_class.send(:remove_method, :includes)
+      end
     end
   end
 
@@ -198,6 +224,68 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
     expect(parsed["total"]).to eq(1)
     expect(parsed["feedbacks"].first["id"]).to eq(42)
     expect(parsed["feedbacks"].first["element_selectors"]).to eq(["#checkout-button"])
+  end
+
+  it "excludes soft-deleted feedbacks from MCP tools by default and supports include_deleted" do
+    @fb42.deleted_at = Time.utc(2026, 11, 13, 10, 0, 0)
+
+    default_list = ContextDrop::MCP::Dispatcher.call(
+      "jsonrpc" => "2.0",
+      "id" => 31,
+      "method" => "tools/call",
+      "params" => {
+        "name" => "list_feedbacks",
+        "arguments" => { "status" => "new" }
+      }
+    )
+    expect(JSON.parse(default_list[:result][:content].first[:text])["total"]).to eq(0)
+
+    with_deleted_list = ContextDrop::MCP::Dispatcher.call(
+      "jsonrpc" => "2.0",
+      "id" => 32,
+      "method" => "tools/call",
+      "params" => {
+        "name" => "list_feedbacks",
+        "arguments" => { "status" => "new", "include_deleted" => true }
+      }
+    )
+    parsed_with_deleted = JSON.parse(with_deleted_list[:result][:content].first[:text])
+    expect(parsed_with_deleted["total"]).to eq(1)
+    expect(parsed_with_deleted["feedbacks"].first["deleted"]).to eq(true)
+
+    hidden_get = ContextDrop::MCP::Dispatcher.call(
+      "jsonrpc" => "2.0",
+      "id" => 33,
+      "method" => "tools/call",
+      "params" => {
+        "name" => "get_feedback",
+        "arguments" => { "id" => 42 }
+      }
+    )
+    expect(hidden_get[:result][:isError]).to eq(true)
+
+    included_get = ContextDrop::MCP::Dispatcher.call(
+      "jsonrpc" => "2.0",
+      "id" => 34,
+      "method" => "tools/call",
+      "params" => {
+        "name" => "get_feedback",
+        "arguments" => { "id" => 42, "include_deleted" => true }
+      }
+    )
+    expect(included_get[:result][:isError]).to eq(false)
+    expect(JSON.parse(included_get[:result][:content].first[:text])["deleted"]).to eq(true)
+
+    blocked_update = ContextDrop::MCP::Dispatcher.call(
+      "jsonrpc" => "2.0",
+      "id" => 35,
+      "method" => "tools/call",
+      "params" => {
+        "name" => "update_feedback_status",
+        "arguments" => { "id" => 42, "status" => "resolved" }
+      }
+    )
+    expect(blocked_update[:result][:isError]).to eq(true)
   end
 
   it "returns full feedback, ElementReference snapshots, and base64 MCP image blocks via get_feedback" do

@@ -497,6 +497,8 @@ class MockDomElement {
   public autocomplete: string = "";
   public multiple: boolean = false;
   public accept: string = "";
+  public src: string = "";
+  public alt: string = "";
   public scrollTop: number = 0;
   public scrollHeight: number = 0;
   private rawHtml: string = "";
@@ -1609,5 +1611,356 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
         })
       }
     );
+  });
+
+  it("loads own feedbacks on open, edits message + context inline with draft restoration, and emits context-drop:update", async () => {
+    const g = globalThis as Record<string, unknown>;
+    const prevFetch = g.fetch;
+    const apiCalls: Array<{ url: string; method: string; headers: Record<string, string>; body?: unknown }> = [];
+
+    g.fetch = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || "GET").toUpperCase();
+      const headers = (init?.headers as Record<string, string>) || {};
+      const body =
+        typeof init?.body === "string" && init.body.length > 0 ? JSON.parse(init.body) : undefined;
+      apiCalls.push({ url, method, headers, body });
+
+      if (url.includes("/feedback?") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            total_count: 1,
+            feedbacks: [
+              {
+                id: 501,
+                status: "new",
+                message: "Initial checkout button misalignment",
+                page_url: "http://localhost:3000/orders",
+                created_at: "2026-11-13T04:00:00Z",
+                updated_at: "2026-11-13T04:00:00Z",
+                ownership_token: "501.nonceA.sigA",
+                element_references: [
+                  {
+                    id: 11,
+                    client_ref: "el_orig_1",
+                    tag_name: "button",
+                    selector: "#submit-order",
+                    dom_path: "body > button#submit-order",
+                    text_content: "Submit Order",
+                    bounding_rect: { x: 20, y: 40, width: 160, height: 42 }
+                  }
+                ],
+                attachments: [
+                  {
+                    id: 91,
+                    attachment_type: "screenshot",
+                    filename: "orig-shot.png",
+                    content_type: "image/png",
+                    byte_size: 1200,
+                    element_reference_id: 11,
+                    element_client_ref: "el_orig_1",
+                    preview_url: "/context_drop/feedback/501/attachments/91",
+                    metadata: { capture_type: "element" }
+                  }
+                ]
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/feedback/501") && method === "PATCH") {
+        return new Response(
+          JSON.stringify({
+            id: 501,
+            status: "new",
+            attachments_count: 1,
+            element_references_count: 2,
+            ownership_token: "501.nonceA.sigA",
+            updated_at: "2026-11-13T04:05:00Z",
+            feedback: {
+              id: 501,
+              status: "new",
+              message: "Updated: button + coupon field misaligned on Safari",
+              page_url: "http://localhost:3000/orders",
+              created_at: "2026-11-13T04:00:00Z",
+              updated_at: "2026-11-13T04:05:00Z",
+              ownership_token: "501.nonceA.sigA",
+              element_references: [
+                {
+                  id: 12,
+                  client_ref: "el_orig_1",
+                  tag_name: "button",
+                  selector: "#submit-order",
+                  dom_path: "body > button#submit-order"
+                },
+                {
+                  id: 13,
+                  client_ref: "el_added_2",
+                  tag_name: "input",
+                  selector: "#coupon-code",
+                  dom_path: "body > input#coupon-code"
+                }
+              ],
+              attachments: [
+                {
+                  id: 91,
+                  attachment_type: "screenshot",
+                  filename: "orig-shot.png",
+                  content_type: "image/png",
+                  byte_size: 1200,
+                  element_reference_id: 12,
+                  element_client_ref: "el_orig_1",
+                  preview_url: "/context_drop/feedback/501/attachments/91"
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      throw new Error(`Unexpected fetch ${method} ${url}`);
+    };
+
+    try {
+      await withMountedWidget(
+        async ({ widget, shadowRoot, mockBody, mockWindow }) => {
+          const updateEvents: unknown[] = [];
+          widget.addEventListener("context-drop:update", (ev: unknown) => {
+            updateEvents.push((ev as { detail?: unknown }).detail);
+          });
+
+          // Open composer -> triggers lazy GET /feedback sync
+          widget.openComposer();
+          await new Promise((r) => setTimeout(r, 15));
+
+          const chatThread = shadowRoot.querySelector(".cd-chat-thread");
+          const editBanner = shadowRoot.querySelector(".cd-edit-banner");
+          const textarea = shadowRoot.querySelector("[aria-label='Feedback description']");
+          const tray = shadowRoot.querySelector(".cd-tray");
+          assert.ok(chatThread && editBanner && textarea && tray);
+          assert.equal(chatThread.hidden, false);
+          assert.equal(editBanner.hidden, true);
+
+          const msgCard = chatThread.querySelector(".cd-chat-msg");
+          assert.ok(msgCard, "Synced own feedback card is rendered in composer thread");
+
+          // Type an unsent draft before clicking Edit so draft restoration can be verified
+          textarea.value = "Unsent new draft note";
+          textarea.dispatchEvent(new MockUiEvent("input"));
+
+          const editBtn = msgCard.querySelector("[aria-label='Edit feedback']");
+          assert.ok(editBtn);
+          editBtn.dispatchEvent(new MockUiEvent("click"));
+
+          assert.equal(editBanner.hidden, false);
+          assert.equal(textarea.value, "Initial checkout button misalignment");
+          assert.equal(widget.getElementReferences().length, 1);
+          assert.equal(widget.getElementReferences()[0].selector, "#submit-order");
+          assert.equal(widget.getAttachments().length, 1);
+          assert.equal(widget.getAttachments()[0].existing_attachment_id, 91);
+
+          const saveBtn = shadowRoot.querySelector("[aria-label='Save feedback changes']");
+          assert.ok(saveBtn, "Submit button switches aria-label to Save feedback changes");
+
+          // Pressing Escape while editing cancels edit and restores the unsent draft!
+          mockWindow.dispatchEvent(new MockUiEvent("keydown", { key: "Escape" }));
+          assert.equal(editBanner.hidden, true);
+          assert.equal(textarea.value, "Unsent new draft note");
+          assert.equal(widget.getElementReferences().length, 0);
+          assert.equal(widget.getAttachments().length, 0);
+
+          // Re-enter edit mode on #501, pin an additional element, edit text, and click Save
+          const editBtnAgain = shadowRoot.querySelector("[aria-label='Edit feedback']");
+          assert.ok(editBtnAgain);
+          editBtnAgain.dispatchEvent(new MockUiEvent("click"));
+
+          const couponInput = new MockDomElement("input");
+          couponInput.setAttribute("id", "coupon-code");
+          couponInput.setRect({ left: 30, top: 90, width: 200, height: 36 });
+          mockBody.appendChild(couponInput);
+          widget.addElementReference({
+            client_ref: "el_added_2",
+            tag_name: "input",
+            selector: "#coupon-code",
+            dom_path: "body > input#coupon-code",
+            text_content: null,
+            attributes_snapshot: { id: "coupon-code" },
+            bounding_rect: { x: 30, y: 90, width: 200, height: 36 },
+            viewport: { width: 1280, height: 800 },
+            metadata: {},
+            captured_at: "2026-11-13T04:04:00Z"
+          });
+
+          textarea.value = "Updated: button + coupon field misaligned on Safari";
+          textarea.dispatchEvent(new MockUiEvent("input"));
+
+          const activeSaveBtn = shadowRoot.querySelector("[aria-label='Save feedback changes']");
+          assert.ok(activeSaveBtn);
+          activeSaveBtn.dispatchEvent(new MockUiEvent("click"));
+          await new Promise((r) => setTimeout(r, 15));
+
+          const patchCall = apiCalls.find((c) => c.method === "PATCH");
+          assert.ok(patchCall, "PATCH /feedback/501 was sent");
+          assert.equal(patchCall.headers["X-Context-Drop-Ownership-Token"], "501.nonceA.sigA");
+          const patchPayload = (patchCall.body as { feedback: Record<string, unknown> }).feedback;
+          assert.equal(patchPayload.message, "Updated: button + coupon field misaligned on Safari");
+          assert.equal((patchPayload.element_references as unknown[]).length, 2);
+          const sentAtts = patchPayload.attachments as Array<Record<string, unknown>>;
+          assert.equal(sentAtts.length, 1);
+          assert.equal(sentAtts[0].existing_id, 91);
+
+          // Edit mode exited, unsent draft restored, card updated with · edited indicator, event emitted
+          assert.equal(editBanner.hidden, true);
+          assert.equal(textarea.value, "Unsent new draft note");
+          assert.equal(updateEvents.length, 1);
+          const updatedMetaInfo = shadowRoot.querySelector(".cd-chat-msg-meta-info");
+          assert.ok(
+            updatedMetaInfo &&
+              updatedMetaInfo.childNodes.some((n) => n.textContent.includes("edited"))
+          );
+        },
+        {
+          "data-config": JSON.stringify({
+            enabled: true,
+            environment: "staging",
+            position: "bottom_right",
+            csrf_token: "test_csrf_999",
+            agent: { enabled: false }
+          })
+        }
+      );
+    } finally {
+      if (prevFetch === undefined) {
+        delete g.fetch;
+      } else {
+        g.fetch = prevFetch;
+      }
+    }
+  });
+
+  it("soft-deletes own feedback via inline confirmation bar in smart mode without modals and emits context-drop:delete", async () => {
+    const g = globalThis as Record<string, unknown>;
+    const prevFetch = g.fetch;
+    const apiCalls: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+
+    g.fetch = async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method || "GET").toUpperCase();
+      const headers = (init?.headers as Record<string, string>) || {};
+      apiCalls.push({ url, method, headers });
+
+      if (url.includes("/feedback?") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            total_count: 1,
+            feedbacks: [
+              {
+                id: 808,
+                status: "new",
+                message: "Accidental duplicate report",
+                page_url: "http://localhost:3000/orders",
+                created_at: "2026-11-13T05:00:00Z",
+                updated_at: "2026-11-13T05:00:00Z",
+                ownership_token: "808.nonceB.sigB",
+                element_references: [],
+                attachments: []
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/feedback/808") && method === "DELETE") {
+        return new Response(
+          JSON.stringify({
+            id: 808,
+            deleted: true,
+            deleted_at: "2026-11-13T05:01:00Z"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      throw new Error(`Unexpected fetch ${method} ${url}`);
+    };
+
+    try {
+      await withMountedWidget(
+        async ({ widget, shadowRoot }) => {
+          const deleteEvents: unknown[] = [];
+          widget.addEventListener("context-drop:delete", (ev: unknown) => {
+            deleteEvents.push((ev as { detail?: unknown }).detail);
+          });
+
+          widget.openComposer();
+          await new Promise((r) => setTimeout(r, 15));
+
+          const chatThread = shadowRoot.querySelector(".cd-chat-thread");
+          const editBanner = shadowRoot.querySelector(".cd-edit-banner");
+          assert.ok(chatThread && editBanner);
+          assert.equal(chatThread.hidden, false);
+
+          // Start editing #808 first, then trigger Delete to verify deleting cancels active edit cleanly
+          const editBtn = chatThread.querySelector("[aria-label='Edit feedback']");
+          assert.ok(editBtn);
+          editBtn.dispatchEvent(new MockUiEvent("click"));
+          assert.equal(editBanner.hidden, false);
+
+          const deleteBtn = chatThread.querySelector("[aria-label='Delete feedback']");
+          assert.ok(deleteBtn);
+          deleteBtn.dispatchEvent(new MockUiEvent("click"));
+
+          // Inline confirmation bar appears (no browser confirm / modal)
+          let confirmBar = chatThread.querySelector(".cd-msg-delete-confirm");
+          assert.ok(confirmBar, "Inline delete confirmation bar renders inside feedback card");
+
+          // Clicking Cancel dismisses inline confirmation without calling DELETE
+          const cancelDelBtn = confirmBar.querySelector("[aria-label='Cancel delete']");
+          assert.ok(cancelDelBtn);
+          cancelDelBtn.dispatchEvent(new MockUiEvent("click"));
+          assert.equal(chatThread.querySelector(".cd-msg-delete-confirm"), null);
+          assert.equal(apiCalls.some((c) => c.method === "DELETE"), false);
+
+          // Click Delete again, then Confirm delete feedback
+          const deleteBtnAgain = chatThread.querySelector("[aria-label='Delete feedback']");
+          assert.ok(deleteBtnAgain);
+          deleteBtnAgain.dispatchEvent(new MockUiEvent("click"));
+
+          confirmBar = chatThread.querySelector(".cd-msg-delete-confirm");
+          assert.ok(confirmBar);
+          const confirmDelBtn = confirmBar.querySelector("[aria-label='Confirm delete feedback']");
+          assert.ok(confirmDelBtn);
+          confirmDelBtn.dispatchEvent(new MockUiEvent("click"));
+          await new Promise((r) => setTimeout(r, 15));
+
+          const delCall = apiCalls.find((c) => c.method === "DELETE");
+          assert.ok(delCall, "DELETE /feedback/808 was sent");
+          assert.equal(delCall.headers["X-Context-Drop-Ownership-Token"], "808.nonceB.sigB");
+          assert.equal(editBanner.hidden, true, "Active edit banner closes when edited feedback is deleted");
+          assert.equal(chatThread.querySelector(".cd-chat-msg"), null, "Deleted card is removed from thread");
+          assert.ok(chatThread.querySelector(".cd-chat-empty"), "Empty state prompt renders cleanly after delete");
+          assert.equal(deleteEvents.length, 1);
+        },
+        {
+          "data-config": JSON.stringify({
+            enabled: true,
+            environment: "production",
+            position: "bottom_right",
+            csrf_token: "prod_csrf_123",
+            agent: { enabled: false }
+          })
+        }
+      );
+    } finally {
+      if (prevFetch === undefined) {
+        delete g.fetch;
+      } else {
+        g.fetch = prevFetch;
+      }
+    }
   });
 });

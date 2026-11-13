@@ -38,7 +38,9 @@ module ContextDrop
           feedback = ContextDrop::Feedback
                      .includes(:submitter, :element_references, :attachments)
                      .find_by(id: feedback_id)
-          raise ContextDrop::Error, "Feedback ##{feedback_id} not found" unless feedback
+          if !feedback || (feedback.respond_to?(:deleted?) && feedback.deleted?)
+            raise ContextDrop::Error, "Feedback ##{feedback_id} not found"
+          end
 
           env_name = ContextDrop::MCP::EnvironmentRouter.record_environment(feedback)
           qualified = ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, feedback.id)

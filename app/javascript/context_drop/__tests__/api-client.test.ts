@@ -361,3 +361,205 @@ describe("ContextDropApiClient CSRF handling & lazy bootstrap", () => {
     assert.equal(sentHeaders["X-Tenant-Id"], "acme");
   });
 });
+
+describe("ContextDropApiClient own feedback sync, update, soft-delete & ownership tokens", () => {
+  const originalDocument = globalThis.document;
+  const originalWindow = (globalThis as Record<string, unknown>).window;
+  const originalFetch = globalThis.fetch;
+
+  let fetchCalls: Array<{ url: string; options: RequestInit }> = [];
+  let mockFetchHandler: (url: string, options: RequestInit) => Promise<Response>;
+
+  beforeEach(() => {
+    fetchCalls = [];
+    (globalThis as unknown as { document: unknown }).document = {
+      querySelector: (selector: string) =>
+        selector === 'meta[name="csrf-token"]'
+          ? {
+              getAttribute: (name: string) => (name === "content" ? "csrf-tok-1" : null),
+              setAttribute: () => {}
+            }
+          : null
+    };
+
+    mockFetchHandler = async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const options = init || {};
+      fetchCalls.push({ url, options });
+      return mockFetchHandler(url, options);
+    };
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { document: unknown }).document = originalDocument;
+    if (originalWindow === undefined) {
+      delete (globalThis as Record<string, unknown>).window;
+    } else {
+      (globalThis as Record<string, unknown>).window = originalWindow;
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it("persists ownership_token in window.localStorage and falls back cleanly to memory when unavailable", async () => {
+    const storeData = new Map<string, string>();
+    (globalThis as Record<string, unknown>).window = {
+      location: { origin: "http://localhost:3000" },
+      localStorage: {
+        getItem: (k: string) => storeData.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          storeData.set(k, v);
+        },
+        removeItem: (k: string) => {
+          storeData.delete(k);
+        }
+      }
+    };
+
+    mockFetchHandler = async () =>
+      new Response(
+        JSON.stringify({
+          id: 77,
+          status: "new",
+          ownership_token: "77.nonce1.sig1",
+          created_at: "2026-11-13T00:00:00Z"
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+
+    const clientWithStorage = new ContextDropApiClient("/context_drop");
+    await clientWithStorage.submitFeedback({
+      message: "Stored token test",
+      page_url: "http://localhost:3000/app",
+      user_agent: "node-test",
+      metadata: {},
+      element_references: [],
+      attachments: []
+    });
+
+    assert.equal(clientWithStorage.getOwnershipToken(77), "77.nonce1.sig1");
+    assert.ok(storeData.get("context_drop_ownership_tokens")?.includes("77.nonce1.sig1"));
+
+    // Second client sharing localStorage reads persisted token across page reloads
+    const reloadedClient = new ContextDropApiClient("/context_drop");
+    assert.equal(reloadedClient.getOwnershipToken(77), "77.nonce1.sig1");
+    assert.equal(
+      reloadedClient.buildAttachmentPreviewUrl(77, 9),
+      "/context_drop/feedback/77/attachments/9?ownership_token=77.nonce1.sig1"
+    );
+
+    // Without window.localStorage, falls back to in-memory map
+    delete (globalThis as Record<string, unknown>).window;
+    const memoryClient = new ContextDropApiClient("/context_drop");
+    memoryClient.setOwnershipToken(88, "88.nonce2.sig2");
+    assert.equal(memoryClient.getOwnershipToken(88), "88.nonce2.sig2");
+    assert.equal(
+      memoryClient.buildAttachmentPreviewUrl(99, 3),
+      "/context_drop/feedback/99/attachments/3"
+    );
+  });
+
+  it("sends X-Context-Drop-Ownership-Tokens in fetchOwnFeedbacks, retries CSRF on updateFeedback, and clears token on deleteFeedback", async () => {
+    delete (globalThis as Record<string, unknown>).window;
+    const client = new ContextDropApiClient("/context_drop");
+    client.setOwnershipToken(12, "12.n1.s1");
+
+    let patchAttempts = 0;
+    mockFetchHandler = async (url: string, options: RequestInit) => {
+      const method = (options.method || "GET").toUpperCase();
+      if (url.startsWith("/context_drop/feedback?") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            total_count: 1,
+            feedbacks: [
+              {
+                id: 12,
+                status: "new",
+                message: "Existing feedback",
+                page_url: "http://localhost:3000/orders",
+                created_at: "2026-11-13T01:00:00Z",
+                updated_at: "2026-11-13T01:00:00Z",
+                ownership_token: "12.n1.rotated",
+                element_references: [],
+                attachments: []
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.endsWith("/config") && method === "GET") {
+        return new Response(
+          JSON.stringify({ enabled: true, csrf_token: "fresh-csrf-2" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url === "/context_drop/feedback/12" && method === "PATCH") {
+        patchAttempts += 1;
+        if (patchAttempts === 1) {
+          return new Response(
+            JSON.stringify({ error: "Invalid CSRF authenticity token" }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 12,
+            status: "new",
+            attachments_count: 0,
+            element_references_count: 1,
+            ownership_token: "12.n1.rotated",
+            updated_at: "2026-11-13T02:00:00Z"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url === "/context_drop/feedback/12" && method === "DELETE") {
+        return new Response(
+          JSON.stringify({
+            id: 12,
+            deleted: true,
+            deleted_at: "2026-11-13T03:00:00Z"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    };
+
+    const own = await client.fetchOwnFeedbacks(20);
+    assert.equal(own.total_count, 1);
+    assert.equal(
+      (fetchCalls[0].options.headers as Record<string, string>)["X-Context-Drop-Ownership-Tokens"],
+      "12.n1.s1"
+    );
+    assert.equal(client.getOwnershipToken(12), "12.n1.rotated");
+
+    const updated = await client.updateFeedback(12, {
+      message: "Edited feedback text",
+      element_references: [],
+      attachments: []
+    });
+    assert.equal(updated.id, 12);
+    assert.equal(patchAttempts, 2);
+    const patchHeaders = fetchCalls[3].options.headers as Record<string, string>;
+    assert.equal(patchHeaders["X-Context-Drop-Ownership-Token"], "12.n1.rotated");
+    const patchBody = JSON.parse(String(fetchCalls[3].options.body)) as Record<string, unknown>;
+    assert.equal(patchBody.ownership_token, "12.n1.rotated");
+
+    const deleted = await client.deleteFeedback(12);
+    assert.equal(deleted.deleted, true);
+    const deleteHeaders = fetchCalls[4].options.headers as Record<string, string>;
+    assert.equal(deleteHeaders["X-Context-Drop-Ownership-Token"], "12.n1.rotated");
+    assert.equal(client.getOwnershipToken(12), null);
+  });
+});

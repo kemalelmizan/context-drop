@@ -4,10 +4,13 @@ import type {
   FeedbackQueryFilter,
   FeedbackSummaryItem,
   FeedbackStatus,
+  OwnFeedbackLookupQuery,
   StorageAdapter,
   StoredAttachment,
   StoredElementReference,
   StoredFeedbackRecord,
+  SubmitterIdentity,
+  UpdateFeedbackRecordInput,
   ValidatedUpload
 } from "../types.ts";
 
@@ -25,8 +28,55 @@ export function formatSubmitterLabel(submitter: StoredFeedbackRecord["submitter"
   return "Anonymous";
 }
 
+export function hasAuthenticatedSubmitter(submitter?: SubmitterIdentity | null): boolean {
+  if (!submitter) return false;
+  return submitter.id !== undefined && submitter.id !== null && String(submitter.id).trim() !== "";
+}
+
+export function submitterMatches(
+  recordSubmitter?: SubmitterIdentity | null,
+  callerSubmitter?: SubmitterIdentity | null
+): boolean {
+  if (!hasAuthenticatedSubmitter(recordSubmitter) || !hasAuthenticatedSubmitter(callerSubmitter)) {
+    return false;
+  }
+  const recType = String(recordSubmitter?.type || "User").trim();
+  const callerType = String(callerSubmitter?.type || "User").trim();
+  return (
+    recType === callerType &&
+    String(recordSubmitter?.id).trim() === String(callerSubmitter?.id).trim()
+  );
+}
+
+export function matchesOwnFeedback(
+  record: StoredFeedbackRecord,
+  query: OwnFeedbackLookupQuery
+): boolean {
+  if (record.deleted_at) return false;
+
+  if (hasAuthenticatedSubmitter(record.submitter)) {
+    return submitterMatches(record.submitter, query.submitter);
+  }
+
+  if (query.token_ids && query.token_ids.some((tid) => String(tid) === String(record.id))) {
+    return true;
+  }
+
+  if (
+    query.session_id &&
+    query.session_id.trim().length > 0 &&
+    record.session_id &&
+    record.session_id.trim().length > 0 &&
+    query.session_id === record.session_id
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function toFeedbackSummary(record: StoredFeedbackRecord): FeedbackSummaryItem {
-  return {
+  const summary: FeedbackSummaryItem = {
     id: record.id,
     qualified_id: `${record.environment}:${record.id}`,
     environment: record.environment,
@@ -39,12 +89,21 @@ export function toFeedbackSummary(record: StoredFeedbackRecord): FeedbackSummary
     element_selectors: record.element_references.map((el) => el.selector),
     created_at: record.created_at
   };
+  if (record.deleted_at) {
+    summary.deleted = true;
+    summary.deleted_at = record.deleted_at;
+  }
+  return summary;
 }
 
 export function matchesFeedbackFilter(
   record: StoredFeedbackRecord,
   filter: FeedbackQueryFilter
 ): boolean {
+  if (!filter.include_deleted && record.deleted_at) {
+    return false;
+  }
+
   if (filter.environment && filter.environment.trim().length > 0) {
     if (record.environment.toLowerCase() !== filter.environment.trim().toLowerCase()) {
       return false;
@@ -108,6 +167,10 @@ export function createMemoryStorageAdapter(): StorageAdapter {
   }
 
   return {
+    getOwnershipSecret(): Buffer {
+      return secret;
+    },
+
     async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
       const rawId = crypto.randomUUID();
       pendingBlobs.set(rawId, {
@@ -188,7 +251,8 @@ export function createMemoryStorageAdapter(): StorageAdapter {
         element_references: storedElements,
         attachments: storedAttachments,
         created_at: now,
-        updated_at: now
+        updated_at: now,
+        deleted_at: null
       };
 
       feedbacks.set(id, record);
@@ -212,10 +276,143 @@ export function createMemoryStorageAdapter(): StorageAdapter {
       };
     },
 
+    async listOwnFeedbacks(query: OwnFeedbackLookupQuery) {
+      const limit = Math.max(1, Math.min(50, query.limit ?? 20));
+      const matching = Array.from(feedbacks.values())
+        .filter((fb) => matchesOwnFeedback(fb, query))
+        .sort((a, b) => {
+          const dt = Date.parse(b.created_at) - Date.parse(a.created_at);
+          return dt !== 0 ? dt : Number(b.id) - Number(a.id);
+        });
+
+      return {
+        total: matching.length,
+        records: matching.slice(0, limit).map((fb) => structuredClone(fb))
+      };
+    },
+
     async getFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
       const numId = Number(id);
       const found = feedbacks.get(numId);
       return found ? structuredClone(found) : null;
+    },
+
+    async updateFeedback(
+      id: string | number,
+      input: UpdateFeedbackRecordInput
+    ): Promise<StoredFeedbackRecord | null> {
+      const numId = Number(id);
+      const existing = feedbacks.get(numId);
+      if (!existing || existing.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      if (input.message !== undefined) {
+        existing.message = input.message;
+      }
+      if (input.metadata !== undefined) {
+        existing.metadata = { ...input.metadata };
+      }
+
+      const elementsByRef = new Map<string, StoredElementReference>();
+      if (input.element_references !== undefined) {
+        existing.element_references = input.element_references.map((el, idx) => {
+          const elRec: StoredElementReference = {
+            id: nextElementId++,
+            feedback_id: existing.id,
+            client_ref: el.client_ref,
+            tag_name: el.tag_name,
+            selector: el.selector,
+            dom_path: el.dom_path,
+            text_content: el.text_content,
+            attributes_snapshot: { ...el.attributes_snapshot },
+            bounding_rect: { ...el.bounding_rect },
+            viewport: { ...el.viewport },
+            metadata: { ...el.metadata },
+            captured_at: el.captured_at
+          };
+          elementsByRef.set(el.client_ref || String(idx), elRec);
+          return elRec;
+        });
+      } else {
+        existing.element_references.forEach((el, idx) => {
+          elementsByRef.set(el.client_ref || String(idx), el);
+        });
+      }
+
+      if (input.attachments !== undefined) {
+        const prevById = new Map<string, StoredAttachment>();
+        for (const a of existing.attachments) {
+          prevById.set(String(a.id), a);
+        }
+
+        const nextAttachments: StoredAttachment[] = [];
+        const retainedBlobKeys = new Set<string>();
+
+        for (const spec of input.attachments) {
+          if (spec.kind === "retain") {
+            const prev = prevById.get(String(spec.existing_id));
+            if (!prev) continue;
+            if (prev.blob_key) retainedBlobKeys.add(prev.blob_key);
+            const linkedEl =
+              spec.element_client_ref !== undefined
+                ? spec.element_client_ref
+                  ? elementsByRef.get(spec.element_client_ref) ?? null
+                  : null
+                : input.element_references === undefined
+                  ? existing.element_references.find((e) => e.id === prev.element_reference_id) ?? null
+                  : null;
+            nextAttachments.push({
+              ...prev,
+              element_reference_id: linkedEl ? linkedEl.id : null,
+              metadata: spec.update_metadata && spec.metadata ? { ...spec.metadata } : { ...prev.metadata }
+            });
+          } else {
+            const attId = nextAttachmentId++;
+            const linkedEl = spec.element_client_ref
+              ? elementsByRef.get(spec.element_client_ref) ?? null
+              : null;
+            const blobKey = spec.data ? `att_${attId}` : null;
+            if (blobKey && spec.data) {
+              attachmentBlobs.set(blobKey, new Uint8Array(spec.data));
+              retainedBlobKeys.add(blobKey);
+            }
+            nextAttachments.push({
+              id: attId,
+              feedback_id: existing.id,
+              element_reference_id: linkedEl ? linkedEl.id : null,
+              attachment_type: spec.attachment_type,
+              filename: spec.filename,
+              content_type: spec.content_type,
+              byte_size: spec.byte_size,
+              blob_key: blobKey,
+              metadata: { ...spec.metadata },
+              created_at: now
+            });
+          }
+        }
+
+        for (const prev of existing.attachments) {
+          if (prev.blob_key && !retainedBlobKeys.has(prev.blob_key)) {
+            attachmentBlobs.delete(prev.blob_key);
+          }
+        }
+
+        existing.attachments = nextAttachments;
+      }
+
+      existing.updated_at = now;
+      return structuredClone(existing);
+    },
+
+    async softDeleteFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
+      const numId = Number(id);
+      const existing = feedbacks.get(numId);
+      if (!existing || existing.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      existing.deleted_at = now;
+      existing.updated_at = now;
+      return structuredClone(existing);
     },
 
     async getAttachment(attachmentId: string | number) {
@@ -246,7 +443,7 @@ export function createMemoryStorageAdapter(): StorageAdapter {
     async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {
       const numId = Number(id);
       const existing = feedbacks.get(numId);
-      if (!existing) return null;
+      if (!existing || existing.deleted_at) return null;
 
       const previous_status = existing.status;
       existing.status = status;
@@ -258,4 +455,3 @@ export function createMemoryStorageAdapter(): StorageAdapter {
     }
   };
 }
-

@@ -32,12 +32,12 @@ When `ContextDrop.config.mcp_enabled` is `true`, `ContextDrop::Engine` SHALL exp
 - **THEN** the engine executes the MCP request and responds with `200 OK` and a JSON-RPC 2.0 result payload
 
 ### Requirement: Feedback Listing & Search Tool (`list_feedbacks`)
-The MCP server SHALL expose a `list_feedbacks` tool that filters `ContextDrop::Feedback` records by `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url` substring, free-text `query` (matching `message` or associated `ContextDrop::ElementReference` selectors/text), `limit` (default `20`, maximum `100`), and `offset`, ordered newest first.
+The MCP server SHALL expose a `list_feedbacks` tool that filters active `ContextDrop::Feedback` records by default (`deleted_at IS NULL`, unless `include_deleted: true` is passed) by `status` (`new`, `reviewed`, `resolved`, `dismissed`), `page_url` substring, free-text `query` (matching `message` or associated `ContextDrop::ElementReference` selectors/text), `limit` (default `20`, maximum `100`), and `offset`, ordered newest first.
 
 #### Scenario: Filtering unresolved feedbacks for a specific page
-- **GIVEN** the database contains feedback records across `/checkout` and `/settings` with statuses `"new"` and `"resolved"`
+- **GIVEN** the database contains active and soft-deleted feedback records across `/checkout` and `/settings` with statuses `"new"` and `"resolved"`
 - **WHEN** an IDE agent invokes the MCP tool `list_feedbacks` with `{ "status": "new", "page_url": "/checkout" }`
-- **THEN** the tool returns only the `"new"` feedback records matching `/checkout`, including each record's `id`, `message`, `page_url`, `status`, `created_at`, attachment counts, and attached `ElementReference` selectors
+- **THEN** the tool returns only the active `"new"` feedback records matching `/checkout` (excluding soft-deleted records unless `include_deleted: true` is specified), including each record's `id`, `message`, `page_url`, `status`, `created_at`, attachment counts, and attached `ElementReference` selectors
 
 ### Requirement: Full Feedback Context & Multimodal Screenshot Retrieval (`get_feedback` & `get_feedback_attachment`)
 The MCP server SHALL expose `get_feedback` and `get_feedback_attachment` tools that return the complete `ContextDrop::Feedback` record, viewport/environment metadata, all `ContextDrop::ElementReference` records (`tag_name`, `selector`, `dom_path`, `text_content`, `attributes_snapshot`, `bounding_rect`), and binary `ContextDrop::Attachment` screenshots/images encoded as MCP `image` base64 content blocks so multimodal coding agents can inspect visual bugs alongside DOM selectors.

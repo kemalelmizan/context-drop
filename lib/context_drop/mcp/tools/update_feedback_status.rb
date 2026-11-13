@@ -76,7 +76,9 @@ module ContextDrop
           end
 
           feedback = ContextDrop::Feedback.find_by(id: feedback_id)
-          return error_result("Feedback ##{feedback_id} not found") unless feedback
+          if !feedback || (feedback.respond_to?(:deleted?) && feedback.deleted?)
+            return error_result("Feedback ##{feedback_id} not found")
+          end
 
           previous_status = feedback.status
           feedback.update!(status: next_status)

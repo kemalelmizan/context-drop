@@ -45,6 +45,9 @@ module ContextDrop
 
           attachment = ContextDrop::Attachment.includes(:element_reference).find_by(id: att_id)
           return error_result("Attachment ##{att_id} not found") unless attachment
+          if attachment.respond_to?(:feedback) && attachment.feedback.respond_to?(:deleted?) && attachment.feedback.deleted?
+            return error_result("Attachment ##{att_id} not found")
+          end
 
           env_name = ContextDrop::MCP::EnvironmentRouter.host_environment
           attached = attachment.respond_to?(:file) && attachment.file.attached?

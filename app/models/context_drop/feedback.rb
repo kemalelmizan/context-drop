@@ -8,22 +8,28 @@ module ContextDrop
 
     belongs_to :submitter, polymorphic: true, optional: true
 
-    has_many :attachments,
-             class_name: "ContextDrop::Attachment",
-             foreign_key: :feedback_id,
-             inverse_of: :feedback,
-             dependent: :destroy
-
     has_many :element_references,
              class_name: "ContextDrop::ElementReference",
              foreign_key: :feedback_id,
              inverse_of: :feedback,
              dependent: :destroy
 
-    scope :new_records, -> { where(status: "new") }
-    scope :reviewed, -> { where(status: "reviewed") }
-    scope :resolved, -> { where(status: "resolved") }
-    scope :dismissed, -> { where(status: "dismissed") }
+    has_many :attachments,
+             class_name: "ContextDrop::Attachment",
+             foreign_key: :feedback_id,
+             inverse_of: :feedback,
+             dependent: :destroy
+
+    scope :active, lambda {
+      column_names.include?("deleted_at") ? where(deleted_at: nil) : all
+    }
+    scope :deleted, lambda {
+      column_names.include?("deleted_at") ? where.not(deleted_at: nil) : none
+    }
+    scope :new_records, -> { active.where(status: "new") }
+    scope :reviewed, -> { active.where(status: "reviewed") }
+    scope :resolved, -> { active.where(status: "resolved") }
+    scope :dismissed, -> { active.where(status: "dismissed") }
     scope :recent, -> { order(created_at: :desc, id: :desc) }
     scope :for_environment, lambda { |env|
       normalized = env.to_s.strip.downcase
@@ -51,6 +57,57 @@ module ContextDrop
 
     def mark_dismissed!
       update!(status: "dismissed")
+    end
+
+    def deleted?
+      if has_attribute?(:deleted_at)
+        !self[:deleted_at].nil?
+      elsif metadata.is_a?(Hash)
+        metadata["deleted_at"].present?
+      else
+        false
+      end
+    end
+
+    def deleted_at_value
+      if has_attribute?(:deleted_at)
+        self[:deleted_at]
+      elsif metadata.is_a?(Hash) && metadata["deleted_at"].present?
+        begin
+          Time.iso8601(metadata["deleted_at"].to_s)
+        rescue ArgumentError
+          nil
+        end
+      end
+    end
+
+    def soft_delete!(timestamp = Time.current)
+      if has_attribute?(:deleted_at)
+        update_columns(deleted_at: timestamp, updated_at: timestamp)
+        self[:deleted_at] = timestamp
+        self[:updated_at] = timestamp
+      else
+        next_meta = (metadata.is_a?(Hash) ? metadata.dup : {}).merge("deleted_at" => timestamp.utc.iso8601)
+        update_columns(metadata: next_meta, updated_at: timestamp)
+        self[:metadata] = next_meta
+        self[:updated_at] = timestamp
+      end
+      true
+    end
+
+    def restore!
+      now = Time.current
+      if has_attribute?(:deleted_at)
+        update_columns(deleted_at: nil, updated_at: now)
+        self[:deleted_at] = nil
+        self[:updated_at] = now
+      elsif metadata.is_a?(Hash)
+        next_meta = metadata.except("deleted_at")
+        update_columns(metadata: next_meta, updated_at: now)
+        self[:metadata] = next_meta
+        self[:updated_at] = now
+      end
+      true
     end
 
     def environment_name

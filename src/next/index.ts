@@ -11,8 +11,11 @@ import {
 export type {
   ContextDropHandle,
   ContextDropProps,
+  FeedbackDeleteResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
+  FeedbackUpdatePayload,
+  FeedbackUpdateResponse,
   SelectionMode,
   WidgetConfig,
   WidgetPosition

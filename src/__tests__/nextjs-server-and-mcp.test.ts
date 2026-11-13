@@ -817,3 +817,443 @@ describe("CLI init, .env.local loader, and compiled dist subpath exports", () =>
   });
 });
 
+describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", () => {
+  it("supports GET /feedback, PATCH /feedback/:id, DELETE /feedback/:id, attachment preview, and strict IDOR protection in Next.js App & Pages Routers", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-own-fb-sqlite-"));
+    try {
+      const storage = createLocalStorageAdapter({
+        dir: tmpDir,
+        backend: "sqlite"
+      });
+
+      const updatedIds: Array<number | string> = [];
+      const deletedIds: Array<number | string> = [];
+
+      const handler = createContextDropNextHandler({
+        environment: "staging",
+        ownershipSecret: "test-nextjs-hmac-secret-key-999",
+        storage,
+        onFeedbackUpdated: (fb) => {
+          updatedIds.push(fb.id);
+        },
+        onFeedbackDeleted: (fb) => {
+          deletedIds.push(fb.id);
+        }
+      });
+
+      // 1. Create feedback with 1 element + 1 PNG attachment
+      const createRes = await handler.POST(
+        new Request("http://localhost:3000/api/context-drop/feedback", {
+          method: "POST",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            feedback: {
+              message: "Original pricing badge clipped",
+              page_url: "http://localhost:3000/pricing",
+              user_agent: "NodeTest",
+              element_references: [
+                {
+                  client_ref: "el_1",
+                  tag_name: "span",
+                  selector: ".price-badge",
+                  dom_path: "body > .price-badge",
+                  text_content: "$49/mo",
+                  bounding_rect: { x: 12, y: 24, width: 80, height: 24 }
+                }
+              ],
+              attachments: [
+                {
+                  attachment_type: "screenshot",
+                  filename: "badge-1.png",
+                  data_url: `data:image/png;base64,${VALID_1X1_PNG_BASE64}`,
+                  element_reference_ref: "el_1",
+                  metadata: { capture_type: "element" }
+                }
+              ]
+            }
+          })
+        })
+      );
+      assert.equal(createRes.status, 201);
+      const setCookie = createRes.headers.get("Set-Cookie") || "";
+      assert.ok(setCookie.includes("cd_session="));
+
+      const created = (await createRes.json()) as {
+        id: number;
+        ownership_token: string;
+        feedback: { attachments: Array<{ id: number }> };
+      };
+      const fbId = created.id;
+      const ownershipToken = created.ownership_token;
+      const firstAttId = created.feedback.attachments[0]?.id;
+      assert.ok(ownershipToken && firstAttId);
+
+      // 2. Stranger without cookie or token gets empty list and 403 on PATCH / DELETE / attachment preview
+      const strangerListRes = await handler.GET(
+        new Request("http://localhost:3000/api/context-drop/feedback")
+      );
+      assert.equal(strangerListRes.status, 200);
+      assert.deepEqual(
+        ((await strangerListRes.json()) as { feedbacks: unknown[] }).feedbacks,
+        []
+      );
+
+      const strangerPatchRes = await handler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ feedback: { message: "Hijacked" } })
+        })
+      );
+      assert.equal(strangerPatchRes.status, 403);
+
+      const strangerDelRes = await handler.DELETE(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "DELETE",
+          headers: { Origin: "http://localhost:3000" }
+        })
+      );
+      assert.equal(strangerDelRes.status, 403);
+
+      const strangerAttRes = await handler.GET(
+        new Request(
+          `http://localhost:3000/api/context-drop/feedback/${fbId}/attachments/${firstAttId}`
+        )
+      );
+      assert.equal(strangerAttRes.status, 403);
+
+      // 3. Owner with signed ownership_token lists own feedback and previews inline attachment safely
+      const ownListRes = await handler.GET(
+        new Request("http://localhost:3000/api/context-drop/feedback?limit=10", {
+          headers: {
+            "X-Context-Drop-Ownership-Tokens": ownershipToken
+          }
+        })
+      );
+      assert.equal(ownListRes.status, 200);
+      const ownList = (await ownListRes.json()) as {
+        total_count: number;
+        feedbacks: Array<{ id: number }>;
+      };
+      assert.equal(ownList.total_count, 1);
+      assert.equal(ownList.feedbacks[0]?.id, fbId);
+
+      const previewRes = await handler.GET(
+        new Request(
+          `http://localhost:3000/api/context-drop/feedback/${fbId}/attachments/${firstAttId}?ownership_token=${encodeURIComponent(ownershipToken)}`
+        )
+      );
+      assert.equal(previewRes.status, 200);
+      assert.equal(previewRes.headers.get("Content-Type"), "image/png");
+      assert.ok((previewRes.headers.get("Content-Security-Policy") || "").includes("sandbox"));
+      const previewBytes = new Uint8Array(await previewRes.arrayBuffer());
+      assert.equal(previewBytes.byteLength, VALID_1X1_PNG_BYTES.byteLength);
+
+      // 4. Update message + element_references + retain existing attachment + add a 2nd attachment
+      const patchRes = await handler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Context-Drop-Ownership-Token": ownershipToken
+          },
+          body: JSON.stringify({
+            feedback: {
+              message: "Updated: clipped on both tablet and mobile viewports",
+              element_references: [
+                {
+                  client_ref: "el_1",
+                  tag_name: "span",
+                  selector: ".price-badge",
+                  dom_path: "body > .price-badge",
+                  bounding_rect: { x: 12, y: 24, width: 80, height: 24 }
+                },
+                {
+                  client_ref: "el_2",
+                  tag_name: "div",
+                  selector: ".plan-card",
+                  dom_path: "body > .plan-card",
+                  bounding_rect: { x: 0, y: 0, width: 320, height: 400 }
+                }
+              ],
+              attachments: [
+                {
+                  existing_id: firstAttId,
+                  attachment_type: "screenshot",
+                  element_reference_ref: "el_1"
+                },
+                {
+                  attachment_type: "image",
+                  filename: "mobile-shot.png",
+                  data_url: `data:image/png;base64,${VALID_1X1_PNG_BASE64}`,
+                  element_reference_ref: "el_2"
+                }
+              ]
+            }
+          })
+        })
+      );
+      assert.equal(patchRes.status, 200);
+      const patched = (await patchRes.json()) as {
+        element_references_count: number;
+        attachments_count: number;
+        feedback: { message: string };
+      };
+      assert.equal(patched.element_references_count, 2);
+      assert.equal(patched.attachments_count, 2);
+      assert.equal(
+        patched.feedback.message,
+        "Updated: clipped on both tablet and mobile viewports"
+      );
+      assert.deepEqual(updatedIds, [fbId]);
+
+      // 5. Reject emptying both message & all context (422) and cross-feedback existing_id (422)
+      const emptyPatchRes = await handler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Context-Drop-Ownership-Token": ownershipToken
+          },
+          body: JSON.stringify({
+            feedback: {
+              message: "   ",
+              element_references: [],
+              attachments: []
+            }
+          })
+        })
+      );
+      assert.equal(emptyPatchRes.status, 422);
+
+      const foreignAttPatchRes = await handler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Context-Drop-Ownership-Token": ownershipToken
+          },
+          body: JSON.stringify({
+            feedback: {
+              message: "Valid text",
+              attachments: [{ existing_id: 999999 }]
+            }
+          })
+        })
+      );
+      assert.equal(foreignAttPatchRes.status, 422);
+
+      // 6. Soft-delete via Pages Router handler to verify Pages Router PATCH/DELETE parity too
+      const pagesHandler = createContextDropPagesHandler({
+        environment: "staging",
+        ownershipSecret: "test-nextjs-hmac-secret-key-999",
+        storage,
+        onFeedbackDeleted: (fb) => {
+          deletedIds.push(fb.id);
+        }
+      });
+
+      let pagesStatus = 0;
+      const pagesChunks: Buffer[] = [];
+      const mockReq = Object.assign(Readable.from([]), {
+        method: "DELETE",
+        url: `/api/context-drop/feedback/${fbId}`,
+        headers: {
+          host: "localhost:3000",
+          origin: "http://localhost:3000",
+          "x-context-drop-ownership-token": ownershipToken
+        }
+      }) as unknown as IncomingMessage;
+
+      const mockRes = {
+        statusCode: 200,
+        setHeader: () => {},
+        end: (chunk?: Buffer | string) => {
+          pagesStatus = mockRes.statusCode;
+          if (chunk) pagesChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+      } as unknown as ServerResponse;
+
+      await pagesHandler(mockReq, mockRes);
+      assert.equal(pagesStatus, 200);
+      const delJson = JSON.parse(Buffer.concat(pagesChunks).toString("utf8")) as {
+        deleted: boolean;
+      };
+      assert.equal(delJson.deleted, true);
+      assert.deepEqual(deletedIds, [fbId]);
+
+      // Excluded from GET /feedback, 404 on repeat DELETE and 404 on attachment preview
+      const afterDelList = await handler.GET(
+        new Request("http://localhost:3000/api/context-drop/feedback", {
+          headers: { "X-Context-Drop-Ownership-Tokens": ownershipToken }
+        })
+      );
+      assert.deepEqual(((await afterDelList.json()) as { feedbacks: unknown[] }).feedbacks, []);
+
+      const repeatDel = await handler.DELETE(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${fbId}`, {
+          method: "DELETE",
+          headers: {
+            Origin: "http://localhost:3000",
+            "X-Context-Drop-Ownership-Token": ownershipToken
+          }
+        })
+      );
+      assert.equal(repeatDel.status, 404);
+
+      // 7. MCP excludes soft-deleted feedback by default and inspects on demand with include_deleted: true
+      const mcp = new ContextDropMcpDispatcher({
+        storage,
+        hostEnvironment: "staging"
+      });
+
+      const defaultMcpList = await mcp.dispatch({
+        jsonrpc: "2.0",
+        id: 71,
+        method: "tools/call",
+        params: { name: "list_feedbacks", arguments: {} }
+      });
+      assert.ok(defaultMcpList && !Array.isArray(defaultMcpList));
+      assert.equal(
+        (
+          JSON.parse(
+            (defaultMcpList.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}"
+          ) as { total: number }
+        ).total,
+        0
+      );
+
+      const withDeletedMcpList = await mcp.dispatch({
+        jsonrpc: "2.0",
+        id: 72,
+        method: "tools/call",
+        params: { name: "list_feedbacks", arguments: { include_deleted: true } }
+      });
+      assert.ok(withDeletedMcpList && !Array.isArray(withDeletedMcpList));
+      const parsedWithDel = JSON.parse(
+        (withDeletedMcpList.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}"
+      ) as { total: number; feedbacks: Array<{ deleted?: boolean }> };
+      assert.equal(parsedWithDel.total, 1);
+      assert.equal(parsedWithDel.feedbacks[0]?.deleted, true);
+
+      const hiddenGet = await mcp.dispatch({
+        jsonrpc: "2.0",
+        id: 73,
+        method: "tools/call",
+        params: { name: "get_feedback", arguments: { id: fbId } }
+      });
+      assert.ok(hiddenGet && !Array.isArray(hiddenGet));
+      assert.equal((hiddenGet.result as { isError: boolean }).isError, true);
+
+      const includedGet = await mcp.dispatch({
+        jsonrpc: "2.0",
+        id: 74,
+        method: "tools/call",
+        params: { name: "get_feedback", arguments: { id: fbId, include_deleted: true } }
+      });
+      assert.ok(includedGet && !Array.isArray(includedGet));
+      assert.equal((includedGet.result as { isError: boolean }).isError, false);
+      assert.equal(
+        (
+          JSON.parse(
+            (includedGet.result as { content: Array<{ text: string }> }).content[0]?.text ?? "{}"
+          ) as { deleted: boolean }
+        ).deleted,
+        true
+      );
+
+      const blockedStatus = await mcp.dispatch({
+        jsonrpc: "2.0",
+        id: 75,
+        method: "tools/call",
+        params: {
+          name: "update_feedback_status",
+          arguments: { id: fbId, status: "resolved" }
+        }
+      });
+      assert.ok(blockedStatus && !Array.isArray(blockedStatus));
+      assert.equal((blockedStatus.result as { isError: boolean }).isError, true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces authenticated resolveSubmitter isolation and JSON LocalStorageAdapter parity", async () => {
+    const tmpJsonDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-own-fb-json-"));
+    try {
+      const jsonStorage = createLocalStorageAdapter({
+        dir: tmpJsonDir,
+        backend: "json"
+      });
+
+      let activeUserId = "user_alpha";
+      const authHandler = createContextDropNextHandler({
+        environment: "production",
+        ownershipSecret: "auth-secret-test-key",
+        storage: jsonStorage,
+        resolveSubmitter: () => ({ type: "User", id: activeUserId, label: activeUserId })
+      });
+
+      // User alpha creates feedback
+      const alphaCreate = await authHandler.POST(
+        new Request("http://localhost:3000/api/context-drop/feedback", {
+          method: "POST",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            feedback: {
+              message: "Alpha user report",
+              page_url: "http://localhost:3000/dashboard"
+            }
+          })
+        })
+      );
+      assert.equal(alphaCreate.status, 201);
+      const alphaBody = (await alphaCreate.json()) as {
+        id: number;
+        ownership_token: string;
+      };
+
+      // Switch authenticated user to user_beta: even with alpha's ownership_token, PATCH must return 403!
+      activeUserId = "user_beta";
+      const crossUserPatch = await authHandler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${alphaBody.id}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Context-Drop-Ownership-Token": alphaBody.ownership_token
+          },
+          body: JSON.stringify({ feedback: { message: "Beta tamper attempt" } })
+        })
+      );
+      assert.equal(crossUserPatch.status, 403);
+
+      // Switch back to user_alpha: GET /feedback finds own record without needing any token header!
+      activeUserId = "user_alpha";
+      const alphaOwn = await authHandler.GET(
+        new Request("http://localhost:3000/api/context-drop/feedback")
+      );
+      assert.equal(alphaOwn.status, 200);
+      assert.equal(
+        ((await alphaOwn.json()) as { total_count: number }).total_count,
+        1
+      );
+    } finally {
+      fs.rmSync(tmpJsonDir, { recursive: true, force: true });
+    }
+  });
+});
+
+

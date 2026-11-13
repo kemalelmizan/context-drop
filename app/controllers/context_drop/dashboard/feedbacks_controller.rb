@@ -13,21 +13,23 @@ module ContextDrop
 
       def index
         @status_counts = {
-          "all" => ContextDrop::Feedback.count,
+          "all" => ContextDrop::Feedback.active.count,
           "new" => ContextDrop::Feedback.new_records.count,
           "reviewed" => ContextDrop::Feedback.reviewed.count,
           "resolved" => ContextDrop::Feedback.resolved.count,
-          "dismissed" => ContextDrop::Feedback.dismissed.count
+          "dismissed" => ContextDrop::Feedback.dismissed.count,
+          "deleted" => ContextDrop::Feedback.deleted.count
         }
 
-        scope = ContextDrop::Feedback.includes(:element_references, :attachments).recent
-
         @current_status = params[:status].to_s.strip
-        if ContextDrop::Feedback::STATUSES.include?(@current_status)
-          scope = scope.where(status: @current_status)
-        else
-          @current_status = ""
-        end
+        scope = if @current_status == "deleted"
+                  ContextDrop::Feedback.deleted.includes(:element_references, :attachments).recent
+                elsif ContextDrop::Feedback::STATUSES.include?(@current_status)
+                  ContextDrop::Feedback.active.where(status: @current_status).includes(:element_references, :attachments).recent
+                else
+                  @current_status = ""
+                  ContextDrop::Feedback.active.includes(:element_references, :attachments).recent
+                end
 
         @page_url_filter = params[:page_url].to_s.strip
         if @page_url_filter.present?
@@ -59,8 +61,10 @@ module ContextDrop
                     .includes(:element_references, :attachments)
                     .find(params[:id])
 
+        nav_scope = @feedback.deleted? ? ContextDrop::Feedback.deleted : ContextDrop::Feedback.active
+
         # Newer feedback (previous in chronological newest-first list) and older feedback (next in list)
-        @newer_feedback = ContextDrop::Feedback
+        @newer_feedback = nav_scope
                           .where(
                             "created_at > :ts OR (created_at = :ts AND id > :id)",
                             ts: @feedback.created_at,
@@ -70,7 +74,7 @@ module ContextDrop
                           .select(:id, :status)
                           .first
 
-        @older_feedback = ContextDrop::Feedback
+        @older_feedback = nav_scope
                           .where(
                             "created_at < :ts OR (created_at = :ts AND id < :id)",
                             ts: @feedback.created_at,

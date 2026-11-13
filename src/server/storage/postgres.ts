@@ -4,13 +4,15 @@ import type {
   CreateFeedbackRecordInput,
   FeedbackQueryFilter,
   FeedbackStatus,
+  OwnFeedbackLookupQuery,
   StorageAdapter,
   StoredAttachment,
   StoredElementReference,
   StoredFeedbackRecord,
+  UpdateFeedbackRecordInput,
   ValidatedUpload
 } from "../types.ts";
-import { toFeedbackSummary } from "./memory.ts";
+import { hasAuthenticatedSubmitter, toFeedbackSummary } from "./memory.ts";
 
 export interface PostgresQueryResult<Row = Record<string, unknown>> {
   rows: Row[];
@@ -30,7 +32,7 @@ export interface PostgresStorageAdapterOptions {
    */
   autoMigrate?: boolean;
   /**
-   * Optional HMAC secret for signing pending upload blob IDs (`process.env.CONTEXT_DROP_SECRET` used if omitted).
+   * Optional HMAC secret for signing pending upload blob IDs and ownership tokens (`process.env.CONTEXT_DROP_SECRET` used if omitted).
    */
   secret?: string;
   /**
@@ -133,8 +135,14 @@ export function createPostgresStorageAdapter(
             submitter JSONB NOT NULL DEFAULT '{}'::jsonb,
             metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            deleted_at TIMESTAMPTZ
           );
+        `);
+
+        await pool.query(`
+          ALTER TABLE context_drop_feedbacks
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
         `);
 
         await pool.query(`
@@ -247,11 +255,16 @@ export function createPostgresStorageAdapter(
       element_references: elements,
       attachments,
       created_at: toIsoString(row["created_at"]),
-      updated_at: toIsoString(row["updated_at"])
+      updated_at: toIsoString(row["updated_at"]),
+      deleted_at: row["deleted_at"] ? toIsoString(row["deleted_at"]) : null
     };
   }
 
   return {
+    getOwnershipSecret(): Buffer {
+      return secretKey;
+    },
+
     async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
       await ensureMigrated();
       const rawId = crypto.randomUUID();
@@ -421,6 +434,9 @@ export function createPostgresStorageAdapter(
       const clauses: string[] = [];
       const values: unknown[] = [];
 
+      if (!filter.include_deleted) {
+        clauses.push("f.deleted_at IS NULL");
+      }
       if (filter.environment && filter.environment.trim().length > 0) {
         values.push(filter.environment.trim().toLowerCase());
         clauses.push(`LOWER(f.environment) = $${values.length}`);
@@ -467,11 +483,230 @@ export function createPostgresStorageAdapter(
       };
     },
 
+    async listOwnFeedbacks(query: OwnFeedbackLookupQuery) {
+      await ensureMigrated();
+      const limit = Math.max(1, Math.min(50, query.limit ?? 20));
+      const ownershipClauses: string[] = [];
+      const values: unknown[] = [];
+
+      if (hasAuthenticatedSubmitter(query.submitter)) {
+        values.push(String(query.submitter?.type || "User").trim());
+        const typeParam = `$${values.length}`;
+        values.push(String(query.submitter?.id).trim());
+        const idParam = `$${values.length}`;
+        ownershipClauses.push(
+          `(COALESCE(NULLIF(f.submitter->>'type', ''), 'User') = ${typeParam} AND f.submitter->>'id' = ${idParam})`
+        );
+      }
+
+      if (query.session_id && query.session_id.trim().length > 0) {
+        values.push(query.session_id.trim());
+        const sidParam = `$${values.length}`;
+        ownershipClauses.push(
+          `((f.submitter->>'id' IS NULL OR f.submitter->>'id' = '') AND f.session_id = ${sidParam})`
+        );
+      }
+
+      const numericTokenIds = (query.token_ids ?? [])
+        .map((t) => Number(t))
+        .filter((n) => Number.isInteger(n) && n > 0);
+      if (numericTokenIds.length > 0) {
+        values.push(numericTokenIds);
+        const idsParam = `$${values.length}`;
+        ownershipClauses.push(
+          `((f.submitter->>'id' IS NULL OR f.submitter->>'id' = '') AND f.id = ANY(${idsParam}::bigint[]))`
+        );
+      }
+
+      if (ownershipClauses.length === 0) {
+        return { total: 0, records: [] };
+      }
+
+      const whereSql = `WHERE f.deleted_at IS NULL AND (${ownershipClauses.join(" OR ")})`;
+      const countRes = await pool.query(
+        `SELECT COUNT(*)::int AS total FROM context_drop_feedbacks f ${whereSql}`,
+        values
+      );
+      const total = Number(countRes.rows[0]?.["total"] ?? 0);
+
+      const pageValues = [...values, limit];
+      const rowsRes = await pool.query(
+        `SELECT f.* FROM context_drop_feedbacks f ${whereSql}
+         ORDER BY f.created_at DESC, f.id DESC
+         LIMIT $${pageValues.length}`,
+        pageValues
+      );
+      const hydrated = await Promise.all(rowsRes.rows.map(hydrateFeedbackRow));
+      return {
+        total,
+        records: hydrated
+      };
+    },
+
     async getFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
       await ensureMigrated();
       const res = await pool.query("SELECT * FROM context_drop_feedbacks WHERE id = $1", [
         Number(id)
       ]);
+      const row = res.rows[0];
+      if (!row) return null;
+      return hydrateFeedbackRow(row);
+    },
+
+    async updateFeedback(
+      id: string | number,
+      input: UpdateFeedbackRecordInput
+    ): Promise<StoredFeedbackRecord | null> {
+      await ensureMigrated();
+      const fbId = Number(id);
+      const existing = await this.getFeedback(fbId);
+      if (!existing || existing.deleted_at) return null;
+
+      const nextMessage = input.message !== undefined ? input.message : existing.message;
+      const nextMetadata = input.metadata !== undefined ? input.metadata : existing.metadata;
+
+      await pool.query(
+        `UPDATE context_drop_feedbacks
+         SET message = $1, metadata = $2::jsonb, updated_at = NOW()
+         WHERE id = $3`,
+        [nextMessage, JSON.stringify(nextMetadata || {}), fbId]
+      );
+
+      const elIdByRef = new Map<string, number>();
+      if (input.element_references !== undefined) {
+        await pool.query(
+          "DELETE FROM context_drop_element_references WHERE feedback_id = $1",
+          [fbId]
+        );
+        for (let idx = 0; idx < input.element_references.length; idx++) {
+          const el = input.element_references[idx];
+          const elRes = await pool.query(
+            `INSERT INTO context_drop_element_references
+             (feedback_id, client_ref, tag_name, selector, dom_path, text_content,
+              attributes_snapshot, bounding_rect, viewport, metadata, captured_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::timestamptz)
+             RETURNING id`,
+            [
+              fbId,
+              el.client_ref,
+              el.tag_name,
+              el.selector,
+              el.dom_path,
+              el.text_content,
+              JSON.stringify(el.attributes_snapshot || {}),
+              JSON.stringify(el.bounding_rect || {}),
+              JSON.stringify(el.viewport || {}),
+              JSON.stringify(el.metadata || {}),
+              el.captured_at
+            ]
+          );
+          elIdByRef.set(el.client_ref || String(idx), Number(elRes.rows[0]["id"]));
+        }
+      } else {
+        existing.element_references.forEach((el, idx) => {
+          elIdByRef.set(el.client_ref || String(idx), Number(el.id));
+        });
+      }
+
+      if (input.attachments !== undefined) {
+        const retainedIds = new Set<number>();
+        const prevById = new Map<string, StoredAttachment>();
+        for (const a of existing.attachments) {
+          prevById.set(String(a.id), a);
+        }
+
+        for (const spec of input.attachments) {
+          if (spec.kind === "retain") {
+            const prev = prevById.get(String(spec.existing_id));
+            if (!prev) continue;
+            retainedIds.add(Number(prev.id));
+            const linkedElId =
+              spec.element_client_ref !== undefined
+                ? spec.element_client_ref
+                  ? elIdByRef.get(spec.element_client_ref) ?? null
+                  : null
+                : input.element_references === undefined && prev.element_reference_id !== null
+                  ? Number(prev.element_reference_id)
+                  : null;
+            const nextAttMeta =
+              spec.update_metadata && spec.metadata ? spec.metadata : prev.metadata;
+            await pool.query(
+              `UPDATE context_drop_attachments
+               SET element_reference_id = $1, metadata = $2::jsonb
+               WHERE id = $3`,
+              [linkedElId, JSON.stringify(nextAttMeta || {}), Number(prev.id)]
+            );
+          }
+        }
+
+        for (const prev of existing.attachments) {
+          if (!retainedIds.has(Number(prev.id))) {
+            await pool.query("DELETE FROM context_drop_attachments WHERE id = $1", [
+              Number(prev.id)
+            ]);
+            if (prev.blob_key && blobStore?.deleteBlob) {
+              await blobStore.deleteBlob(prev.blob_key);
+            }
+          }
+        }
+
+        for (const spec of input.attachments) {
+          if (spec.kind !== "create") continue;
+          const linkedElId = spec.element_client_ref
+            ? elIdByRef.get(spec.element_client_ref) ?? null
+            : null;
+          let blobKey: string | null = null;
+          let inlineBytes: Buffer | null = null;
+
+          if (spec.data) {
+            if (blobStore) {
+              const saved = await blobStore.putBlob({
+                key: `att_${fbId}_${crypto.randomUUID()}`,
+                data: spec.data,
+                contentType: spec.content_type || "image/png",
+                filename: spec.filename || "attachment.png"
+              });
+              blobKey = saved.key;
+            } else {
+              inlineBytes = Buffer.from(spec.data);
+            }
+          }
+
+          await pool.query(
+            `INSERT INTO context_drop_attachments
+             (feedback_id, element_reference_id, attachment_type, filename, content_type, byte_size, blob_key, data, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+            [
+              fbId,
+              linkedElId,
+              spec.attachment_type,
+              spec.filename,
+              spec.content_type,
+              spec.byte_size,
+              blobKey,
+              inlineBytes,
+              JSON.stringify(spec.metadata || {})
+            ]
+          );
+        }
+      }
+
+      return this.getFeedback(fbId);
+    },
+
+    async softDeleteFeedback(id: string | number): Promise<StoredFeedbackRecord | null> {
+      await ensureMigrated();
+      const fbId = Number(id);
+      const existing = await this.getFeedback(fbId);
+      if (!existing || existing.deleted_at) return null;
+
+      const res = await pool.query(
+        `UPDATE context_drop_feedbacks
+         SET deleted_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND deleted_at IS NULL
+         RETURNING *`,
+        [fbId]
+      );
       const row = res.rows[0];
       if (!row) return null;
       return hydrateFeedbackRow(row);
@@ -531,16 +766,16 @@ export function createPostgresStorageAdapter(
     async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {
       await ensureMigrated();
       const existing = await this.getFeedback(id);
-      if (!existing) return null;
+      if (!existing || existing.deleted_at) return null;
 
-      const updatedRes = await pool.query(
+      const res = await pool.query(
         `UPDATE context_drop_feedbacks
          SET status = $1, updated_at = NOW()
          WHERE id = $2
          RETURNING *`,
         [status, Number(id)]
       );
-      const row = updatedRes.rows[0];
+      const row = res.rows[0];
       if (!row) return null;
 
       return {
@@ -550,4 +785,3 @@ export function createPostgresStorageAdapter(
     }
   };
 }
-

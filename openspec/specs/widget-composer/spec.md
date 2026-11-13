@@ -47,3 +47,16 @@ All widget controls SHALL be operable via keyboard navigation (`Tab`, `Shift+Tab
 - **GIVEN** the user opens the feedback composer using the keyboard
 - **WHEN** the user presses `Tab` sequentially
 - **THEN** focus moves logically through the multiline text input, attachment tray items, upload/element-picker/screenshot action buttons, and the submit/close controls
+
+### Requirement: Inline Updating & Soft-Deleting Own Feedback
+The widget composer SHALL load the current user's active feedbacks from `GET /feedback` on open (persisting signed ownership tokens in browser storage with an in-memory fallback) and render accessible inline **Edit** and **Delete** controls on each own feedback entry in the thread without full-screen modals or `window.confirm()`.
+
+#### Scenario: Editing own feedback message and pinned context inline
+- **GIVEN** a user has submitted feedback `#42` and clicks its `Edit feedback` button
+- **WHEN** the user modifies the message text, adds or removes pinned DOM elements or attachments in the tray, and clicks `Save`
+- **THEN** the widget sends `PATCH /feedback/42`, updates the entry in the thread with an `edited` indicator, exits edit mode, and dispatches `context-drop:update`
+
+#### Scenario: Soft-deleting own feedback with inline confirmation
+- **GIVEN** a user clicks `Delete feedback` on their feedback `#42`
+- **WHEN** the inline confirmation bar (`Delete this feedback?`) appears and the user clicks `Delete`
+- **THEN** the widget sends `DELETE /feedback/42`, removes `#42` from the widget thread, and dispatches `context-drop:delete`

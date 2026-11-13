@@ -883,6 +883,8 @@
   const ICON_PUSH_LAYOUT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.8"/><line x1="9.5" y1="2.5" x2="9.5" y2="13.5"/><polyline points="6.5 6.2 4.7 8 6.5 9.8"/></svg>`;
   const ICON_SUN = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="3.75"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/><line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/><line x1="4.34" y1="4.34" x2="5.75" y2="5.75"/><line x1="14.25" y1="14.25" x2="15.66" y2="15.66"/><line x1="4.34" y1="15.66" x2="5.75" y2="14.25"/><line x1="14.25" y1="5.75" x2="15.66" y2="4.34"/></svg>`;
   const ICON_MOON = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>`;
+  const ICON_EDIT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.5a1.5 1.5 0 0 1 2.1 2.1L5.8 12.1 2.7 13l.9-3.1 7.6-7.4z"/></svg>`;
+  const ICON_TRASH = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 4.5h10.4"/><path d="M6.2 4.5V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.3"/><path d="M4.2 4.5l.6 8.3a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.6-8.3"/></svg>`;
 
   // --- Module: markdown.ts ---
   /**
@@ -1158,6 +1160,47 @@
     background: #242935;
     color: #f8fafc;
     border-color: #3b4252;
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-msg-action-btn:hover:not(:disabled),
+  :host([data-theme="dark"]) .cd-msg-action-btn:hover:not(:disabled),
+  .cd-composer[data-theme="dark"] .cd-msg-action-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--cd-ink);
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-msg-action-btn.is-danger:hover:not(:disabled),
+  :host([data-theme="dark"]) .cd-msg-action-btn.is-danger:hover:not(:disabled),
+  .cd-composer[data-theme="dark"] .cd-msg-action-btn.is-danger:hover:not(:disabled) {
+    background: var(--cd-danger-soft);
+    color: #fca5a5;
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-edit-banner-info,
+  :host([data-theme="dark"]) .cd-edit-banner-info,
+  .cd-composer[data-theme="dark"] .cd-edit-banner-info {
+    color: var(--cd-ink);
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-msg-delete-label,
+  :host([data-theme="dark"]) .cd-msg-delete-label,
+  .cd-composer[data-theme="dark"] .cd-msg-delete-label {
+    color: #fca5a5;
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-btn-danger,
+  :host([data-theme="dark"]) .cd-btn-danger,
+  .cd-composer[data-theme="dark"] .cd-btn-danger {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #ffffff;
+  }
+  
+  :host([data-cd-theme="dark"]) .cd-btn-danger:hover:not(:disabled),
+  :host([data-theme="dark"]) .cd-btn-danger:hover:not(:disabled),
+  .cd-composer[data-theme="dark"] .cd-btn-danger:hover:not(:disabled) {
+    background: #ef4444;
+    border-color: #ef4444;
   }
   
   *, *::before, *::after {
@@ -2022,11 +2065,18 @@
     flex-direction: column;
     gap: 5px;
     align-self: flex-end;
+    width: 92%;
     max-width: 92%;
     padding: 9px 11px;
     background: var(--cd-surface-elevated);
     border: 1px solid var(--cd-border);
     border-radius: 12px 12px 3px 12px;
+    transition: border-color 0.14s var(--cd-ease), box-shadow 0.14s var(--cd-ease);
+  }
+  
+  .cd-chat-msg.is-editing {
+    border-color: var(--cd-accent);
+    box-shadow: 0 0 0 2px var(--cd-accent-soft);
   }
   
   .cd-chat-msg-text {
@@ -2045,6 +2095,83 @@
     font-size: 11px;
     color: var(--cd-ink-secondary);
     font-variant-numeric: tabular-nums;
+  }
+  
+  .cd-chat-msg-meta-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  
+  .cd-chat-msg-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  
+  .cd-msg-action-btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--cd-ink-secondary);
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+  
+  .cd-msg-action-btn:hover:not(:disabled) {
+    background: rgba(17, 19, 24, 0.06);
+    color: var(--cd-ink);
+  }
+  
+  .cd-msg-action-btn.is-active {
+    background: var(--cd-accent-soft);
+    color: var(--cd-accent-hover);
+    border-color: rgba(29, 78, 216, 0.25);
+  }
+  
+  .cd-msg-action-btn.is-danger:hover:not(:disabled) {
+    background: var(--cd-danger-soft);
+    color: var(--cd-danger);
+  }
+  
+  .cd-msg-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  
+  .cd-msg-delete-confirm {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 2px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--cd-danger-soft);
+    border: 1px solid rgba(185, 28, 28, 0.24);
+  }
+  
+  .cd-msg-delete-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--cd-danger);
+  }
+  
+  .cd-msg-delete-btns {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
   }
   
   .cd-chat-msg-pills {
@@ -2931,6 +3058,42 @@
     border-top: 1px solid var(--cd-border);
   }
   
+  .cd-edit-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--cd-accent-soft);
+    border-bottom: 1px solid var(--cd-border-subtle);
+    font-size: 12px;
+    color: var(--cd-ink);
+  }
+  
+  .cd-edit-banner[hidden] {
+    display: none !important;
+  }
+  
+  .cd-edit-banner-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: 600;
+    color: var(--cd-accent-hover);
+  }
+  
+  .cd-edit-banner-info svg {
+    color: var(--cd-accent-hover);
+    flex-shrink: 0;
+  }
+  
+  .cd-edit-banner-id {
+    font-family: var(--cd-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  
   .cd-textarea {
     width: 100%;
     min-height: 68px;
@@ -3011,6 +3174,24 @@
     border-color: #252a34;
   }
   
+  .cd-btn-xs {
+    padding: 3px 8px;
+    font-size: 11.5px;
+    border-radius: 6px;
+  }
+  
+  .cd-btn-danger {
+    background: var(--cd-danger);
+    border-color: var(--cd-danger);
+    color: #ffffff;
+    font-weight: 600;
+  }
+  
+  .cd-btn-danger:hover:not(:disabled) {
+    background: #991b1b;
+    border-color: #991b1b;
+  }
+  
   @media (max-width: 560px) {
     .cd-composer,
     .cd-compact-bar {
@@ -3038,6 +3219,8 @@
     .cd-corner-flap,
     .cd-drag-pin-head,
     .cd-composer,
+    .cd-chat-msg,
+    .cd-msg-action-btn,
     .cd-agent-sidebar,
     .cd-skeleton-bar {
       animation: none !important;
@@ -3047,6 +3230,22 @@
   `;
 
   // --- Module: api-client.ts ---
+  const OWNERSHIP_STORAGE_KEY = "context_drop_ownership_tokens";
+  const MAX_STORED_OWNERSHIP_TOKENS = 50;
+  
+  function getBrowserLocalStorage()                 {
+    try {
+      if (typeof window !== "undefined" && "localStorage" in window) {
+        const store = window.localStorage;
+        if (store && typeof store.getItem === "function" && typeof store.setItem === "function") {
+          return store;
+        }
+      }
+    } catch {
+      // Storage unavailable or restricted by browser privacy policy
+    }
+    return null;
+  }
   class ContextDropApiClient {
             baseUrl        ;
             credentials                    ;
@@ -3054,6 +3253,7 @@
             cachedCsrfToken                = null;
             configFetched          = false;
             inFlightConfigPromise                               = null;
+            memoryOwnershipTokens                      = new Map();
   
     constructor(baseUrl         = "/context_drop", options                              = {}) {
       this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
@@ -3270,6 +3470,113 @@
       return this.executeWithCsrfRetry(makeRequest, "Upload failed");
     }
   
+            ownershipScopedKey(id                 )         {
+      return `${this.baseUrl}::${String(id)}`;
+    }
+  
+            readStoredTokenMap()                         {
+      const store = getBrowserLocalStorage();
+      if (!store) {
+        const out                         = {};
+        for (const [k, v] of this.memoryOwnershipTokens.entries()) {
+          out[k] = v;
+        }
+        return out;
+      }
+  
+      try {
+        const raw = store.getItem(OWNERSHIP_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw)           ;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return {};
+        }
+        const clean                         = {};
+        for (const [k, v] of Object.entries(parsed                           )) {
+          if (typeof v === "string" && v.trim().length > 0) {
+            clean[k] = v.trim();
+          }
+        }
+        return clean;
+      } catch {
+        return {};
+      }
+    }
+  
+            writeStoredTokenMap(map                        )       {
+      const entries = Object.entries(map);
+      const trimmedEntries =
+        entries.length > MAX_STORED_OWNERSHIP_TOKENS
+          ? entries.slice(entries.length - MAX_STORED_OWNERSHIP_TOKENS)
+          : entries;
+  
+      this.memoryOwnershipTokens.clear();
+      const bounded                         = {};
+      for (const [k, v] of trimmedEntries) {
+        bounded[k] = v;
+        this.memoryOwnershipTokens.set(k, v);
+      }
+  
+      const store = getBrowserLocalStorage();
+      if (store) {
+        try {
+          store.setItem(OWNERSHIP_STORAGE_KEY, JSON.stringify(bounded));
+        } catch {
+          // Non-fatal if storage quota exceeded
+        }
+      }
+    }
+  
+           getOwnershipToken(id                 )                {
+      const map = this.readStoredTokenMap();
+      const scoped = map[this.ownershipScopedKey(id)];
+      if (scoped) return scoped;
+      const plain = map[String(id)];
+      return plain || null;
+    }
+  
+           setOwnershipToken(id                 , token        )       {
+      const trimmed = typeof token === "string" ? token.trim() : "";
+      if (!trimmed) return;
+      const map = this.readStoredTokenMap();
+      const key = this.ownershipScopedKey(id);
+      delete map[key];
+      map[key] = trimmed;
+      this.writeStoredTokenMap(map);
+    }
+  
+           removeOwnershipToken(id                 )       {
+      const map = this.readStoredTokenMap();
+      const scopedKey = this.ownershipScopedKey(id);
+      const plainKey = String(id);
+      if (!(scopedKey in map) && !(plainKey in map)) return;
+      delete map[scopedKey];
+      delete map[plainKey];
+      this.writeStoredTokenMap(map);
+    }
+  
+           getAllOwnershipTokens()           {
+      const map = this.readStoredTokenMap();
+      const prefix = `${this.baseUrl}::`;
+      const tokens           = [];
+      for (const [k, v] of Object.entries(map)) {
+        if ((k.startsWith(prefix) || !k.includes("::")) && v && !tokens.includes(v)) {
+          tokens.push(v);
+        }
+      }
+      return tokens;
+    }
+  
+           buildAttachmentPreviewUrl(
+      feedbackId                 ,
+      attachmentId                 ,
+      ownershipToken                
+    )         {
+      const token = ownershipToken || this.getOwnershipToken(feedbackId);
+      const base = `${this.baseUrl}/feedback/${encodeURIComponent(String(feedbackId))}/attachments/${encodeURIComponent(String(attachmentId))}`;
+      return token ? `${base}?ownership_token=${encodeURIComponent(token)}` : base;
+    }
+  
            async submitFeedback(payload                           )                                      {
       const makeRequest = async (csrfToken               ) =>
         fetch(`${this.baseUrl}/feedback`, {
@@ -3279,7 +3586,114 @@
           body: JSON.stringify({ feedback: payload })
         });
   
-      return this.executeWithCsrfRetry(makeRequest, "Submission failed");
+      const response = await this.executeWithCsrfRetry                            (
+        makeRequest,
+        "Submission failed"
+      );
+  
+      const token = response?.ownership_token || response?.feedback?.ownership_token;
+      if (response?.id !== undefined && token) {
+        this.setOwnershipToken(response.id, token);
+      }
+      return response;
+    }
+  
+           async fetchOwnFeedbacks(limit         = 30)                                   {
+      const headers                         = {
+        Accept: "application/json"
+      };
+      const tokens = this.getAllOwnershipTokens();
+      if (tokens.length > 0) {
+        headers["X-Context-Drop-Ownership-Tokens"] = tokens.join(",");
+      }
+  
+      const qs = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
+      const response = await fetch(`${this.baseUrl}/feedback${qs}`, {
+        method: "GET",
+        credentials: this.credentials,
+        headers: this.mergeClientHeaders(headers)
+      });
+  
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(
+          (errBody                      ).error || `Failed to load own feedbacks (${response.status})`
+        );
+      }
+  
+      const parsed = (await response.json().catch(() => ({})))                                    ;
+      const feedbacks = Array.isArray(parsed?.feedbacks) ? parsed.feedbacks : [];
+      for (const item of feedbacks) {
+        if (item && item.id !== undefined && typeof item.ownership_token === "string") {
+          this.setOwnershipToken(item.id, item.ownership_token);
+        }
+      }
+  
+      return {
+        total_count: typeof parsed?.total_count === "number" ? parsed.total_count : feedbacks.length,
+        feedbacks
+      };
+    }
+  
+           async updateFeedback(
+      id                 ,
+      payload                       ,
+      ownershipToken                
+    )                                  {
+      const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+      const makeRequest = async (csrfToken               ) => {
+        const headers = this.buildJsonHeaders(csrfToken);
+        if (resolvedToken) {
+          headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+        }
+        const bodyPayload                          = { feedback: payload };
+        if (resolvedToken) {
+          bodyPayload.ownership_token = resolvedToken;
+        }
+        return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}`, {
+          method: "PATCH",
+          credentials: this.credentials,
+          headers,
+          body: JSON.stringify(bodyPayload)
+        });
+      };
+  
+      const response = await this.executeWithCsrfRetry                        (
+        makeRequest,
+        "Update failed"
+      );
+  
+      const nextToken = response?.ownership_token || response?.feedback?.ownership_token;
+      if (response?.id !== undefined && nextToken) {
+        this.setOwnershipToken(response.id, nextToken);
+      }
+      return response;
+    }
+  
+           async deleteFeedback(
+      id                 ,
+      ownershipToken                
+    )                                  {
+      const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+      const makeRequest = async (csrfToken               ) => {
+        const headers = this.buildJsonHeaders(csrfToken);
+        if (resolvedToken) {
+          headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+        }
+        return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}`, {
+          method: "DELETE",
+          credentials: this.credentials,
+          headers
+        });
+      };
+  
+      const response = await this.executeWithCsrfRetry                        (
+        makeRequest,
+        "Delete failed"
+      );
+  
+      this.removeOwnershipToken(id);
+      return response;
     }
   
            async fetchAgentStatus()                               {
@@ -5409,6 +5823,17 @@
             elementDomNodes                       = new Map();
             attachments                          = [];
             sessionHistory                         = [];
+            ownFeedbacksLoaded          = false;
+            inFlightOwnFeedbacksPromise                                         = null;
+            editingFeedbackId                = null;
+            confirmingDeleteId                = null;
+            deletingFeedbackId                = null;
+            stashedDraftBeforeEdit   
+                      
+                                                    
+                                            
+                                           
+             = null;
   
     // Local Agent state
             agentStatusLoaded          = false;
@@ -5451,6 +5876,8 @@
             composerToolbarScreenshotBtn                           = null;
             composerToolbarUploadBtn                           = null;
             chatThreadEl                        = null;
+            editBannerEl                        = null;
+            editBannerInfoEl                         = null;
             textareaEl                             = null;
             trayEl                        = null;
             statusEl                        = null;
@@ -5564,6 +5991,25 @@
           ev.stopPropagation();
           this.cancelActivePeelDrag();
           return;
+        }
+  
+        if (
+          ev.key === "Escape" &&
+          !(this.picker && this.picker.isActive()) &&
+          this.isOpen &&
+          !this.isMinimized &&
+          !this.isAgentModeActive()
+        ) {
+          if (this.confirmingDeleteId !== null) {
+            ev.preventDefault();
+            this.cancelDeleteFeedback();
+            return;
+          }
+          if (this.editingFeedbackId !== null) {
+            ev.preventDefault();
+            this.cancelEditingFeedback();
+            return;
+          }
         }
   
         // Alt+Shift+P / Option+Shift+P toggles Freeze & Pin mode in technical/verbose environments
@@ -5687,6 +6133,8 @@
         "same-origin";
       const resolvedHeaders = options.headers || this.customHeaders;
       this.customHeaders = { ...resolvedHeaders };
+      this.ownFeedbacksLoaded = false;
+      this.inFlightOwnFeedbacksPromise = null;
       this.apiClient = new ContextDropApiClient(endpoint || "/context_drop", {
         credentials: resolvedCredentials,
         headers: this.customHeaders
@@ -5769,8 +6217,12 @@
         return;
       }
       this.surfaceMode = mode;
-      if (mode === "agent" && this.isOpen) {
-        void this.ensureAgentStatusLoaded();
+      if (this.isOpen) {
+        if (mode === "agent") {
+          void this.ensureAgentStatusLoaded();
+        } else if (!this.isMinimized) {
+          void this.ensureOwnFeedbacksLoaded();
+        }
       }
       this.renderTray();
       this.renderChatThread();
@@ -5788,6 +6240,301 @@
   
            getSessionHistory()                         {
       return [...this.sessionHistory];
+    }
+  
+           getEditingFeedbackId()                {
+      return this.editingFeedbackId;
+    }
+  
+            formatTimestampLabel(isoOrLabel         )         {
+      if (isoOrLabel && /^\d{2}:\d{2}$/.test(isoOrLabel.trim())) {
+        return isoOrLabel.trim();
+      }
+      const parsed = isoOrLabel ? new Date(isoOrLabel) : new Date();
+      const valid = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+      return `${String(valid.getHours()).padStart(2, "0")}:${String(valid.getMinutes()).padStart(2, "0")}`;
+    }
+  
+            mapOwnRecordToSessionEntry(
+      record                   ,
+      existingEntry                       
+    )                       {
+      const smartMode = this.isSmartSelectionMode();
+      const rawMessage = typeof record.message === "string" ? record.message : "";
+      const displayMessage =
+        rawMessage || (smartMode ? "(Highlighted page area)" : "(Context drop without text)");
+      const token =
+        record.ownership_token ||
+        existingEntry?.ownershipToken ||
+        this.apiClient.getOwnershipToken(record.id) ||
+        undefined;
+      const isEdited = Boolean(
+        record.created_at && record.updated_at && record.updated_at !== record.created_at
+      );
+  
+      const serverAttachments = Array.isArray(record.attachments) ? record.attachments : [];
+      const mappedAttachments                                  = serverAttachments.map((att, idx) => {
+        const existingAtt = existingEntry?.attachments.find(
+          (a) =>
+            (a.server_id !== undefined && String(a.server_id) === String(att.id)) ||
+            (a.server_id === undefined &&
+              idx < (existingEntry?.attachments.length || 0) &&
+              existingEntry?.attachments[idx]?.filename === att.filename)
+        );
+  
+        const previewUrl =
+          existingAtt?.preview_url &&
+          (existingAtt.preview_url.startsWith("data:") || existingAtt.preview_url.startsWith("blob:"))
+            ? existingAtt.preview_url
+            : this.apiClient.buildAttachmentPreviewUrl(record.id, att.id, token);
+  
+        const meta =
+          att.metadata && typeof att.metadata === "object" && !Array.isArray(att.metadata)
+            ? { ...att.metadata }
+            : existingAtt?.metadata
+              ? { ...existingAtt.metadata }
+              : {};
+  
+        let label = existingAtt?.label || "";
+        if (!label) {
+          if (meta.auto_smart_context === true && typeof meta.friendly_label === "string") {
+            label = `Context around ${meta.friendly_label}`;
+          } else if (att.filename) {
+            label = att.filename;
+          } else {
+            label = att.attachment_type === "screenshot" ? "Screenshot" : "Attached image";
+          }
+        }
+  
+        return {
+          id: existingAtt?.id || `srv_att_${record.id}_${att.id}`,
+          server_id: att.id,
+          label,
+          preview_url: previewUrl,
+          attachment_type: att.attachment_type === "screenshot" ? "screenshot" : "image",
+          filename: att.filename,
+          element_reference_ref: att.element_reference_ref ?? existingAtt?.element_reference_ref ?? null,
+          metadata: meta
+        };
+      });
+  
+      const elements = Array.isArray(record.element_references)
+        ? structuredClone(record.element_references)
+        : existingEntry?.elements
+          ? structuredClone(existingEntry.elements)
+          : [];
+  
+      return {
+        id: record.id,
+        message: displayMessage,
+        rawMessage,
+        createdAt: this.formatTimestampLabel(record.created_at || existingEntry?.rawCreatedAt),
+        rawCreatedAt: record.created_at,
+        rawUpdatedAt: record.updated_at,
+        isEdited: isEdited || Boolean(existingEntry?.isEdited),
+        status: record.status,
+        ownershipToken: token,
+        elements,
+        attachments: mappedAttachments
+      };
+    }
+  
+           async refreshOwnFeedbacks()                                  {
+      if (typeof fetch !== "function") {
+        return [...this.sessionHistory];
+      }
+      if (this.inFlightOwnFeedbacksPromise) {
+        return this.inFlightOwnFeedbacksPromise;
+      }
+  
+      this.inFlightOwnFeedbacksPromise = (async () => {
+        try {
+          const res = await this.apiClient.fetchOwnFeedbacks();
+          this.ownFeedbacksLoaded = true;
+          const records = Array.isArray(res?.feedbacks) ? res.feedbacks : [];
+          if (records.length === 0) {
+            return [...this.sessionHistory];
+          }
+  
+          const existingById = new Map                              ();
+          for (const entry of this.sessionHistory) {
+            existingById.set(String(entry.id), entry);
+          }
+  
+          const chronologicalServerRecords = [...records].reverse();
+          const serverIds = new Set        ();
+          const merged                         = [];
+  
+          for (const record of chronologicalServerRecords) {
+            if (!record || record.id === undefined || record.id === null) continue;
+            const idKey = String(record.id);
+            serverIds.add(idKey);
+            merged.push(this.mapOwnRecordToSessionEntry(record, existingById.get(idKey)));
+          }
+  
+          for (const localEntry of this.sessionHistory) {
+            if (!serverIds.has(String(localEntry.id))) {
+              merged.push(localEntry);
+            }
+          }
+  
+          this.sessionHistory = merged;
+          this.renderChatThread();
+          this.syncUiStates();
+        } catch {
+          // Non-fatal when offline or using minimal synthetic endpoints
+        } finally {
+          this.inFlightOwnFeedbacksPromise = null;
+        }
+        return [...this.sessionHistory];
+      })();
+  
+      return this.inFlightOwnFeedbacksPromise;
+    }
+  
+            async ensureOwnFeedbacksLoaded()                {
+      if (this.ownFeedbacksLoaded) return;
+      await this.refreshOwnFeedbacks();
+    }
+  
+           startEditingFeedback(feedbackId                 )          {
+      const targetKey = String(feedbackId);
+      const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+      if (!entry) return false;
+  
+      this.confirmingDeleteId = null;
+      this.hideStatus();
+  
+      if (this.editingFeedbackId === null) {
+        this.stashedDraftBeforeEdit = {
+          message: this.textareaEl?.value || "",
+          elementReferences: [...this.elementReferences],
+          elementDomNodes: new Map(this.elementDomNodes),
+          attachments: [...this.attachments]
+        };
+      }
+  
+      this.editingFeedbackId = targetKey;
+  
+      if (this.textareaEl) {
+        this.textareaEl.value = entry.rawMessage !== undefined ? entry.rawMessage : entry.message;
+      }
+  
+      this.elementReferences = structuredClone(entry.elements);
+      this.elementDomNodes.clear();
+      if (typeof document !== "undefined" && typeof document.querySelector === "function") {
+        for (const elRef of this.elementReferences) {
+          if (!elRef.selector) continue;
+          try {
+            const liveNode = document.querySelector(elRef.selector);
+            if (liveNode) {
+              this.elementDomNodes.set(elRef.client_ref, liveNode);
+            }
+          } catch {
+            // Ignore invalid or complex selectors not resolvable on current page
+          }
+        }
+      }
+  
+      this.attachments = entry.attachments.map((att) => ({
+        id: att.id,
+        existing_attachment_id: att.server_id,
+        attachment_type: att.attachment_type,
+        label: att.label,
+        preview_url: att.preview_url,
+        signed_blob_id: att.signed_blob_id,
+        data_url: att.data_url,
+        filename: att.filename || att.label || "attachment.png",
+        element_reference_ref: att.element_reference_ref || undefined,
+        metadata: att.metadata ? structuredClone(att.metadata) : {}
+      }));
+  
+      this.picker?.refreshPinnedMarkers();
+      this.renderTray();
+      this.renderChatThread();
+      this.syncUiStates();
+      this.textareaEl?.focus();
+      return true;
+    }
+  
+           cancelEditingFeedback()       {
+      if (this.editingFeedbackId === null) return;
+      this.editingFeedbackId = null;
+  
+      if (this.stashedDraftBeforeEdit) {
+        if (this.textareaEl) {
+          this.textareaEl.value = this.stashedDraftBeforeEdit.message;
+        }
+        this.elementReferences = this.stashedDraftBeforeEdit.elementReferences;
+        this.elementDomNodes = this.stashedDraftBeforeEdit.elementDomNodes;
+        this.attachments = this.stashedDraftBeforeEdit.attachments;
+        this.stashedDraftBeforeEdit = null;
+      } else {
+        if (this.textareaEl) {
+          this.textareaEl.value = "";
+        }
+        this.elementReferences = [];
+        this.elementDomNodes.clear();
+        this.attachments = [];
+      }
+  
+      this.picker?.hideExternalPreview();
+      this.picker?.refreshPinnedMarkers();
+      this.renderTray();
+      this.renderChatThread();
+      this.syncUiStates();
+    }
+  
+           requestDeleteFeedback(feedbackId                 )       {
+      const targetKey = String(feedbackId);
+      if (!this.sessionHistory.some((item) => String(item.id) === targetKey)) return;
+      this.confirmingDeleteId = this.confirmingDeleteId === targetKey ? null : targetKey;
+      this.renderChatThread();
+    }
+  
+           cancelDeleteFeedback()       {
+      if (this.confirmingDeleteId === null) return;
+      this.confirmingDeleteId = null;
+      this.renderChatThread();
+    }
+  
+           async confirmDeleteFeedback(feedbackId                 )                {
+      if (this.deletingFeedbackId !== null) return;
+      const targetKey = String(feedbackId);
+      const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+      if (!entry) return;
+  
+      this.deletingFeedbackId = targetKey;
+      this.renderChatThread();
+  
+      try {
+        const res = await this.apiClient.deleteFeedback(entry.id, entry.ownershipToken);
+        if (this.editingFeedbackId === targetKey) {
+          this.cancelEditingFeedback();
+        }
+        this.sessionHistory = this.sessionHistory.filter((item) => String(item.id) !== targetKey);
+        this.confirmingDeleteId = null;
+        this.deletingFeedbackId = null;
+        this.renderChatThread();
+        this.renderTray();
+        this.syncUiStates();
+        this.showStatus(
+          this.isSmartSelectionMode() ? "Your feedback was deleted." : "Feedback deleted.",
+          "success"
+        );
+        this.emitWidgetEvent("context-drop:delete", {
+          response: res,
+          id: entry.id
+        });
+      } catch (err) {
+        this.deletingFeedbackId = null;
+        this.renderChatThread();
+        const msg = err instanceof Error ? err.message : "Failed to delete feedback.";
+        this.showStatus(msg, "error");
+        this.emitWidgetEvent("context-drop:error", {
+          error: msg
+        });
+      }
     }
   
            getAgentMessages()                     {
@@ -5828,6 +6575,8 @@
       this.isMinimized = false;
       if (this.isAgentModeActive()) {
         void this.ensureAgentStatusLoaded();
+      } else {
+        void this.ensureOwnFeedbacksLoaded();
       }
       this.syncUiStates();
       this.focusActiveInput();
@@ -6843,6 +7592,27 @@
       const promptShell = document.createElement("div");
       promptShell.className = "cd-prompt-shell";
   
+      const editBanner = document.createElement("div");
+      editBanner.className = "cd-edit-banner";
+      editBanner.hidden = true;
+  
+      const editBannerInfo = document.createElement("span");
+      editBannerInfo.className = "cd-edit-banner-info";
+      this.editBannerInfoEl = editBannerInfo;
+      editBanner.appendChild(editBannerInfo);
+  
+      const cancelEditBtn = document.createElement("button");
+      cancelEditBtn.type = "button";
+      cancelEditBtn.className = "cd-btn cd-btn-xs";
+      cancelEditBtn.setAttribute("aria-label", "Cancel editing feedback");
+      cancelEditBtn.textContent = "Cancel";
+      cancelEditBtn.addEventListener("click", () => {
+        this.cancelEditingFeedback();
+      });
+      editBanner.appendChild(cancelEditBtn);
+      this.editBannerEl = editBanner;
+      promptShell.appendChild(editBanner);
+  
       const textarea = document.createElement("textarea");
       textarea.className = "cd-textarea";
       textarea.placeholder = this.config.placeholder;
@@ -6852,8 +7622,15 @@
           ev.preventDefault();
           void this.handleSubmit();
         } else if (ev.key === "Escape") {
+          if (ev.defaultPrevented) return;
           ev.preventDefault();
-          this.closeComposer();
+          if (this.confirmingDeleteId !== null) {
+            this.cancelDeleteFeedback();
+          } else if (this.editingFeedbackId !== null) {
+            this.cancelEditingFeedback();
+          } else {
+            this.closeComposer();
+          }
         }
       });
       textarea.addEventListener("paste", (ev) => this.handlePaste(ev));
@@ -8135,6 +8912,35 @@
           ? `${ICON_IMAGE}<span>Add image</span>`
           : `${ICON_IMAGE}<span>Image</span>`;
       }
+      if (this.editBannerEl && this.editBannerInfoEl) {
+        if (this.editingFeedbackId !== null) {
+          this.editBannerEl.hidden = false;
+          this.editBannerInfoEl.innerHTML = "";
+          const iconSpan = document.createElement("span");
+          iconSpan.innerHTML = ICON_EDIT;
+          const labelSpan = document.createElement("span");
+          labelSpan.textContent = smartMode ? "Editing your feedback" : "Editing feedback";
+          this.editBannerInfoEl.appendChild(iconSpan);
+          this.editBannerInfoEl.appendChild(labelSpan);
+          if (!smartMode) {
+            const idSpan = document.createElement("span");
+            idSpan.className = "cd-edit-banner-id";
+            idSpan.textContent = `#${this.editingFeedbackId}`;
+            this.editBannerInfoEl.appendChild(idSpan);
+          }
+        } else {
+          this.editBannerEl.hidden = true;
+        }
+      }
+      if (this.submitBtn && !this.isSubmitting) {
+        if (this.editingFeedbackId !== null) {
+          this.submitBtn.setAttribute("aria-label", "Save feedback changes");
+          this.submitBtn.innerHTML = `${ICON_CHECK}<span>Save</span>`;
+        } else {
+          this.submitBtn.setAttribute("aria-label", "Submit feedback");
+          this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
+        }
+      }
   
       if (this.agentSidebarEl) {
         this.agentSidebarEl.hidden = !showAgentSidebar;
@@ -8370,8 +9176,14 @@
       this.chatThreadEl.hidden = false;
   
       for (const entry of this.sessionHistory) {
+        const entryIdStr = String(entry.id);
+        const isEditingThis = this.editingFeedbackId === entryIdStr;
+        const isConfirmingDelete = this.confirmingDeleteId === entryIdStr;
+        const isDeletingThis = this.deletingFeedbackId === entryIdStr;
+  
         const msgCard = document.createElement("div");
-        msgCard.className = "cd-chat-msg";
+        msgCard.className = isEditingThis ? "cd-chat-msg is-editing" : "cd-chat-msg";
+        msgCard.setAttribute("data-feedback-id", entryIdStr);
   
         if (entry.elements.length > 0 || entry.attachments.length > 0) {
           const pills = document.createElement("div");
@@ -8406,13 +9218,101 @@
   
         const meta = document.createElement("div");
         meta.className = "cd-chat-msg-meta";
+  
+        const metaInfo = document.createElement("div");
+        metaInfo.className = "cd-chat-msg-meta-info";
+  
         const idSpan = document.createElement("span");
-        idSpan.textContent = smartMode ? "Feedback sent" : `Dropped #${entry.id}`;
+        const baseLabel = smartMode ? "Feedback sent" : `Dropped #${entry.id}`;
+        idSpan.textContent = entry.isEdited ? `${baseLabel} · edited` : baseLabel;
+  
+        const sepSpan = document.createElement("span");
+        sepSpan.setAttribute("aria-hidden", "true");
+        sepSpan.textContent = "·";
+  
         const timeSpan = document.createElement("span");
         timeSpan.textContent = entry.createdAt;
-        meta.appendChild(idSpan);
-        meta.appendChild(timeSpan);
+  
+        metaInfo.appendChild(idSpan);
+        metaInfo.appendChild(sepSpan);
+        metaInfo.appendChild(timeSpan);
+  
+        const actions = document.createElement("div");
+        actions.className = "cd-chat-msg-actions";
+  
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = `cd-msg-action-btn${isEditingThis ? " is-active" : ""}`;
+        editBtn.title = isEditingThis ? "Cancel editing" : "Edit feedback";
+        editBtn.setAttribute("aria-label", "Edit feedback");
+        editBtn.setAttribute("aria-pressed", String(isEditingThis));
+        editBtn.disabled = this.isSubmitting || this.deletingFeedbackId !== null;
+        editBtn.innerHTML = ICON_EDIT;
+        editBtn.addEventListener("click", () => {
+          if (this.editingFeedbackId === entryIdStr) {
+            this.cancelEditingFeedback();
+          } else {
+            this.startEditingFeedback(entry.id);
+          }
+        });
+  
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "cd-msg-action-btn is-danger";
+        deleteBtn.title = "Delete feedback";
+        deleteBtn.setAttribute("aria-label", "Delete feedback");
+        deleteBtn.disabled = this.isSubmitting || this.deletingFeedbackId !== null;
+        deleteBtn.innerHTML = ICON_TRASH;
+        deleteBtn.addEventListener("click", () => {
+          this.requestDeleteFeedback(entry.id);
+        });
+  
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+  
+        meta.appendChild(metaInfo);
+        meta.appendChild(actions);
         msgCard.appendChild(meta);
+  
+        if (isConfirmingDelete) {
+          const confirmBar = document.createElement("div");
+          confirmBar.className = "cd-msg-delete-confirm";
+          confirmBar.setAttribute("role", "group");
+          confirmBar.setAttribute("aria-label", "Confirm feedback deletion");
+  
+          const confirmLabel = document.createElement("span");
+          confirmLabel.className = "cd-msg-delete-label";
+          confirmLabel.textContent = "Delete this feedback?";
+  
+          const btnGroup = document.createElement("div");
+          btnGroup.className = "cd-msg-delete-btns";
+  
+          const cancelDeleteBtn = document.createElement("button");
+          cancelDeleteBtn.type = "button";
+          cancelDeleteBtn.className = "cd-btn cd-btn-xs";
+          cancelDeleteBtn.setAttribute("aria-label", "Cancel delete");
+          cancelDeleteBtn.disabled = isDeletingThis;
+          cancelDeleteBtn.textContent = "Cancel";
+          cancelDeleteBtn.addEventListener("click", () => {
+            this.cancelDeleteFeedback();
+          });
+  
+          const confirmDeleteBtn = document.createElement("button");
+          confirmDeleteBtn.type = "button";
+          confirmDeleteBtn.className = "cd-btn cd-btn-xs cd-btn-danger";
+          confirmDeleteBtn.setAttribute("aria-label", "Confirm delete feedback");
+          confirmDeleteBtn.disabled = isDeletingThis;
+          confirmDeleteBtn.textContent = isDeletingThis ? "Deleting..." : "Delete";
+          confirmDeleteBtn.addEventListener("click", () => {
+            void this.confirmDeleteFeedback(entry.id);
+          });
+  
+          btnGroup.appendChild(cancelDeleteBtn);
+          btnGroup.appendChild(confirmDeleteBtn);
+          confirmBar.appendChild(confirmLabel);
+          confirmBar.appendChild(btnGroup);
+          msgCard.appendChild(confirmBar);
+        }
   
         this.chatThreadEl.appendChild(msgCard);
       }
@@ -8802,6 +9702,7 @@
            async handleSubmit()                {
       if (this.isSubmitting) return;
       const smartMode = this.isSmartSelectionMode();
+      const editingId = this.editingFeedbackId;
   
       if (this.pendingSmartCaptures.size > 0) {
         await Promise.allSettled(Array.from(this.pendingSmartCaptures));
@@ -8825,32 +9726,120 @@
       this.isSubmitting = true;
       if (this.submitBtn) {
         this.submitBtn.disabled = true;
-        this.submitBtn.innerHTML = `<span>Sending...</span>`;
+        this.submitBtn.innerHTML =
+          editingId !== null ? `<span>Saving...</span>` : `<span>Sending...</span>`;
       }
   
       try {
-        const submittedElements = [...this.elementReferences];
-        const submittedAttachments = this.attachments.map((att) => ({
+        const submittedElements = structuredClone(this.elementReferences);
+        const submittedAttachments                                  = this.attachments.map((att) => ({
           id: att.id,
+          server_id: att.existing_attachment_id,
           label: att.label,
           preview_url: att.preview_url,
-          attachment_type: att.attachment_type
+          attachment_type: att.attachment_type,
+          filename: att.filename,
+          signed_blob_id: att.signed_blob_id,
+          data_url: att.data_url,
+          element_reference_ref: att.element_reference_ref || null,
+          metadata: att.metadata ? structuredClone(att.metadata) : {}
         }));
+  
+        const commonMetadata                          = {
+          ...this.customMetadata,
+          environment: this.config.environment,
+          selection_mode: smartMode ? "smart" : "verbose",
+          viewport: {
+            width: typeof window !== "undefined" ? window.innerWidth : 0,
+            height: typeof window !== "undefined" ? window.innerHeight : 0
+          },
+          locale: typeof navigator !== "undefined" ? navigator.language : "en"
+        };
+  
+        if (editingId !== null) {
+          const existingIdx = this.sessionHistory.findIndex(
+            (item) => String(item.id) === editingId
+          );
+          const existingEntry = existingIdx >= 0 ? this.sessionHistory[existingIdx] : undefined;
+  
+          const updatePayload                        = {
+            message,
+            metadata: commonMetadata,
+            element_references: this.elementReferences,
+            attachments: this.attachments.map((att) => {
+              if (att.existing_attachment_id !== undefined && att.existing_attachment_id !== null) {
+                return {
+                  existing_id: att.existing_attachment_id,
+                  attachment_type: att.attachment_type,
+                  element_reference_ref: att.element_reference_ref,
+                  metadata: att.metadata
+                };
+              }
+              return {
+                attachment_type: att.attachment_type,
+                filename: att.filename,
+                signed_blob_id: att.signed_blob_id,
+                data_url: att.signed_blob_id ? undefined : att.data_url,
+                element_reference_ref: att.element_reference_ref,
+                metadata: att.metadata
+              };
+            })
+          };
+  
+          const updateRes = await this.apiClient.updateFeedback(
+            existingEntry?.id ?? editingId,
+            updatePayload,
+            existingEntry?.ownershipToken
+          );
+  
+          const mergedPreviewStub                       = {
+            id: existingEntry?.id ?? updateRes?.id ?? editingId,
+            message:
+              message || (smartMode ? "(Highlighted page area)" : "(Context drop without text)"),
+            rawMessage: message,
+            createdAt: existingEntry?.createdAt || this.formatTimestampLabel(updateRes?.created_at),
+            rawCreatedAt: existingEntry?.rawCreatedAt || updateRes?.created_at,
+            rawUpdatedAt: updateRes?.updated_at || new Date().toISOString(),
+            isEdited: true,
+            status: updateRes?.status || existingEntry?.status,
+            ownershipToken:
+              updateRes?.ownership_token ||
+              updateRes?.feedback?.ownership_token ||
+              existingEntry?.ownershipToken,
+            elements: submittedElements,
+            attachments: submittedAttachments
+          };
+  
+          const updatedEntry = updateRes?.feedback
+            ? {
+                ...this.mapOwnRecordToSessionEntry(updateRes.feedback, mergedPreviewStub),
+                isEdited: true
+              }
+            : mergedPreviewStub;
+  
+          if (existingIdx >= 0) {
+            this.sessionHistory[existingIdx] = updatedEntry;
+          } else {
+            this.sessionHistory.push(updatedEntry);
+          }
+  
+          this.cancelEditingFeedback();
+          this.showStatus(
+            smartMode ? "Your feedback was updated." : "Feedback updated.",
+            "success"
+          );
+          this.emitWidgetEvent("context-drop:update", {
+            response: updateRes,
+            payload: updatePayload
+          });
+          return;
+        }
   
         const payload                            = {
           message,
           page_url: typeof window !== "undefined" ? window.location.href : "/",
           user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",
-          metadata: {
-            ...this.customMetadata,
-            environment: this.config.environment,
-            selection_mode: smartMode ? "smart" : "verbose",
-            viewport: {
-              width: typeof window !== "undefined" ? window.innerWidth : 0,
-              height: typeof window !== "undefined" ? window.innerHeight : 0
-            },
-            locale: typeof navigator !== "undefined" ? navigator.language : "en"
-          },
+          metadata: commonMetadata,
           element_references: this.elementReferences,
           attachments: this.attachments.map((att) => ({
             attachment_type: att.attachment_type,
@@ -8866,14 +9855,26 @@
   
         const now = new Date();
         const timeLabel = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        this.sessionHistory.push({
+        const localStub                       = {
           id: res?.id ?? this.sessionHistory.length + 1,
           message:
             message || (smartMode ? "(Highlighted page area)" : "(Context drop without text)"),
+          rawMessage: message,
           createdAt: timeLabel,
+          rawCreatedAt: res?.created_at,
+          rawUpdatedAt: res?.updated_at || res?.created_at,
+          isEdited: false,
+          status: res?.status,
+          ownershipToken: res?.ownership_token || res?.feedback?.ownership_token,
           elements: submittedElements,
           attachments: submittedAttachments
-        });
+        };
+  
+        const createdEntry = res?.feedback
+          ? this.mapOwnRecordToSessionEntry(res.feedback, localStub)
+          : localStub;
+  
+        this.sessionHistory.push(createdEntry);
   
         if (this.textareaEl) {
           this.textareaEl.value = "";
@@ -8894,7 +9895,12 @@
           payload
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to submit feedback.";
+        const msg =
+          err instanceof Error
+            ? err.message
+            : editingId !== null
+              ? "Failed to update feedback."
+              : "Failed to submit feedback.";
         this.showStatus(msg, "error");
         this.emitWidgetEvent("context-drop:error", {
           error: msg
@@ -8903,8 +9909,15 @@
         this.isSubmitting = false;
         if (this.submitBtn) {
           this.submitBtn.disabled = false;
-          this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
+          if (this.editingFeedbackId !== null) {
+            this.submitBtn.setAttribute("aria-label", "Save feedback changes");
+            this.submitBtn.innerHTML = `${ICON_CHECK}<span>Save</span>`;
+          } else {
+            this.submitBtn.setAttribute("aria-label", "Submit feedback");
+            this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
+          }
         }
+        this.renderChatThread();
       }
     }
   

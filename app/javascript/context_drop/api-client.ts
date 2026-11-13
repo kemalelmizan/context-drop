@@ -6,11 +6,32 @@ import type {
   AgentStatusResponse,
   ContextDropApiClientOptions,
   CrossEnvFeedbackListResponse,
+  FeedbackDeleteResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
+  FeedbackUpdatePayload,
+  FeedbackUpdateResponse,
+  OwnFeedbackListResponse,
   ProposedFileEdit,
   WidgetConfig
 } from "./types.ts";
+
+const OWNERSHIP_STORAGE_KEY = "context_drop_ownership_tokens";
+const MAX_STORED_OWNERSHIP_TOKENS = 50;
+
+function getBrowserLocalStorage(): Storage | null {
+  try {
+    if (typeof window !== "undefined" && "localStorage" in window) {
+      const store = window.localStorage;
+      if (store && typeof store.getItem === "function" && typeof store.setItem === "function") {
+        return store;
+      }
+    }
+  } catch {
+    // Storage unavailable or restricted by browser privacy policy
+  }
+  return null;
+}
 
 export class ContextDropApiClient {
   private baseUrl: string;
@@ -19,6 +40,7 @@ export class ContextDropApiClient {
   private cachedCsrfToken: string | null = null;
   private configFetched: boolean = false;
   private inFlightConfigPromise: Promise<WidgetConfig> | null = null;
+  private memoryOwnershipTokens: Map<string, string> = new Map();
 
   constructor(baseUrl: string = "/context_drop", options: ContextDropApiClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
@@ -235,6 +257,113 @@ export class ContextDropApiClient {
     return this.executeWithCsrfRetry(makeRequest, "Upload failed");
   }
 
+  private ownershipScopedKey(id: number | string): string {
+    return `${this.baseUrl}::${String(id)}`;
+  }
+
+  private readStoredTokenMap(): Record<string, string> {
+    const store = getBrowserLocalStorage();
+    if (!store) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of this.memoryOwnershipTokens.entries()) {
+        out[k] = v;
+      }
+      return out;
+    }
+
+    try {
+      const raw = store.getItem(OWNERSHIP_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {};
+      }
+      const clean: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim().length > 0) {
+          clean[k] = v.trim();
+        }
+      }
+      return clean;
+    } catch {
+      return {};
+    }
+  }
+
+  private writeStoredTokenMap(map: Record<string, string>): void {
+    const entries = Object.entries(map);
+    const trimmedEntries =
+      entries.length > MAX_STORED_OWNERSHIP_TOKENS
+        ? entries.slice(entries.length - MAX_STORED_OWNERSHIP_TOKENS)
+        : entries;
+
+    this.memoryOwnershipTokens.clear();
+    const bounded: Record<string, string> = {};
+    for (const [k, v] of trimmedEntries) {
+      bounded[k] = v;
+      this.memoryOwnershipTokens.set(k, v);
+    }
+
+    const store = getBrowserLocalStorage();
+    if (store) {
+      try {
+        store.setItem(OWNERSHIP_STORAGE_KEY, JSON.stringify(bounded));
+      } catch {
+        // Non-fatal if storage quota exceeded
+      }
+    }
+  }
+
+  public getOwnershipToken(id: number | string): string | null {
+    const map = this.readStoredTokenMap();
+    const scoped = map[this.ownershipScopedKey(id)];
+    if (scoped) return scoped;
+    const plain = map[String(id)];
+    return plain || null;
+  }
+
+  public setOwnershipToken(id: number | string, token: string): void {
+    const trimmed = typeof token === "string" ? token.trim() : "";
+    if (!trimmed) return;
+    const map = this.readStoredTokenMap();
+    const key = this.ownershipScopedKey(id);
+    delete map[key];
+    map[key] = trimmed;
+    this.writeStoredTokenMap(map);
+  }
+
+  public removeOwnershipToken(id: number | string): void {
+    const map = this.readStoredTokenMap();
+    const scopedKey = this.ownershipScopedKey(id);
+    const plainKey = String(id);
+    if (!(scopedKey in map) && !(plainKey in map)) return;
+    delete map[scopedKey];
+    delete map[plainKey];
+    this.writeStoredTokenMap(map);
+  }
+
+  public getAllOwnershipTokens(): string[] {
+    const map = this.readStoredTokenMap();
+    const prefix = `${this.baseUrl}::`;
+    const tokens: string[] = [];
+    for (const [k, v] of Object.entries(map)) {
+      if ((k.startsWith(prefix) || !k.includes("::")) && v && !tokens.includes(v)) {
+        tokens.push(v);
+      }
+    }
+    return tokens;
+  }
+
+  public buildAttachmentPreviewUrl(
+    feedbackId: number | string,
+    attachmentId: number | string,
+    ownershipToken?: string | null
+  ): string {
+    const token = ownershipToken || this.getOwnershipToken(feedbackId);
+    const base = `${this.baseUrl}/feedback/${encodeURIComponent(String(feedbackId))}/attachments/${encodeURIComponent(String(attachmentId))}`;
+    return token ? `${base}?ownership_token=${encodeURIComponent(token)}` : base;
+  }
+
   public async submitFeedback(payload: FeedbackSubmissionPayload): Promise<FeedbackSubmissionResponse> {
     const makeRequest = async (csrfToken: string | null) =>
       fetch(`${this.baseUrl}/feedback`, {
@@ -244,7 +373,114 @@ export class ContextDropApiClient {
         body: JSON.stringify({ feedback: payload })
       });
 
-    return this.executeWithCsrfRetry(makeRequest, "Submission failed");
+    const response = await this.executeWithCsrfRetry<FeedbackSubmissionResponse>(
+      makeRequest,
+      "Submission failed"
+    );
+
+    const token = response?.ownership_token || response?.feedback?.ownership_token;
+    if (response?.id !== undefined && token) {
+      this.setOwnershipToken(response.id, token);
+    }
+    return response;
+  }
+
+  public async fetchOwnFeedbacks(limit: number = 30): Promise<OwnFeedbackListResponse> {
+    const headers: Record<string, string> = {
+      Accept: "application/json"
+    };
+    const tokens = this.getAllOwnershipTokens();
+    if (tokens.length > 0) {
+      headers["X-Context-Drop-Ownership-Tokens"] = tokens.join(",");
+    }
+
+    const qs = limit > 0 ? `?limit=${encodeURIComponent(String(limit))}` : "";
+    const response = await fetch(`${this.baseUrl}/feedback${qs}`, {
+      method: "GET",
+      credentials: this.credentials,
+      headers: this.mergeClientHeaders(headers)
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(
+        (errBody as { error?: string }).error || `Failed to load own feedbacks (${response.status})`
+      );
+    }
+
+    const parsed = (await response.json().catch(() => ({}))) as Partial<OwnFeedbackListResponse>;
+    const feedbacks = Array.isArray(parsed?.feedbacks) ? parsed.feedbacks : [];
+    for (const item of feedbacks) {
+      if (item && item.id !== undefined && typeof item.ownership_token === "string") {
+        this.setOwnershipToken(item.id, item.ownership_token);
+      }
+    }
+
+    return {
+      total_count: typeof parsed?.total_count === "number" ? parsed.total_count : feedbacks.length,
+      feedbacks
+    };
+  }
+
+  public async updateFeedback(
+    id: number | string,
+    payload: FeedbackUpdatePayload,
+    ownershipToken?: string | null
+  ): Promise<FeedbackUpdateResponse> {
+    const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+    const makeRequest = async (csrfToken: string | null) => {
+      const headers = this.buildJsonHeaders(csrfToken);
+      if (resolvedToken) {
+        headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+      }
+      const bodyPayload: Record<string, unknown> = { feedback: payload };
+      if (resolvedToken) {
+        bodyPayload.ownership_token = resolvedToken;
+      }
+      return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}`, {
+        method: "PATCH",
+        credentials: this.credentials,
+        headers,
+        body: JSON.stringify(bodyPayload)
+      });
+    };
+
+    const response = await this.executeWithCsrfRetry<FeedbackUpdateResponse>(
+      makeRequest,
+      "Update failed"
+    );
+
+    const nextToken = response?.ownership_token || response?.feedback?.ownership_token;
+    if (response?.id !== undefined && nextToken) {
+      this.setOwnershipToken(response.id, nextToken);
+    }
+    return response;
+  }
+
+  public async deleteFeedback(
+    id: number | string,
+    ownershipToken?: string | null
+  ): Promise<FeedbackDeleteResponse> {
+    const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+    const makeRequest = async (csrfToken: string | null) => {
+      const headers = this.buildJsonHeaders(csrfToken);
+      if (resolvedToken) {
+        headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+      }
+      return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}`, {
+        method: "DELETE",
+        credentials: this.credentials,
+        headers
+      });
+    };
+
+    const response = await this.executeWithCsrfRetry<FeedbackDeleteResponse>(
+      makeRequest,
+      "Delete failed"
+    );
+
+    this.removeOwnershipToken(id);
+    return response;
   }
 
   public async fetchAgentStatus(): Promise<AgentStatusResponse> {

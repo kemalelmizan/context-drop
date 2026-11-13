@@ -44,7 +44,10 @@ module ContextDrop
                   :authorize_submission,
                   :authorize_dashboard,
                   :rate_limit,
+                  :ownership_secret,
                   :on_feedback_created,
+                  :on_feedback_updated,
+                  :on_feedback_deleted,
                   :mcp_enabled,
                   :mcp_api_key,
                   :authorize_mcp,
@@ -93,7 +96,10 @@ module ContextDrop
       end
 
       @rate_limit = { max_requests: 20, period: 3600 }
+      @ownership_secret = nil
       @on_feedback_created = ->(_feedback) {}
+      @on_feedback_updated = ->(_feedback) {}
+      @on_feedback_deleted = ->(_feedback) {}
 
       @mcp_enabled = false
       @mcp_api_key = nil
