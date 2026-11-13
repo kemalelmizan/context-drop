@@ -1,6 +1,6 @@
 {
   "name": "context-drop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Self-hosted contextual feedback widget, Next.js & Rails integration, and unified multi-environment MCP server for AI coding agents.",
   "type": "module",
   "main": "./dist/src/index.js",

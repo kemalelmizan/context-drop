@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    context_drop (0.2.0)
+    context_drop (0.3.0)
       actionpack (>= 7.1)
       activerecord (>= 7.1)
       activestorage (>= 7.1)
