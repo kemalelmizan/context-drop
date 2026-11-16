@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { runContextDropMcpStdio } from "./mcp/index.ts";
-import { createLocalStorageAdapter } from "./server/storage/local.ts";
+import { createLazyLocalStorageAdapter } from "./server/storage/local.ts";
 import { createPostgresStorageAdapter, type PostgresQueryable } from "./server/storage/postgres.ts";
 import { VERSION, type StorageAdapter } from "./server/types.ts";
 
@@ -71,7 +71,7 @@ async function resolveCliStorage(args: string[]): Promise<StorageAdapter> {
   }
 
   const storageDir = getFlagValue(args, "--dir") || process.env.CONTEXT_DROP_STORAGE_DIR;
-  return createLocalStorageAdapter({ dir: storageDir });
+  return createLazyLocalStorageAdapter({ dir: storageDir });
 }
 
 function runInitCommand(args: string[], cwd: string = process.cwd()): void {

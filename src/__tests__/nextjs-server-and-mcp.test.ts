@@ -1306,6 +1306,92 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
       fs.rmSync(tmpJsonDir, { recursive: true, force: true });
     }
   });
+
+  it("does not create .context-drop directory when MCP starts or reads in a non-ContextDrop project", async () => {
+    const tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "cd-mcp-lazy-"));
+    const storageDir = path.join(tmpProject, ".context-drop");
+    try {
+      const outputs: string[] = [];
+      const requests = [
+        JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "list_feedbacks", arguments: {} }
+        }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: "get_feedback", arguments: { id: 1 } }
+        })
+      ];
+
+      await runContextDropMcpStdio({
+        storageDir,
+        input: Readable.from(requests.map((r) => `${r}\n`)),
+        output: {
+          write(chunk: string) {
+            outputs.push(chunk);
+          }
+        }
+      });
+
+      assert.equal(fs.existsSync(storageDir), false, ".context-drop must not be created by MCP");
+      assert.equal(outputs.length, 3);
+
+      const listRes = JSON.parse(outputs[1]!) as {
+        result: { content: Array<{ text: string }> };
+      };
+      const listPayload = JSON.parse(listRes.result.content[0]!.text) as { total: number };
+      assert.equal(listPayload.total, 0);
+
+      // Once the app itself creates .context-drop and stores feedback, MCP reads it seamlessly
+      const writer = createLocalStorageAdapter({ dir: storageDir });
+      await writer.createFeedback({
+        environment: "development",
+        message: "Created after MCP started",
+        page_url: "http://localhost:3000/",
+        user_agent: "NodeTest",
+        session_id: null,
+        submitter: {},
+        metadata: {},
+        element_references: [],
+        attachments: []
+      });
+
+      const outputsAfter: string[] = [];
+      await runContextDropMcpStdio({
+        storageDir,
+        input: Readable.from([
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: 4,
+            method: "tools/call",
+            params: { name: "list_feedbacks", arguments: {} }
+          })}\n`
+        ]),
+        output: {
+          write(chunk: string) {
+            outputsAfter.push(chunk);
+          }
+        }
+      });
+
+      const afterRes = JSON.parse(outputsAfter[0]!) as {
+        result: { content: Array<{ text: string }> };
+      };
+      const afterPayload = JSON.parse(afterRes.result.content[0]!.text) as {
+        total: number;
+        feedbacks: Array<{ message: string }>;
+      };
+      assert.equal(afterPayload.total, 1);
+      assert.equal(afterPayload.feedbacks[0]!.message, "Created after MCP started");
+    } finally {
+      fs.rmSync(tmpProject, { recursive: true, force: true });
+    }
+  });
 });
 
 

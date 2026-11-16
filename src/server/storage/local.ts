@@ -129,10 +129,14 @@ function resolveOrCreateSecret(storageDir: string, explicitSecret?: string): Buf
   return crypto.createHash("sha256").update(generated).digest();
 }
 
-export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = {}): StorageAdapter {
-  const storageDir = path.resolve(
-    options.dir || process.env.CONTEXT_DROP_STORAGE_DIR || path.join(process.cwd(), ".context-drop")
+export function resolveLocalStorageDir(dir?: string): string {
+  return path.resolve(
+    dir || process.env.CONTEXT_DROP_STORAGE_DIR || path.join(process.cwd(), ".context-drop")
   );
+}
+
+export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = {}): StorageAdapter {
+  const storageDir = resolveLocalStorageDir(options.dir);
   fs.mkdirSync(storageDir, { recursive: true });
 
   const gitignorePath = path.join(storageDir, ".gitignore");
@@ -1249,6 +1253,85 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         previous_status,
         feedback: structuredClone(found)
       };
+    }
+  };
+}
+
+/**
+ * Wraps `createLocalStorageAdapter` so the storage directory (`.context-drop/`)
+ * is NOT created on startup or during read/lookup operations when it does not
+ * already exist. Useful for the global MCP server so non-ContextDrop projects
+ * are not polluted with an empty `.context-drop/` folder.
+ */
+export function createLazyLocalStorageAdapter(
+  options: LocalStorageAdapterOptions = {}
+): StorageAdapter {
+  const storageDir = resolveLocalStorageDir(options.dir);
+  let inner: StorageAdapter | null = null;
+
+  function getExistingAdapter(): StorageAdapter | null {
+    if (inner) return inner;
+    if (!fs.existsSync(storageDir)) return null;
+    inner = createLocalStorageAdapter({ ...options, dir: storageDir });
+    return inner;
+  }
+
+  function getOrCreateAdapter(): StorageAdapter {
+    if (!inner) {
+      inner = createLocalStorageAdapter({ ...options, dir: storageDir });
+    }
+    return inner;
+  }
+
+  return {
+    savePendingBlob(blob) {
+      return getOrCreateAdapter().savePendingBlob(blob);
+    },
+    async consumePendingBlob(signedBlobId) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.consumePendingBlob(signedBlobId) : null;
+    },
+    createFeedback(input) {
+      return getOrCreateAdapter().createFeedback(input);
+    },
+    async listFeedbacks(filter) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.listFeedbacks(filter) : { total: 0, records: [] };
+    },
+    async listOwnFeedbacks(query) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.listOwnFeedbacks(query) : { total: 0, records: [] };
+    },
+    async getFeedback(id) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.getFeedback(id) : null;
+    },
+    async updateFeedback(id, input) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.updateFeedback(id, input) : null;
+    },
+    async softDeleteFeedback(id) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.softDeleteFeedback(id) : null;
+    },
+    async getAttachment(attachmentId) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.getAttachment(attachmentId) : null;
+    },
+    async getAttachmentBytes(attachmentId) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.getAttachmentBytes(attachmentId) : null;
+    },
+    async updateFeedbackStatus(id, status) {
+      const adapter = getExistingAdapter();
+      return adapter ? adapter.updateFeedbackStatus(id, status) : null;
+    },
+    async addComment(feedbackId, input) {
+      const adapter = getExistingAdapter();
+      return adapter?.addComment ? adapter.addComment(feedbackId, input) : null;
+    },
+    getOwnershipSecret() {
+      return getOrCreateAdapter().getOwnershipSecret!();
     }
   };
 }

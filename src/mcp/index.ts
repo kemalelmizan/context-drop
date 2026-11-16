@@ -1,5 +1,5 @@
 import readline from "node:readline";
-import { createLocalStorageAdapter } from "../server/storage/local.ts";
+import { createLazyLocalStorageAdapter } from "../server/storage/local.ts";
 import type { RemoteMcpEnvironmentConfig, StorageAdapter } from "../server/types.ts";
 import {
   ContextDropMcpDispatcher,
@@ -35,7 +35,7 @@ export {
 export function createContextDropMcpServer(options: Partial<ContextDropMcpOptions> = {}) {
   const storage: StorageAdapter =
     options.storage ??
-    createLocalStorageAdapter({
+    createLazyLocalStorageAdapter({
       dir: process.env.CONTEXT_DROP_STORAGE_DIR
     });
 
@@ -86,7 +86,7 @@ export async function runContextDropMcpStdio(
 
   const storage =
     options.storage ??
-    createLocalStorageAdapter({
+    createLazyLocalStorageAdapter({
       dir: options.storageDir || process.env.CONTEXT_DROP_STORAGE_DIR
     });
 
