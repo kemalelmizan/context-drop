@@ -52,7 +52,7 @@ module ContextDrop
           end
 
           feedback = ContextDrop::Feedback
-                     .includes(:submitter, :element_references, :attachments)
+                     .includes(:submitter, :element_references, :attachments, comments: :attachments)
                      .find_by(id: feedback_id)
 
           if !feedback || (!include_deleted && feedback.respond_to?(:deleted?) && feedback.deleted?)
@@ -71,6 +71,14 @@ module ContextDrop
             feedback.attachments.each do |att|
               img_block = build_image_content_block(att)
               content_blocks << img_block if img_block
+            end
+            if feedback.respond_to?(:comments)
+              feedback.comments.each do |comment|
+                comment.attachments.each do |att|
+                  img_block = build_image_content_block(att)
+                  content_blocks << img_block if img_block
+                end
+              end
             end
           end
 
@@ -157,6 +165,26 @@ module ContextDrop
                 content_type: attached ? att.file.content_type : nil,
                 byte_size: attached ? att.file.byte_size : nil,
                 created_at: att.created_at&.iso8601
+              }
+            end,
+            comments: (feedback.respond_to?(:comments) ? feedback.comments : []).map do |comment|
+              {
+                id: comment.id,
+                author_label: comment.display_author_label,
+                author_type: comment.author_type,
+                body: comment.body,
+                attachments: comment.attachments.map do |att|
+                  attached = att.respond_to?(:file) && att.file.attached?
+                  {
+                    id: att.id,
+                    attachment_type: att.attachment_type,
+                    filename: attached ? att.file.filename.to_s : nil,
+                    content_type: attached ? att.file.content_type : nil,
+                    byte_size: attached ? att.file.byte_size : nil,
+                    created_at: att.created_at&.iso8601
+                  }
+                end,
+                created_at: comment.created_at&.iso8601
               }
             end
           }

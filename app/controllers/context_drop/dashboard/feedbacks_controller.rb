@@ -15,20 +15,21 @@ module ContextDrop
         @status_counts = {
           "all" => ContextDrop::Feedback.active.count,
           "new" => ContextDrop::Feedback.new_records.count,
+          "updated" => ContextDrop::Feedback.updated_records.count,
+          "fixed" => ContextDrop::Feedback.fixed.count,
           "reviewed" => ContextDrop::Feedback.reviewed.count,
-          "resolved" => ContextDrop::Feedback.resolved.count,
           "dismissed" => ContextDrop::Feedback.dismissed.count,
           "deleted" => ContextDrop::Feedback.deleted.count
         }
 
         @current_status = params[:status].to_s.strip
         scope = if @current_status == "deleted"
-                  ContextDrop::Feedback.deleted.includes(:element_references, :attachments).recent
+                  ContextDrop::Feedback.deleted.includes(:element_references, :attachments, :comments).recent
                 elsif ContextDrop::Feedback::STATUSES.include?(@current_status)
-                  ContextDrop::Feedback.active.where(status: @current_status).includes(:element_references, :attachments).recent
+                  ContextDrop::Feedback.active.where(status: @current_status).includes(:element_references, :attachments, :comments).recent
                 else
                   @current_status = ""
-                  ContextDrop::Feedback.active.includes(:element_references, :attachments).recent
+                  ContextDrop::Feedback.active.includes(:element_references, :attachments, :comments).recent
                 end
 
         @page_url_filter = params[:page_url].to_s.strip
@@ -39,8 +40,9 @@ module ContextDrop
         @search_query = (params[:q] || params[:query]).to_s.strip
         if @search_query.present?
           pattern = "%#{sanitize_sql_like(@search_query)}%"
-          scope = scope.left_outer_joins(:element_references).where(
+          scope = scope.left_outer_joins(:element_references, :comments).where(
             "context_drop_feedbacks.message LIKE :q OR " \
+            "context_drop_comments.body LIKE :q OR " \
             "context_drop_element_references.selector LIKE :q OR " \
             "context_drop_element_references.dom_path LIKE :q OR " \
             "context_drop_element_references.text_content LIKE :q",
@@ -58,7 +60,7 @@ module ContextDrop
 
       def show
         @feedback = ContextDrop::Feedback
-                    .includes(:element_references, :attachments)
+                    .includes(:element_references, :attachments, comments: :attachments)
                     .find(params[:id])
 
         nav_scope = @feedback.deleted? ? ContextDrop::Feedback.deleted : ContextDrop::Feedback.active
@@ -112,6 +114,85 @@ module ContextDrop
           format.html do
             redirect_to dashboard_feedback_path(@feedback), notice: "Feedback ##{@feedback.id} marked as #{@feedback.status}."
           end
+        end
+      end
+
+      def create_comment
+        @feedback = ContextDrop::Feedback.find(params[:id])
+        body = (params[:body] || params.dig(:comment, :body)).to_s.strip.presence
+        raw_files = Array(params[:images] || params.dig(:comment, :images)).reject(&:blank?)
+
+        if raw_files.size > ContextDrop.config.max_attachments.to_i
+          redirect_to dashboard_feedback_path(@feedback),
+                      alert: "Too many images attached (maximum #{ContextDrop.config.max_attachments})."
+          return
+        end
+
+        comment = nil
+        ContextDrop::Feedback.transaction do
+          comment = @feedback.comments.build(
+            author_type: "Dashboard",
+            author_label: "Team",
+            body: body,
+            metadata: {}
+          )
+
+          pending_attachments = raw_files.map do |file|
+            validated = ContextDrop::UploadValidator.validate!(file)
+            att_meta = {}
+            if validated[:dimensions]
+              att_meta["image_dimensions"] = {
+                "width" => validated[:dimensions][0],
+                "height" => validated[:dimensions][1]
+              }
+            end
+            att = comment.attachments.build(
+              feedback: @feedback,
+              attachment_type: "image",
+              metadata: att_meta
+            )
+            [att, validated]
+          end
+
+          unless comment.valid?
+            redirect_to dashboard_feedback_path(@feedback), alert: comment.errors.full_messages.join(", ")
+            raise ActiveRecord::Rollback
+          end
+
+          comment.save!
+
+          pending_attachments.each do |att, validated|
+            next unless att.respond_to?(:file)
+
+            att.file.attach(
+              io: validated[:io],
+              filename: validated[:filename],
+              content_type: validated[:content_type]
+            )
+          end
+
+          @feedback.update!(status: "updated")
+        end
+
+        return if performed?
+
+        respond_to do |format|
+          format.json do
+            render json: {
+              id: comment.id,
+              feedback_id: @feedback.id,
+              status: @feedback.status,
+              created_at: comment.created_at&.iso8601
+            }, status: :created
+          end
+          format.html do
+            redirect_to dashboard_feedback_path(@feedback), notice: "Comment added to Feedback ##{@feedback.id}."
+          end
+        end
+      rescue ContextDrop::UploadValidator::ValidationError => e
+        respond_to do |format|
+          format.json { render json: { error: e.message }, status: :unprocessable_entity }
+          format.html { redirect_to dashboard_feedback_path(@feedback), alert: e.message }
         end
       end
 

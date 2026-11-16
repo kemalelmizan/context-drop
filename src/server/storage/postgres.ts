@@ -168,9 +168,22 @@ export function createPostgresStorageAdapter(
         `);
 
         await pool.query(`
+          CREATE TABLE IF NOT EXISTS context_drop_comments (
+            id BIGSERIAL PRIMARY KEY,
+            feedback_id BIGINT NOT NULL REFERENCES context_drop_feedbacks(id) ON DELETE CASCADE,
+            author_type TEXT,
+            author_label TEXT,
+            body TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+        `);
+
+        await pool.query(`
           CREATE TABLE IF NOT EXISTS context_drop_attachments (
             id BIGSERIAL PRIMARY KEY,
             feedback_id BIGINT NOT NULL REFERENCES context_drop_feedbacks(id) ON DELETE CASCADE,
+            comment_id BIGINT REFERENCES context_drop_comments(id) ON DELETE CASCADE,
             element_reference_id BIGINT REFERENCES context_drop_element_references(id) ON DELETE SET NULL,
             attachment_type TEXT NOT NULL,
             filename TEXT,
@@ -182,6 +195,15 @@ export function createPostgresStorageAdapter(
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           );
         `);
+
+        await pool.query(`
+          ALTER TABLE context_drop_attachments
+          ADD COLUMN IF NOT EXISTS comment_id BIGINT REFERENCES context_drop_comments(id) ON DELETE CASCADE;
+        `);
+
+        await pool.query(`
+          UPDATE context_drop_feedbacks SET status = 'fixed' WHERE status = 'resolved';
+        `);
       })();
     }
     await migratedPromise;
@@ -189,7 +211,7 @@ export function createPostgresStorageAdapter(
 
   async function hydrateFeedbackRow(row: Record<string, unknown>): Promise<StoredFeedbackRecord> {
     const fbId = Number(row["id"]);
-    const [elRes, attRes] = await Promise.all([
+    const [elRes, attRes, commentRes] = await Promise.all([
       pool.query(
         `SELECT id, feedback_id, client_ref, tag_name, selector, dom_path, text_content,
                 attributes_snapshot, bounding_rect, viewport, metadata, captured_at
@@ -199,9 +221,16 @@ export function createPostgresStorageAdapter(
         [fbId]
       ),
       pool.query(
-        `SELECT id, feedback_id, element_reference_id, attachment_type, filename,
+        `SELECT id, feedback_id, comment_id, element_reference_id, attachment_type, filename,
                 content_type, byte_size, blob_key, metadata, created_at
          FROM context_drop_attachments
+         WHERE feedback_id = $1
+         ORDER BY id ASC`,
+        [fbId]
+      ),
+      pool.query(
+        `SELECT id, feedback_id, author_type, author_label, body, created_at, updated_at
+         FROM context_drop_comments
          WHERE feedback_id = $1
          ORDER BY id ASC`,
         [fbId]
@@ -223,9 +252,13 @@ export function createPostgresStorageAdapter(
       captured_at: toIsoString(el["captured_at"])
     }));
 
-    const attachments: StoredAttachment[] = attRes.rows.map((att) => ({
+    const allAttachments: StoredAttachment[] = attRes.rows.map((att) => ({
       id: Number(att["id"]),
       feedback_id: fbId,
+      comment_id:
+        att["comment_id"] !== null && att["comment_id"] !== undefined
+          ? Number(att["comment_id"])
+          : null,
       element_reference_id:
         att["element_reference_id"] !== null && att["element_reference_id"] !== undefined
           ? Number(att["element_reference_id"])
@@ -242,10 +275,37 @@ export function createPostgresStorageAdapter(
       created_at: toIsoString(att["created_at"])
     }));
 
+    const attachments = allAttachments.filter((a) => a.comment_id === null || a.comment_id === undefined);
+    const attachmentsByComment = new Map<number, StoredAttachment[]>();
+    for (const a of allAttachments) {
+      if (a.comment_id !== null && a.comment_id !== undefined) {
+        const list = attachmentsByComment.get(Number(a.comment_id)) ?? [];
+        list.push(a);
+        attachmentsByComment.set(Number(a.comment_id), list);
+      }
+    }
+
+    const comments: import("../types.ts").StoredComment[] = commentRes.rows.map((c) => {
+      const cid = Number(c["id"]);
+      return {
+        id: cid,
+        feedback_id: fbId,
+        author_type: (c["author_type"] as string | null) ?? null,
+        author_label: String(c["author_label"] || "You"),
+        body: (c["body"] as string | null) ?? null,
+        attachments: attachmentsByComment.get(cid) ?? [],
+        created_at: toIsoString(c["created_at"]),
+        updated_at: toIsoString(c["updated_at"])
+      };
+    });
+
+    const rawStatus = String(row["status"] ?? "new");
+    const normalizedStatus = (rawStatus === "resolved" ? "fixed" : rawStatus) as FeedbackStatus;
+
     return {
       id: fbId,
       environment: String(row["environment"] ?? "production"),
-      status: String(row["status"] ?? "new") as FeedbackStatus,
+      status: normalizedStatus,
       message: (row["message"] as string | null) ?? null,
       page_url: String(row["page_url"] ?? ""),
       user_agent: (row["user_agent"] as string | null) ?? null,
@@ -254,6 +314,7 @@ export function createPostgresStorageAdapter(
       metadata: parseJsonColumn(row["metadata"], {}),
       element_references: elements,
       attachments,
+      comments,
       created_at: toIsoString(row["created_at"]),
       updated_at: toIsoString(row["updated_at"]),
       deleted_at: row["deleted_at"] ? toIsoString(row["deleted_at"]) : null
@@ -564,12 +625,18 @@ export function createPostgresStorageAdapter(
 
       const nextMessage = input.message !== undefined ? input.message : existing.message;
       const nextMetadata = input.metadata !== undefined ? input.metadata : existing.metadata;
+      const contentEdited =
+        input.message !== undefined ||
+        input.metadata !== undefined ||
+        input.element_references !== undefined ||
+        input.attachments !== undefined;
+      const nextStatus = input.status ?? (contentEdited ? "updated" : existing.status);
 
       await pool.query(
         `UPDATE context_drop_feedbacks
-         SET message = $1, metadata = $2::jsonb, updated_at = NOW()
-         WHERE id = $3`,
-        [nextMessage, JSON.stringify(nextMetadata || {}), fbId]
+         SET message = $1, metadata = $2::jsonb, status = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [nextMessage, JSON.stringify(nextMetadata || {}), nextStatus, fbId]
       );
 
       const elIdByRef = new Map<string, number>();
@@ -781,6 +848,71 @@ export function createPostgresStorageAdapter(
       return {
         previous_status: existing.status,
         feedback: await hydrateFeedbackRow(row)
+      };
+    },
+
+    async addComment(feedbackId: string | number, input: import("../types.ts").CreateCommentInput) {
+      await ensureMigrated();
+      const fbId = Number(feedbackId);
+      const existing = await this.getFeedback(fbId);
+      if (!existing || existing.deleted_at) return null;
+
+      const commentRes = await pool.query(
+        `INSERT INTO context_drop_comments (feedback_id, author_type, author_label, body)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id`,
+        [fbId, input.author_type ?? "User", input.author_label || "You", input.body]
+      );
+      const commentId = Number(commentRes.rows[0]["id"]);
+
+      for (const att of input.attachments ?? []) {
+        let blobKey: string | null = null;
+        let inlineData: Buffer | null = null;
+        if (att.data) {
+          if (blobStore) {
+            const saved = await blobStore.putBlob({
+              key: `fb_${fbId}_comment_${commentId}_${crypto.randomUUID()}`,
+              data: att.data,
+              contentType: att.content_type || "image/png",
+              filename: att.filename || "image.png"
+            });
+            blobKey = saved.key;
+          } else {
+            inlineData = Buffer.from(att.data);
+          }
+        }
+        await pool.query(
+          `INSERT INTO context_drop_attachments
+           (feedback_id, comment_id, element_reference_id, attachment_type, filename, content_type, byte_size, blob_key, data, metadata)
+           VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+          [
+            fbId,
+            commentId,
+            att.attachment_type,
+            att.filename,
+            att.content_type,
+            att.byte_size,
+            blobKey,
+            inlineData,
+            JSON.stringify(att.metadata || {})
+          ]
+        );
+      }
+
+      const nextStatus = input.status ?? "updated";
+      await pool.query(
+        `UPDATE context_drop_feedbacks SET status = $1, updated_at = NOW() WHERE id = $2`,
+        [nextStatus, fbId]
+      );
+
+      const updated = await this.getFeedback(fbId);
+      if (!updated) return null;
+      const createdComment = (updated.comments ?? []).find((c) => Number(c.id) === commentId);
+      if (!createdComment) return null;
+
+      return {
+        comment: createdComment,
+        feedback: updated
       };
     }
   };

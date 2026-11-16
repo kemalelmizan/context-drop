@@ -4,7 +4,7 @@ module ContextDrop
   class Feedback < ApplicationRecord
     self.table_name = "context_drop_feedbacks"
 
-    STATUSES = %w[new reviewed resolved dismissed].freeze
+    STATUSES = %w[new updated fixed reviewed dismissed].freeze
 
     belongs_to :submitter, polymorphic: true, optional: true
 
@@ -15,7 +15,15 @@ module ContextDrop
              dependent: :destroy
 
     has_many :attachments,
+             -> { where(comment_id: nil) },
              class_name: "ContextDrop::Attachment",
+             foreign_key: :feedback_id,
+             inverse_of: :feedback,
+             dependent: :destroy
+
+    has_many :comments,
+             -> { order(created_at: :asc, id: :asc) },
+             class_name: "ContextDrop::Comment",
              foreign_key: :feedback_id,
              inverse_of: :feedback,
              dependent: :destroy
@@ -27,8 +35,9 @@ module ContextDrop
       column_names.include?("deleted_at") ? where.not(deleted_at: nil) : none
     }
     scope :new_records, -> { active.where(status: "new") }
+    scope :updated_records, -> { active.where(status: "updated") }
+    scope :fixed, -> { active.where(status: "fixed") }
     scope :reviewed, -> { active.where(status: "reviewed") }
-    scope :resolved, -> { active.where(status: "resolved") }
     scope :dismissed, -> { active.where(status: "dismissed") }
     scope :recent, -> { order(created_at: :desc, id: :desc) }
     scope :for_environment, lambda { |env|
@@ -47,12 +56,16 @@ module ContextDrop
 
     before_validation :normalize_defaults
 
-    def mark_reviewed!
-      update!(status: "reviewed")
+    def mark_updated!
+      update!(status: "updated")
     end
 
-    def mark_resolved!
-      update!(status: "resolved")
+    def mark_fixed!
+      update!(status: "fixed")
+    end
+
+    def mark_reviewed!
+      update!(status: "reviewed")
     end
 
     def mark_dismissed!

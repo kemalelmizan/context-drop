@@ -105,6 +105,12 @@
                       <span><%= fb.attachments.size %></span>
                     </span>
                   <% end %>
+                  <% if fb.comments.size > 0 %>
+                    <span class="cd-context-chip" title="<%= fb.comments.size %> comment(s)">
+                      <%= cd_icon_comment(size: 11) %>
+                      <span><%= fb.comments.size %></span>
+                    </span>
+                  <% end %>
                   <% if fb.element_references.size > 0 %>
                     <span class="cd-context-chip" title="<%= fb.element_references.size %> element reference(s)">
                       <%= cd_icon_pin(size: 11) %>

@@ -885,6 +885,7 @@
   const ICON_MOON = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.2 12.8A7.5 7.5 0 0 1 7.2 2.8a7.5 7.5 0 1 0 10 10z"/></svg>`;
   const ICON_EDIT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.5a1.5 1.5 0 0 1 2.1 2.1L5.8 12.1 2.7 13l.9-3.1 7.6-7.4z"/></svg>`;
   const ICON_TRASH = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 4.5h10.4"/><path d="M6.2 4.5V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.3"/><path d="M4.2 4.5l.6 8.3a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.6-8.3"/></svg>`;
+  const ICON_COMMENT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 10.2a1.3 1.3 0 0 1-1.3 1.3H5.4L2.5 14V3.8A1.3 1.3 0 0 1 3.8 2.5h8.4a1.3 1.3 0 0 1 1.3 1.3v6.4z"/></svg>`;
 
   // --- Module: markdown.ts ---
   /**
@@ -2194,6 +2195,136 @@
     font-family: var(--cd-font);
     font-size: 11px;
     font-weight: 500;
+  }
+  
+  .cd-chat-msg.is-commenting {
+    border-color: var(--cd-accent);
+    box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
+  }
+  
+  .cd-msg-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: capitalize;
+    letter-spacing: 0.01em;
+    border: 1px solid transparent;
+    line-height: 1.4;
+  }
+  
+  .cd-msg-status-badge.is-new {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+  }
+  
+  .cd-msg-status-badge.is-updated {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
+  }
+  
+  .cd-msg-status-badge.is-fixed {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: #4338ca;
+  }
+  
+  .cd-msg-status-badge.is-reviewed {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #15803d;
+  }
+  
+  .cd-msg-status-badge.is-dismissed {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #64748b;
+  }
+  
+  .cd-review-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+  
+  .cd-review-btn:hover:not(:disabled) {
+    background: #dcfce7;
+    border-color: #86efac;
+  }
+  
+  .cd-review-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  
+  .cd-comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--cd-border-subtle);
+  }
+  
+  .cd-comment-item {
+    background: var(--cd-surface-recessed);
+    border: 1px solid var(--cd-border-subtle);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  
+  .cd-comment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--cd-muted);
+    margin-bottom: 2px;
+  }
+  
+  .cd-comment-author {
+    font-weight: 600;
+    color: var(--cd-ink);
+  }
+  
+  .cd-comment-body {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.42;
+    color: var(--cd-ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  
+  .cd-comment-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+  }
+  
+  .cd-comment-thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--cd-border);
+    display: block;
   }
   
   /* ==========================================================================
@@ -3666,6 +3797,41 @@
       const nextToken = response?.ownership_token || response?.feedback?.ownership_token;
       if (response?.id !== undefined && nextToken) {
         this.setOwnershipToken(response.id, nextToken);
+      }
+      return response;
+    }
+  
+           async createComment(
+      id                 ,
+      payload                      ,
+      ownershipToken                
+    )                                 {
+      const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+      const makeRequest = async (csrfToken               ) => {
+        const headers = this.buildJsonHeaders(csrfToken);
+        if (resolvedToken) {
+          headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+        }
+        const bodyPayload                          = { comment: payload };
+        if (resolvedToken) {
+          bodyPayload.ownership_token = resolvedToken;
+        }
+        return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}/comments`, {
+          method: "POST",
+          credentials: this.credentials,
+          headers,
+          body: JSON.stringify(bodyPayload)
+        });
+      };
+  
+      const response = await this.executeWithCsrfRetry                       (
+        makeRequest,
+        "Comment failed"
+      );
+  
+      const nextToken = response?.feedback?.ownership_token;
+      if (response?.feedback?.id !== undefined && nextToken) {
+        this.setOwnershipToken(response.feedback.id, nextToken);
       }
       return response;
     }
@@ -5826,6 +5992,8 @@
             ownFeedbacksLoaded          = false;
             inFlightOwnFeedbacksPromise                                         = null;
             editingFeedbackId                = null;
+            commentingFeedbackId                = null;
+            reviewingFeedbackId                = null;
             confirmingDeleteId                = null;
             deletingFeedbackId                = null;
             stashedDraftBeforeEdit   
@@ -6324,6 +6492,30 @@
           ? structuredClone(existingEntry.elements)
           : [];
   
+      const mappedComments                               = Array.isArray(record.comments)
+        ? record.comments.map((c) => ({
+            id: c.id,
+            author_label: c.author_label || "You",
+            author_type: c.author_type ?? null,
+            body: c.body ?? null,
+            createdAt: this.formatTimestampLabel(c.created_at),
+            rawCreatedAt: c.created_at,
+            attachments: Array.isArray(c.attachments)
+              ? c.attachments.map((att) => ({
+                  id: `srv-catt-${att.id}`,
+                  server_id: att.id,
+                  label: att.filename || "image.png",
+                  preview_url: this.apiClient.buildAttachmentPreviewUrl(record.id, att.id, token),
+                  attachment_type: att.attachment_type || "image",
+                  filename: att.filename,
+                  metadata: att.metadata || {}
+                }))
+              : []
+          }))
+        : existingEntry?.comments
+          ? structuredClone(existingEntry.comments)
+          : [];
+  
       return {
         id: record.id,
         message: displayMessage,
@@ -6335,7 +6527,8 @@
         status: record.status,
         ownershipToken: token,
         elements,
-        attachments: mappedAttachments
+        attachments: mappedAttachments,
+        comments: mappedComments
       };
     }
   
@@ -6402,10 +6595,13 @@
       const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
       if (!entry) return false;
   
+      if (this.commentingFeedbackId !== null) {
+        this.cancelCommentingFeedback();
+      }
       this.confirmingDeleteId = null;
       this.hideStatus();
   
-      if (this.editingFeedbackId === null) {
+      if (this.editingFeedbackId === null && this.commentingFeedbackId === null) {
         this.stashedDraftBeforeEdit = {
           message: this.textareaEl?.value || "",
           elementReferences: [...this.elementReferences],
@@ -6483,6 +6679,100 @@
       this.renderTray();
       this.renderChatThread();
       this.syncUiStates();
+    }
+  
+           startCommentingFeedback(feedbackId                 )          {
+      const targetKey = String(feedbackId);
+      const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+      if (!entry) return false;
+  
+      if (this.editingFeedbackId !== null) {
+        this.cancelEditingFeedback();
+      }
+      this.confirmingDeleteId = null;
+      this.hideStatus();
+  
+      if (this.commentingFeedbackId === null && this.editingFeedbackId === null) {
+        this.stashedDraftBeforeEdit = {
+          message: this.textareaEl?.value || "",
+          elementReferences: [...this.elementReferences],
+          elementDomNodes: new Map(this.elementDomNodes),
+          attachments: [...this.attachments]
+        };
+      }
+  
+      this.commentingFeedbackId = targetKey;
+      if (this.textareaEl) {
+        this.textareaEl.value = "";
+      }
+      this.elementReferences = [];
+      this.elementDomNodes.clear();
+      this.attachments = [];
+  
+      this.picker?.hideExternalPreview();
+      this.picker?.refreshPinnedMarkers();
+      this.renderTray();
+      this.renderChatThread();
+      this.syncUiStates();
+      this.textareaEl?.focus();
+      return true;
+    }
+  
+           cancelCommentingFeedback()       {
+      if (this.commentingFeedbackId === null) return;
+      this.commentingFeedbackId = null;
+  
+      if (this.stashedDraftBeforeEdit) {
+        if (this.textareaEl) {
+          this.textareaEl.value = this.stashedDraftBeforeEdit.message;
+        }
+        this.elementReferences = this.stashedDraftBeforeEdit.elementReferences;
+        this.elementDomNodes = this.stashedDraftBeforeEdit.elementDomNodes;
+        this.attachments = this.stashedDraftBeforeEdit.attachments;
+        this.stashedDraftBeforeEdit = null;
+      } else {
+        if (this.textareaEl) {
+          this.textareaEl.value = "";
+        }
+        this.elementReferences = [];
+        this.elementDomNodes.clear();
+        this.attachments = [];
+      }
+  
+      this.renderTray();
+      this.renderChatThread();
+      this.syncUiStates();
+    }
+  
+           async markFeedbackReviewed(feedbackId                 )                {
+      if (this.reviewingFeedbackId !== null || this.isSubmitting) return;
+      const targetKey = String(feedbackId);
+      const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+      if (!entry) return;
+  
+      this.reviewingFeedbackId = targetKey;
+      this.renderChatThread();
+  
+      try {
+        const res = await this.apiClient.updateFeedback(
+          entry.id,
+          { status: "reviewed" },
+          entry.ownershipToken
+        );
+        entry.status = res?.status || "reviewed";
+        if (res?.ownership_token) {
+          entry.ownershipToken = res.ownership_token;
+        }
+        this.reviewingFeedbackId = null;
+        this.renderChatThread();
+        this.showStatus("Fix marked as reviewed.", "success");
+        this.emitWidgetEvent("context-drop:update", { response: res, id: entry.id });
+      } catch (err) {
+        this.reviewingFeedbackId = null;
+        this.renderChatThread();
+        const msg = err instanceof Error ? err.message : "Failed to mark feedback as reviewed.";
+        this.showStatus(msg, "error");
+      }
     }
   
            requestDeleteFeedback(feedbackId                 )       {
@@ -7607,7 +7897,11 @@
       cancelEditBtn.setAttribute("aria-label", "Cancel editing feedback");
       cancelEditBtn.textContent = "Cancel";
       cancelEditBtn.addEventListener("click", () => {
-        this.cancelEditingFeedback();
+        if (this.commentingFeedbackId !== null) {
+          this.cancelCommentingFeedback();
+        } else {
+          this.cancelEditingFeedback();
+        }
       });
       editBanner.appendChild(cancelEditBtn);
       this.editBannerEl = editBanner;
@@ -7626,6 +7920,8 @@
           ev.preventDefault();
           if (this.confirmingDeleteId !== null) {
             this.cancelDeleteFeedback();
+          } else if (this.commentingFeedbackId !== null) {
+            this.cancelCommentingFeedback();
           } else if (this.editingFeedbackId !== null) {
             this.cancelEditingFeedback();
           } else {
@@ -8885,12 +9181,21 @@
       if (this.composerModeSwitchWrap) {
         this.composerModeSwitchWrap.hidden = !this.config.agent?.enabled;
       }
-      if (this.textareaEl && !this.customPlaceholderSet) {
-        this.textareaEl.placeholder = smartMode
-          ? DEFAULT_SMART_PLACEHOLDER
-          : DEFAULT_VERBOSE_PLACEHOLDER;
+      const isCommenting = this.commentingFeedbackId !== null;
+      if (this.textareaEl) {
+        if (isCommenting) {
+          this.textareaEl.placeholder = "Write a comment... (attach or paste images below)";
+        } else if (!this.customPlaceholderSet) {
+          this.textareaEl.placeholder = smartMode
+            ? DEFAULT_SMART_PLACEHOLDER
+            : DEFAULT_VERBOSE_PLACEHOLDER;
+        }
+      }
+      if (this.cornerPinBtn) {
+        this.cornerPinBtn.hidden = isCommenting;
       }
       if (this.composerToolbarPickBtn) {
+        this.composerToolbarPickBtn.hidden = isCommenting;
         if (smartMode) {
           this.composerToolbarPickBtn.title = "Highlight an area on the page";
           this.composerToolbarPickBtn.setAttribute("aria-label", "Highlight an area on the page");
@@ -8905,7 +9210,7 @@
         }
       }
       if (this.composerToolbarScreenshotBtn) {
-        this.composerToolbarScreenshotBtn.hidden = smartMode;
+        this.composerToolbarScreenshotBtn.hidden = smartMode && !isCommenting;
       }
       if (this.composerToolbarUploadBtn) {
         this.composerToolbarUploadBtn.innerHTML = smartMode
@@ -8928,6 +9233,21 @@
             idSpan.textContent = `#${this.editingFeedbackId}`;
             this.editBannerInfoEl.appendChild(idSpan);
           }
+        } else if (this.commentingFeedbackId !== null) {
+          this.editBannerEl.hidden = false;
+          this.editBannerInfoEl.innerHTML = "";
+          const iconSpan = document.createElement("span");
+          iconSpan.innerHTML = ICON_COMMENT;
+          const labelSpan = document.createElement("span");
+          labelSpan.textContent = smartMode ? "Commenting on feedback" : "Commenting on";
+          this.editBannerInfoEl.appendChild(iconSpan);
+          this.editBannerInfoEl.appendChild(labelSpan);
+          if (!smartMode) {
+            const idSpan = document.createElement("span");
+            idSpan.className = "cd-edit-banner-id";
+            idSpan.textContent = `#${this.commentingFeedbackId}`;
+            this.editBannerInfoEl.appendChild(idSpan);
+          }
         } else {
           this.editBannerEl.hidden = true;
         }
@@ -8936,6 +9256,9 @@
         if (this.editingFeedbackId !== null) {
           this.submitBtn.setAttribute("aria-label", "Save feedback changes");
           this.submitBtn.innerHTML = `${ICON_CHECK}<span>Save</span>`;
+        } else if (this.commentingFeedbackId !== null) {
+          this.submitBtn.setAttribute("aria-label", "Submit comment");
+          this.submitBtn.innerHTML = `${ICON_SEND}<span>Comment</span>`;
         } else {
           this.submitBtn.setAttribute("aria-label", "Submit feedback");
           this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
@@ -9178,11 +9501,18 @@
       for (const entry of this.sessionHistory) {
         const entryIdStr = String(entry.id);
         const isEditingThis = this.editingFeedbackId === entryIdStr;
+        const isCommentingThis = this.commentingFeedbackId === entryIdStr;
+        const isReviewingThis = this.reviewingFeedbackId === entryIdStr;
         const isConfirmingDelete = this.confirmingDeleteId === entryIdStr;
         const isDeletingThis = this.deletingFeedbackId === entryIdStr;
+        const statusName = entry.status || "new";
   
         const msgCard = document.createElement("div");
-        msgCard.className = isEditingThis ? "cd-chat-msg is-editing" : "cd-chat-msg";
+        msgCard.className = isEditingThis
+          ? "cd-chat-msg is-editing"
+          : isCommentingThis
+            ? "cd-chat-msg is-commenting"
+            : "cd-chat-msg";
         msgCard.setAttribute("data-feedback-id", entryIdStr);
   
         if (entry.elements.length > 0 || entry.attachments.length > 0) {
@@ -9216,11 +9546,67 @@
           msgCard.appendChild(textP);
         }
   
+        if (entry.comments && entry.comments.length > 0) {
+          const commentsList = document.createElement("div");
+          commentsList.className = "cd-comments-list";
+          for (const comment of entry.comments) {
+            const cItem = document.createElement("div");
+            cItem.className = "cd-comment-item";
+  
+            const cHeader = document.createElement("div");
+            cHeader.className = "cd-comment-header";
+            const cAuthor = document.createElement("span");
+            cAuthor.className = "cd-comment-author";
+            cAuthor.textContent = comment.author_label || "You";
+            const cTime = document.createElement("span");
+            cTime.textContent = comment.createdAt;
+            cHeader.appendChild(cAuthor);
+            cHeader.appendChild(cTime);
+            cItem.appendChild(cHeader);
+  
+            if (comment.body) {
+              const cBody = document.createElement("p");
+              cBody.className = "cd-comment-body";
+              cBody.textContent = comment.body;
+              cItem.appendChild(cBody);
+            }
+  
+            if (comment.attachments && comment.attachments.length > 0) {
+              const cImgs = document.createElement("div");
+              cImgs.className = "cd-comment-images";
+              for (const att of comment.attachments) {
+                if (att.preview_url) {
+                  const imgLink = document.createElement("a");
+                  imgLink.href = att.preview_url;
+                  imgLink.target = "_blank";
+                  imgLink.rel = "noopener noreferrer";
+                  const img = document.createElement("img");
+                  img.src = att.preview_url;
+                  img.alt = att.label || "Comment image";
+                  img.className = "cd-comment-thumb";
+                  imgLink.appendChild(img);
+                  cImgs.appendChild(imgLink);
+                }
+              }
+              if (cImgs.childNodes.length > 0) {
+                cItem.appendChild(cImgs);
+              }
+            }
+  
+            commentsList.appendChild(cItem);
+          }
+          msgCard.appendChild(commentsList);
+        }
+  
         const meta = document.createElement("div");
         meta.className = "cd-chat-msg-meta";
   
         const metaInfo = document.createElement("div");
         metaInfo.className = "cd-chat-msg-meta-info";
+  
+        const statusBadge = document.createElement("span");
+        statusBadge.className = `cd-msg-status-badge is-${statusName}`;
+        statusBadge.textContent = statusName;
   
         const idSpan = document.createElement("span");
         const baseLabel = smartMode ? "Feedback sent" : `Dropped #${entry.id}`;
@@ -9233,12 +9619,43 @@
         const timeSpan = document.createElement("span");
         timeSpan.textContent = entry.createdAt;
   
+        metaInfo.appendChild(statusBadge);
         metaInfo.appendChild(idSpan);
         metaInfo.appendChild(sepSpan);
         metaInfo.appendChild(timeSpan);
   
         const actions = document.createElement("div");
         actions.className = "cd-chat-msg-actions";
+  
+        if (statusName === "fixed") {
+          const reviewBtn = document.createElement("button");
+          reviewBtn.type = "button";
+          reviewBtn.className = "cd-review-btn";
+          reviewBtn.title = "Confirm fix was tested and reviewed";
+          reviewBtn.setAttribute("aria-label", "Mark fix as reviewed");
+          reviewBtn.disabled = isReviewingThis || this.isSubmitting || this.deletingFeedbackId !== null;
+          reviewBtn.innerHTML = `${ICON_CHECK}<span>${isReviewingThis ? "Saving..." : "Mark Reviewed"}</span>`;
+          reviewBtn.addEventListener("click", () => {
+            void this.markFeedbackReviewed(entry.id);
+          });
+          actions.appendChild(reviewBtn);
+        }
+  
+        const commentBtn = document.createElement("button");
+        commentBtn.type = "button";
+        commentBtn.className = `cd-msg-action-btn${isCommentingThis ? " is-active" : ""}`;
+        commentBtn.title = isCommentingThis ? "Cancel comment" : "Add comment";
+        commentBtn.setAttribute("aria-label", "Add comment");
+        commentBtn.setAttribute("aria-pressed", String(isCommentingThis));
+        commentBtn.disabled = this.isSubmitting || this.deletingFeedbackId !== null;
+        commentBtn.innerHTML = ICON_COMMENT;
+        commentBtn.addEventListener("click", () => {
+          if (this.commentingFeedbackId === entryIdStr) {
+            this.cancelCommentingFeedback();
+          } else {
+            this.startCommentingFeedback(entry.id);
+          }
+        });
   
         const editBtn = document.createElement("button");
         editBtn.type = "button";
@@ -9267,6 +9684,7 @@
           this.requestDeleteFeedback(entry.id);
         });
   
+        actions.appendChild(commentBtn);
         actions.appendChild(editBtn);
         actions.appendChild(deleteBtn);
   
@@ -9703,13 +10121,19 @@
       if (this.isSubmitting) return;
       const smartMode = this.isSmartSelectionMode();
       const editingId = this.editingFeedbackId;
+      const commentingId = this.commentingFeedbackId;
   
       if (this.pendingSmartCaptures.size > 0) {
         await Promise.allSettled(Array.from(this.pendingSmartCaptures));
       }
   
       const message = (this.textareaEl?.value || "").trim();
-      if (
+      if (commentingId !== null) {
+        if (message.length === 0 && this.attachments.length === 0) {
+          this.showStatus("Write a comment or attach an image first.", "error");
+          return;
+        }
+      } else if (
         message.length === 0 &&
         this.attachments.length === 0 &&
         this.elementReferences.length === 0
@@ -9727,7 +10151,11 @@
       if (this.submitBtn) {
         this.submitBtn.disabled = true;
         this.submitBtn.innerHTML =
-          editingId !== null ? `<span>Saving...</span>` : `<span>Sending...</span>`;
+          editingId !== null
+            ? `<span>Saving...</span>`
+            : commentingId !== null
+              ? `<span>Posting...</span>`
+              : `<span>Sending...</span>`;
       }
   
       try {
@@ -9755,6 +10183,55 @@
           },
           locale: typeof navigator !== "undefined" ? navigator.language : "en"
         };
+  
+        if (commentingId !== null) {
+          const existingIdx = this.sessionHistory.findIndex(
+            (item) => String(item.id) === commentingId
+          );
+          const existingEntry = existingIdx >= 0 ? this.sessionHistory[existingIdx] : undefined;
+  
+          const commentPayload                       = {
+            body: message,
+            attachments: this.attachments.map((att) => ({
+              attachment_type: att.attachment_type,
+              filename: att.filename,
+              signed_blob_id: att.signed_blob_id,
+              data_url: att.signed_blob_id ? undefined : att.data_url,
+              metadata: att.metadata
+            }))
+          };
+  
+          const commentRes = await this.apiClient.createComment(
+            existingEntry?.id ?? commentingId,
+            commentPayload,
+            existingEntry?.ownershipToken
+          );
+  
+          if (commentRes?.feedback) {
+            const updatedEntry = this.mapOwnRecordToSessionEntry(commentRes.feedback, existingEntry);
+            if (existingIdx >= 0) {
+              this.sessionHistory[existingIdx] = updatedEntry;
+            }
+          } else if (existingEntry) {
+            existingEntry.status = commentRes?.status || "updated";
+            if (!existingEntry.comments) existingEntry.comments = [];
+            existingEntry.comments.push({
+              id: commentRes?.id ?? Date.now(),
+              author_label: commentRes?.comment?.author_label || "You",
+              body: message || null,
+              createdAt: this.formatTimestampLabel(commentRes?.created_at),
+              attachments: submittedAttachments
+            });
+          }
+  
+          this.cancelCommentingFeedback();
+          this.showStatus("Comment added.", "success");
+          this.emitWidgetEvent("context-drop:comment", {
+            response: commentRes,
+            payload: commentPayload
+          });
+          return;
+        }
   
         if (editingId !== null) {
           const existingIdx = this.sessionHistory.findIndex(

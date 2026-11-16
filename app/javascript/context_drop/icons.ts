@@ -63,3 +63,5 @@ export const ICON_EDIT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="
 
 export const ICON_TRASH = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 4.5h10.4"/><path d="M6.2 4.5V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.3"/><path d="M4.2 4.5l.6 8.3a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.6-8.3"/></svg>`;
 
+export const ICON_COMMENT = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 10.2a1.3 1.3 0 0 1-1.3 1.3H5.4L2.5 14V3.8A1.3 1.3 0 0 1 3.8 2.5h8.4a1.3 1.3 0 0 1 1.3 1.3v6.4z"/></svg>`;
+

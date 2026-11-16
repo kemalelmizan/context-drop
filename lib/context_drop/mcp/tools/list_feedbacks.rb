@@ -19,7 +19,7 @@ module ContextDrop
               },
               status: {
                 type: "string",
-                enum: %w[new reviewed resolved dismissed],
+                enum: %w[new updated fixed reviewed dismissed],
                 description: "Filter feedback by workflow status."
               },
               page_url: {

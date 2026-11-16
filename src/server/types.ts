@@ -7,12 +7,13 @@ import type {
 
 export const VERSION = "0.3.0";
 
-export type FeedbackStatus = "new" | "reviewed" | "resolved" | "dismissed";
+export type FeedbackStatus = "new" | "updated" | "fixed" | "reviewed" | "dismissed";
 
 export const FEEDBACK_STATUSES: readonly FeedbackStatus[] = [
   "new",
+  "updated",
+  "fixed",
   "reviewed",
-  "resolved",
   "dismissed"
 ] as const;
 
@@ -40,6 +41,7 @@ export interface StoredElementReference {
 export interface StoredAttachment {
   id: number | string;
   feedback_id: number | string;
+  comment_id?: number | string | null;
   element_reference_id: number | string | null;
   attachment_type: "image" | "screenshot";
   filename: string | null;
@@ -48,6 +50,17 @@ export interface StoredAttachment {
   blob_key?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export interface StoredComment {
+  id: number | string;
+  feedback_id: number | string;
+  author_type?: string | null;
+  author_label: string;
+  body: string | null;
+  attachments: StoredAttachment[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StoredFeedbackRecord {
@@ -62,6 +75,8 @@ export interface StoredFeedbackRecord {
   metadata: Record<string, unknown>;
   element_references: StoredElementReference[];
   attachments: StoredAttachment[];
+  comments?: StoredComment[];
+  comments_count?: number;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -77,6 +92,7 @@ export interface FeedbackSummaryItem {
   submitter: string;
   attachments_count: number;
   element_references_count: number;
+  comments_count?: number;
   element_selectors: string[];
   created_at: string;
   deleted?: boolean;
@@ -149,9 +165,18 @@ export interface CreateFeedbackRecordInput {
 
 export interface UpdateFeedbackRecordInput {
   message?: string | null;
+  status?: FeedbackStatus;
   metadata?: Record<string, unknown>;
   element_references?: SanitizedElementInput[];
   attachments?: UpdateAttachmentSpec[];
+}
+
+export interface CreateCommentInput {
+  author_type?: string | null;
+  author_label?: string | null;
+  body: string | null;
+  attachments: CreateAttachmentInput[];
+  status?: FeedbackStatus;
 }
 
 export interface OwnFeedbackLookupQuery {
@@ -200,6 +225,10 @@ export interface StorageAdapter {
     id: string | number,
     status: FeedbackStatus
   ): Promise<{ previous_status: FeedbackStatus; feedback: StoredFeedbackRecord } | null>;
+  addComment?(
+    feedbackId: string | number,
+    input: CreateCommentInput
+  ): Promise<{ comment: StoredComment; feedback: StoredFeedbackRecord } | null>;
   getOwnershipSecret?(): Buffer;
 }
 

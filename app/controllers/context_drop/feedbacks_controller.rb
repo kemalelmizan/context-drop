@@ -3,8 +3,9 @@
 module ContextDrop
   class FeedbacksController < ApplicationController
     before_action :enforce_submission_authorization!
-    before_action :enforce_rate_limit!, only: %i[create update destroy]
+    before_action :enforce_rate_limit!, only: %i[create update destroy create_comment]
 
+    OWNER_ALLOWED_STATUSES = %w[reviewed dismissed].freeze
     MAX_OWN_FEEDBACKS_LIMIT = 50
     DEFAULT_OWN_FEEDBACKS_LIMIT = 20
 
@@ -17,7 +18,7 @@ module ContextDrop
       raw_tokens = combined_raw_ownership_tokens
 
       records = scope
-                .includes(:element_references, :attachments)
+                .includes(:element_references, :attachments, comments: :attachments)
                 .recent
                 .limit(limit)
                 .map do |fb|
@@ -142,7 +143,7 @@ module ContextDrop
     end
 
     def update
-      feedback = ContextDrop::Feedback.includes(:element_references, :attachments).find_by(id: params[:id])
+      feedback = ContextDrop::Feedback.includes(:element_references, :attachments, comments: :attachments).find_by(id: params[:id])
       if feedback.nil? || feedback.deleted?
         render json: { error: "Feedback not found" }, status: :not_found
         return
@@ -156,6 +157,13 @@ module ContextDrop
 
       has_elements_key = payload.key?("element_references")
       has_attachments_key = payload.key?("attachments")
+      has_status_key = payload.key?("status")
+      requested_status = has_status_key ? payload["status"].to_s.strip : nil
+
+      if has_status_key && !OWNER_ALLOWED_STATUSES.include?(requested_status)
+        render json: { error: "Invalid status '#{requested_status}'" }, status: :unprocessable_entity
+        return
+      end
       raw_elements = has_elements_key ? Array(payload["element_references"]) : nil
       raw_attachments = has_attachments_key ? Array(payload["attachments"]) : nil
 
@@ -174,14 +182,26 @@ module ContextDrop
       end
 
       ContextDrop::Feedback.transaction do
+        content_edited = false
+
         if payload.key?("message")
           feedback.message = payload["message"].to_s.strip.presence
+          content_edited = true
         end
 
         if payload.key?("metadata")
           sanitized_meta = ContextDrop::MetadataSanitizer.sanitize_feedback_metadata(payload["metadata"])
           sanitized_meta["environment"] = feedback.environment_name
           feedback.metadata = sanitized_meta
+          content_edited = true
+        end
+
+        content_edited = true if has_elements_key || has_attachments_key
+
+        if has_status_key
+          feedback.status = requested_status
+        elsif content_edited
+          feedback.status = "updated"
         end
 
         element_refs_by_client_ref = {}
@@ -346,6 +366,107 @@ module ContextDrop
       }, status: :ok
     end
 
+    def create_comment
+      feedback = ContextDrop::Feedback.includes(:element_references, :attachments, comments: :attachments).find_by(id: params[:id])
+      if feedback.nil? || feedback.deleted?
+        render json: { error: "Feedback not found" }, status: :not_found
+        return
+      end
+
+      payload = extract_comment_payload
+      unless owns_feedback?(feedback, payload_token: payload["ownership_token"])
+        render json: { error: "Forbidden" }, status: :forbidden
+        return
+      end
+
+      raw_attachments = Array(payload["attachments"])
+      if raw_attachments.size > ContextDrop.config.max_attachments.to_i
+        render json: {
+          error: "Attachments count (#{raw_attachments.size}) exceeds maximum allowed (#{ContextDrop.config.max_attachments})"
+        }, status: :unprocessable_entity
+        return
+      end
+
+      submitter = current_context_drop_submitter
+      author_label = if submitter
+                       if submitter.respond_to?(:name) && submitter.name.present?
+                         submitter.name.to_s
+                       elsif submitter.respond_to?(:email) && submitter.email.present?
+                         submitter.email.to_s
+                       else
+                         "#{submitter.class.name}##{submitter.id}"
+                       end
+                     else
+                       "You"
+                     end
+
+      comment = nil
+      ContextDrop::Feedback.transaction do
+        comment = feedback.comments.build(
+          author_type: submitter&.class&.name,
+          author_id: submitter&.respond_to?(:id) ? submitter.id&.to_s : nil,
+          author_label: author_label,
+          body: payload["body"].to_s.strip.presence,
+          metadata: {}
+        )
+
+        pending_file_attachments = []
+        raw_attachments.each do |raw_att|
+          att_hash = stringify_hash(raw_att)
+          att_type = (att_hash["attachment_type"] || att_hash["type"] || "image").to_s.strip.downcase
+          att_type = "image" unless ContextDrop::Attachment::ATTACHMENT_TYPES.include?(att_type)
+          att_meta = ContextDrop::MetadataSanitizer.sanitize_attachment_metadata(att_hash["metadata"])
+          file_source = resolve_attachment_file_source(att_hash)
+
+          if file_source[:dimensions] && att_meta["image_dimensions"].nil?
+            att_meta["image_dimensions"] = {
+              "width" => file_source[:dimensions][0],
+              "height" => file_source[:dimensions][1]
+            }
+          end
+
+          att_record = comment.attachments.build(
+            feedback: feedback,
+            attachment_type: att_type,
+            metadata: att_meta
+          )
+          pending_file_attachments << [att_record, file_source]
+        end
+
+        unless comment.valid?
+          render json: { error: comment.errors.full_messages.join(", "), errors: comment.errors.full_messages },
+                 status: :unprocessable_entity
+          raise ActiveRecord::Rollback
+        end
+
+        comment.save!
+
+        pending_file_attachments.each do |att_record, file_source|
+          attach_binary_to_record!(att_record, file_source)
+        end
+
+        feedback.update!(status: "updated")
+      end
+
+      return if performed?
+
+      feedback.reload
+      invoke_lifecycle_callback(:on_feedback_updated, feedback)
+
+      raw_tokens = combined_raw_ownership_tokens(payload["ownership_token"])
+      ownership_token = ContextDrop::OwnershipToken.find_token_for(raw_tokens, feedback.id) ||
+                        ContextDrop::OwnershipToken.generate(feedback.id)
+
+      render json: {
+        id: comment.id,
+        feedback_id: feedback.id,
+        status: feedback.status,
+        comment: serialize_comment(comment),
+        feedback: serialize_own_feedback(feedback, ownership_token: ownership_token),
+        created_at: comment.created_at&.iso8601
+      }, status: :created
+    end
+
     def attachment
       feedback = ContextDrop::Feedback.find_by(id: params[:feedback_id])
       if feedback.nil? || feedback.deleted?
@@ -358,7 +479,7 @@ module ContextDrop
         return
       end
 
-      att = feedback.attachments.find_by(id: params[:id])
+      att = ContextDrop::Attachment.where(feedback_id: feedback.id).find_by(id: params[:id])
       if att.nil? || !att.respond_to?(:file) || !att.file.attached?
         head :not_found
         return
@@ -454,22 +575,54 @@ module ContextDrop
             captured_at: el.captured_at&.iso8601
           }
         end,
-        attachments: feedback.attachments.map do |att|
-          attached = att.respond_to?(:file) && att.file.attached?
-          linked_el = att.element_reference_id ? elements_by_id[att.element_reference_id] : att.element_reference
-          {
-            id: att.id,
-            attachment_type: att.attachment_type,
-            element_reference_id: att.element_reference_id,
-            element_reference_ref: linked_el&.client_ref,
-            filename: attached ? att.file.filename.to_s : nil,
-            content_type: attached ? att.file.content_type : nil,
-            byte_size: attached ? att.file.byte_size : nil,
-            metadata: att.metadata || {},
-            created_at: att.created_at&.iso8601
-          }
-        end
+        attachments: feedback.attachments.map { |att| serialize_attachment(att, elements_by_id) },
+        comments_count: feedback.comments.size,
+        comments: feedback.comments.map { |comment| serialize_comment(comment) }
       }
+    end
+
+    def serialize_attachment(att, elements_by_id = {})
+      attached = att.respond_to?(:file) && att.file.attached?
+      linked_el = att.element_reference_id ? elements_by_id[att.element_reference_id] : att.element_reference
+      {
+        id: att.id,
+        attachment_type: att.attachment_type,
+        element_reference_id: att.element_reference_id,
+        element_reference_ref: linked_el&.client_ref,
+        filename: attached ? att.file.filename.to_s : nil,
+        content_type: attached ? att.file.content_type : nil,
+        byte_size: attached ? att.file.byte_size : nil,
+        metadata: att.metadata || {},
+        created_at: att.created_at&.iso8601
+      }
+    end
+
+    def serialize_comment(comment)
+      {
+        id: comment.id,
+        feedback_id: comment.feedback_id,
+        author_label: comment.display_author_label,
+        author_type: comment.author_type,
+        body: comment.body,
+        attachments: comment.attachments.map { |att| serialize_attachment(att) },
+        created_at: comment.created_at&.iso8601,
+        updated_at: comment.updated_at&.iso8601
+      }
+    end
+
+    def extract_comment_payload
+      raw = params[:comment].is_a?(ActionController::Parameters) || params[:comment].is_a?(Hash) ? params[:comment] : params
+      hash = stringify_hash(raw)
+
+      if hash["attachments"].is_a?(String)
+        begin
+          hash["attachments"] = JSON.parse(hash["attachments"])
+        rescue JSON::ParserError
+          # Leave as-is if not valid JSON string
+        end
+      end
+
+      hash
     end
 
     def extract_linked_element_ref_key(att_hash, att_meta)

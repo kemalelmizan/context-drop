@@ -12,7 +12,8 @@ module ContextDrop
         "list_feedbacks" => ContextDrop::MCP::Tools::ListFeedbacks,
         "get_feedback" => ContextDrop::MCP::Tools::GetFeedback,
         "get_feedback_attachment" => ContextDrop::MCP::Tools::GetFeedbackAttachment,
-        "update_feedback_status" => ContextDrop::MCP::Tools::UpdateFeedbackStatus
+        "update_feedback_status" => ContextDrop::MCP::Tools::UpdateFeedbackStatus,
+        "add_feedback_comment" => ContextDrop::MCP::Tools::AddFeedbackComment
       }.freeze
 
       PROMPTS = {

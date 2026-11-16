@@ -77,7 +77,7 @@ module ContextDrop
             1. Locate the Rails route and controller action corresponding to `#{feedback.page_url}` in `config/routes.rb` and `app/controllers/`.
             2. Search the view templates (`app/views/`, ViewComponents, or frontend components) for the attached DOM selectors (`#{feedback.element_references.map(&:selector).join(', ')}`) and structural DOM paths (`#{feedback.element_references.map(&:dom_path).compact.join(', ')}`).
             3. Inspect any attached screenshots (`get_feedback` with `id: "#{qualified}"`) to verify the visual layout issue.
-            4. Propose and verify a fix, then call `update_feedback_status` (`id: "#{qualified}"`, `status: "resolved"`) once complete.
+            4. Propose and verify a fix, then call `update_feedback_status` (`id: "#{qualified}"`, `status: "fixed"`) once complete.
           PROMPT
 
           message_content = [{ type: "text", text: instructions }]
@@ -142,7 +142,7 @@ module ContextDrop
             1. Locate the Rails route and controller action corresponding to `#{fb['page_url']}` in `config/routes.rb` and `app/controllers/`.
             2. Search the view templates (`app/views/`, ViewComponents, or frontend components) for the attached DOM selectors (`#{els.map { |e| e['selector'] }.join(', ')}`).
             3. Inspect any attached screenshots (`get_feedback` with `id: "#{qualified}"`) to verify the visual layout issue.
-            4. Propose and verify a fix locally, then call `update_feedback_status` (`id: "#{qualified}"`, `status: "resolved"`) once complete.
+            4. Propose and verify a fix locally, then call `update_feedback_status` (`id: "#{qualified}"`, `status: "fixed"`) once complete.
           PROMPT
 
           image_blocks = Array(tool_res[:content]).select { |b| b.is_a?(Hash) && b[:type].to_s == "image" }

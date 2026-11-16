@@ -1162,6 +1162,136 @@ select:focus-visible {
   font-weight: 500;
 }
 
+.cd-chat-msg.is-commenting {
+  border-color: var(--cd-accent);
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
+}
+
+.cd-msg-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+.cd-msg-status-badge.is-new {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.cd-msg-status-badge.is-updated {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.cd-msg-status-badge.is-fixed {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.cd-msg-status-badge.is-reviewed {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.cd-msg-status-badge.is-dismissed {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.cd-review-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.cd-review-btn:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.cd-review-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cd-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--cd-border-subtle);
+}
+
+.cd-comment-item {
+  background: var(--cd-surface-recessed);
+  border: 1px solid var(--cd-border-subtle);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.cd-comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--cd-muted);
+  margin-bottom: 2px;
+}
+
+.cd-comment-author {
+  font-weight: 600;
+  color: var(--cd-ink);
+}
+
+.cd-comment-body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.42;
+  color: var(--cd-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cd-comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.cd-comment-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--cd-border);
+  display: block;
+}
+
 /* ==========================================================================
    4. LOCAL BYOK AGENTIC CODING SIDEBAR (.cd-agent-sidebar)
    ========================================================================== */

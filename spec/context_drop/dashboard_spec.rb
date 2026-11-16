@@ -63,7 +63,7 @@ RSpec.describe "ContextDrop::Dashboard" do
 
     let!(:fb2) do
       ContextDrop::Feedback.create!(
-        status: "resolved",
+        status: "fixed",
         message: "these menus should be more like this",
         page_url: "https://mcp-itpac.gotocompany.net/rails/adaptive/modeling/level-sheets",
         submitter_type: "User",
@@ -118,7 +118,7 @@ RSpec.describe "ContextDrop::Dashboard" do
     end
 
     it "filters by status correctly" do
-      session.get "/context_drop/dashboard/feedbacks?status=resolved",
+      session.get "/context_drop/dashboard/feedbacks?status=fixed",
                   headers: { "HTTP_HOST" => "localhost" }
 
       expect(session.response.status).to eq(200)
@@ -217,6 +217,69 @@ RSpec.describe "ContextDrop::Dashboard" do
       # Element details
       expect(body).to include("&lt;button&gt;")
       expect(body).to include("#checkout-submit")
+      expect(body).to include("cd-dashboard-comment-form")
+    end
+
+    it "supports adding comments with images on the dashboard and transitions status to updated" do
+      session.get "/context_drop/config", headers: { "HTTP_HOST" => "localhost" }
+      csrf = JSON.parse(session.response.body)["csrf_token"]
+
+      session.post "/context_drop/dashboard/feedbacks/#{current_fb.id}/comments",
+                   params: { body: "Please check this screenshot" },
+                   headers: { "HTTP_HOST" => "localhost", "X-CSRF-Token" => csrf }
+
+      expect(session.response.status).to eq(302)
+      current_fb.reload
+      expect(current_fb.status).to eq("updated")
+      expect(current_fb.comments.count).to eq(1)
+      expect(current_fb.comments.first.body).to eq("Please check this screenshot")
+
+      session.get "/context_drop/dashboard/feedbacks/#{current_fb.id}",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+      expect(session.response.body).to include("Please check this screenshot")
+      expect(session.response.body).to include("Mark Fixed")
+      expect(session.response.body).to include("Mark Reviewed")
+    end
+
+    it "supports owner comments via POST /feedback/:id/comments and reviewed transition via PATCH /feedback/:id" do
+      session.get "/context_drop/config", headers: { "HTTP_HOST" => "localhost" }
+      csrf = JSON.parse(session.response.body)["csrf_token"]
+
+      session.post "/context_drop/feedback",
+                   params: { feedback: { message: "Initial bug", page_url: "/cart" } }.to_json,
+                   headers: { "HTTP_HOST" => "localhost", "CONTENT_TYPE" => "application/json", "X-CSRF-Token" => csrf }
+      expect(session.response.status).to eq(201)
+      created = JSON.parse(session.response.body)
+      fb_id = created["id"]
+      token = created["ownership_token"]
+
+      png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+      session.post "/context_drop/feedback/#{fb_id}/comments",
+                   params: {
+                     ownership_token: token,
+                     comment: {
+                       body: "Added follow-up screenshot",
+                       attachments: [
+                         { attachment_type: "image", filename: "followup.png", data_url: "data:image/png;base64,#{png_b64}" }
+                       ]
+                     }
+                   }.to_json,
+                   headers: { "HTTP_HOST" => "localhost", "CONTENT_TYPE" => "application/json", "X-CSRF-Token" => csrf }
+
+      expect(session.response.status).to eq(201)
+      comment_res = JSON.parse(session.response.body)
+      expect(comment_res["status"]).to eq("updated")
+      expect(comment_res.dig("comment", "body")).to eq("Added follow-up screenshot")
+      expect(comment_res.dig("comment", "attachments").size).to eq(1)
+
+      # Simulate agent marking it fixed, then owner marking it reviewed
+      ContextDrop::Feedback.find(fb_id).mark_fixed!
+      session.patch "/context_drop/feedback/#{fb_id}",
+                    params: { ownership_token: token, feedback: { status: "reviewed" } }.to_json,
+                    headers: { "HTTP_HOST" => "localhost", "CONTENT_TYPE" => "application/json", "X-CSRF-Token" => csrf }
+      expect(session.response.status).to eq(200)
+      expect(JSON.parse(session.response.body)["status"]).to eq("reviewed")
     end
   end
 end

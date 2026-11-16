@@ -10,6 +10,11 @@ module ContextDrop
                class_name: "ContextDrop::Feedback",
                inverse_of: :attachments
 
+    belongs_to :comment,
+               class_name: "ContextDrop::Comment",
+               optional: true,
+               inverse_of: :attachments
+
     belongs_to :element_reference,
                class_name: "ContextDrop::ElementReference",
                optional: true,

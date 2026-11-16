@@ -3,6 +3,7 @@ import type {
   AgentProviderInfo,
   AgentStatusResponse,
   ContextDropApiClientOptions,
+  CreateCommentPayload,
   CrossEnvFeedbackItem,
   ElementReferenceSnapshot,
   FeedbackSubmissionPayload,
@@ -12,6 +13,7 @@ import type {
   ProposedFileEdit,
   SelectionMode,
   SessionFeedbackAttachmentItem,
+  SessionFeedbackCommentItem,
   SessionFeedbackEntry,
   WidgetConfig,
   WidgetPosition,
@@ -26,6 +28,7 @@ import {
   ICON_CHEVRON_UP,
   ICON_CLOSE,
   ICON_CODE_PROMPT,
+  ICON_COMMENT,
   ICON_EDIT,
   ICON_EXPAND,
   ICON_FILE_CODE,
@@ -195,6 +198,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
   private ownFeedbacksLoaded: boolean = false;
   private inFlightOwnFeedbacksPromise: Promise<SessionFeedbackEntry[]> | null = null;
   private editingFeedbackId: string | null = null;
+  private commentingFeedbackId: string | null = null;
+  private reviewingFeedbackId: string | null = null;
   private confirmingDeleteId: string | null = null;
   private deletingFeedbackId: string | null = null;
   private stashedDraftBeforeEdit: {
@@ -693,6 +698,30 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         ? structuredClone(existingEntry.elements)
         : [];
 
+    const mappedComments: SessionFeedbackCommentItem[] = Array.isArray(record.comments)
+      ? record.comments.map((c) => ({
+          id: c.id,
+          author_label: c.author_label || "You",
+          author_type: c.author_type ?? null,
+          body: c.body ?? null,
+          createdAt: this.formatTimestampLabel(c.created_at),
+          rawCreatedAt: c.created_at,
+          attachments: Array.isArray(c.attachments)
+            ? c.attachments.map((att) => ({
+                id: `srv-catt-${att.id}`,
+                server_id: att.id,
+                label: att.filename || "image.png",
+                preview_url: this.apiClient.buildAttachmentPreviewUrl(record.id, att.id, token),
+                attachment_type: att.attachment_type || "image",
+                filename: att.filename,
+                metadata: att.metadata || {}
+              }))
+            : []
+        }))
+      : existingEntry?.comments
+        ? structuredClone(existingEntry.comments)
+        : [];
+
     return {
       id: record.id,
       message: displayMessage,
@@ -704,7 +733,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       status: record.status,
       ownershipToken: token,
       elements,
-      attachments: mappedAttachments
+      attachments: mappedAttachments,
+      comments: mappedComments
     };
   }
 
@@ -771,10 +801,13 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
     if (!entry) return false;
 
+    if (this.commentingFeedbackId !== null) {
+      this.cancelCommentingFeedback();
+    }
     this.confirmingDeleteId = null;
     this.hideStatus();
 
-    if (this.editingFeedbackId === null) {
+    if (this.editingFeedbackId === null && this.commentingFeedbackId === null) {
       this.stashedDraftBeforeEdit = {
         message: this.textareaEl?.value || "",
         elementReferences: [...this.elementReferences],
@@ -852,6 +885,100 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.renderTray();
     this.renderChatThread();
     this.syncUiStates();
+  }
+
+  public startCommentingFeedback(feedbackId: number | string): boolean {
+    const targetKey = String(feedbackId);
+    const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+    if (!entry) return false;
+
+    if (this.editingFeedbackId !== null) {
+      this.cancelEditingFeedback();
+    }
+    this.confirmingDeleteId = null;
+    this.hideStatus();
+
+    if (this.commentingFeedbackId === null && this.editingFeedbackId === null) {
+      this.stashedDraftBeforeEdit = {
+        message: this.textareaEl?.value || "",
+        elementReferences: [...this.elementReferences],
+        elementDomNodes: new Map(this.elementDomNodes),
+        attachments: [...this.attachments]
+      };
+    }
+
+    this.commentingFeedbackId = targetKey;
+    if (this.textareaEl) {
+      this.textareaEl.value = "";
+    }
+    this.elementReferences = [];
+    this.elementDomNodes.clear();
+    this.attachments = [];
+
+    this.picker?.hideExternalPreview();
+    this.picker?.refreshPinnedMarkers();
+    this.renderTray();
+    this.renderChatThread();
+    this.syncUiStates();
+    this.textareaEl?.focus();
+    return true;
+  }
+
+  public cancelCommentingFeedback(): void {
+    if (this.commentingFeedbackId === null) return;
+    this.commentingFeedbackId = null;
+
+    if (this.stashedDraftBeforeEdit) {
+      if (this.textareaEl) {
+        this.textareaEl.value = this.stashedDraftBeforeEdit.message;
+      }
+      this.elementReferences = this.stashedDraftBeforeEdit.elementReferences;
+      this.elementDomNodes = this.stashedDraftBeforeEdit.elementDomNodes;
+      this.attachments = this.stashedDraftBeforeEdit.attachments;
+      this.stashedDraftBeforeEdit = null;
+    } else {
+      if (this.textareaEl) {
+        this.textareaEl.value = "";
+      }
+      this.elementReferences = [];
+      this.elementDomNodes.clear();
+      this.attachments = [];
+    }
+
+    this.renderTray();
+    this.renderChatThread();
+    this.syncUiStates();
+  }
+
+  public async markFeedbackReviewed(feedbackId: number | string): Promise<void> {
+    if (this.reviewingFeedbackId !== null || this.isSubmitting) return;
+    const targetKey = String(feedbackId);
+    const entry = this.sessionHistory.find((item) => String(item.id) === targetKey);
+    if (!entry) return;
+
+    this.reviewingFeedbackId = targetKey;
+    this.renderChatThread();
+
+    try {
+      const res = await this.apiClient.updateFeedback(
+        entry.id,
+        { status: "reviewed" },
+        entry.ownershipToken
+      );
+      entry.status = res?.status || "reviewed";
+      if (res?.ownership_token) {
+        entry.ownershipToken = res.ownership_token;
+      }
+      this.reviewingFeedbackId = null;
+      this.renderChatThread();
+      this.showStatus("Fix marked as reviewed.", "success");
+      this.emitWidgetEvent("context-drop:update", { response: res, id: entry.id });
+    } catch (err) {
+      this.reviewingFeedbackId = null;
+      this.renderChatThread();
+      const msg = err instanceof Error ? err.message : "Failed to mark feedback as reviewed.";
+      this.showStatus(msg, "error");
+    }
   }
 
   public requestDeleteFeedback(feedbackId: number | string): void {
@@ -1976,7 +2103,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     cancelEditBtn.setAttribute("aria-label", "Cancel editing feedback");
     cancelEditBtn.textContent = "Cancel";
     cancelEditBtn.addEventListener("click", () => {
-      this.cancelEditingFeedback();
+      if (this.commentingFeedbackId !== null) {
+        this.cancelCommentingFeedback();
+      } else {
+        this.cancelEditingFeedback();
+      }
     });
     editBanner.appendChild(cancelEditBtn);
     this.editBannerEl = editBanner;
@@ -1995,6 +2126,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         ev.preventDefault();
         if (this.confirmingDeleteId !== null) {
           this.cancelDeleteFeedback();
+        } else if (this.commentingFeedbackId !== null) {
+          this.cancelCommentingFeedback();
         } else if (this.editingFeedbackId !== null) {
           this.cancelEditingFeedback();
         } else {
@@ -3254,12 +3387,21 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     if (this.composerModeSwitchWrap) {
       this.composerModeSwitchWrap.hidden = !this.config.agent?.enabled;
     }
-    if (this.textareaEl && !this.customPlaceholderSet) {
-      this.textareaEl.placeholder = smartMode
-        ? DEFAULT_SMART_PLACEHOLDER
-        : DEFAULT_VERBOSE_PLACEHOLDER;
+    const isCommenting = this.commentingFeedbackId !== null;
+    if (this.textareaEl) {
+      if (isCommenting) {
+        this.textareaEl.placeholder = "Write a comment... (attach or paste images below)";
+      } else if (!this.customPlaceholderSet) {
+        this.textareaEl.placeholder = smartMode
+          ? DEFAULT_SMART_PLACEHOLDER
+          : DEFAULT_VERBOSE_PLACEHOLDER;
+      }
+    }
+    if (this.cornerPinBtn) {
+      this.cornerPinBtn.hidden = isCommenting;
     }
     if (this.composerToolbarPickBtn) {
+      this.composerToolbarPickBtn.hidden = isCommenting;
       if (smartMode) {
         this.composerToolbarPickBtn.title = "Highlight an area on the page";
         this.composerToolbarPickBtn.setAttribute("aria-label", "Highlight an area on the page");
@@ -3274,7 +3416,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       }
     }
     if (this.composerToolbarScreenshotBtn) {
-      this.composerToolbarScreenshotBtn.hidden = smartMode;
+      this.composerToolbarScreenshotBtn.hidden = smartMode && !isCommenting;
     }
     if (this.composerToolbarUploadBtn) {
       this.composerToolbarUploadBtn.innerHTML = smartMode
@@ -3297,6 +3439,21 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
           idSpan.textContent = `#${this.editingFeedbackId}`;
           this.editBannerInfoEl.appendChild(idSpan);
         }
+      } else if (this.commentingFeedbackId !== null) {
+        this.editBannerEl.hidden = false;
+        this.editBannerInfoEl.innerHTML = "";
+        const iconSpan = document.createElement("span");
+        iconSpan.innerHTML = ICON_COMMENT;
+        const labelSpan = document.createElement("span");
+        labelSpan.textContent = smartMode ? "Commenting on feedback" : "Commenting on";
+        this.editBannerInfoEl.appendChild(iconSpan);
+        this.editBannerInfoEl.appendChild(labelSpan);
+        if (!smartMode) {
+          const idSpan = document.createElement("span");
+          idSpan.className = "cd-edit-banner-id";
+          idSpan.textContent = `#${this.commentingFeedbackId}`;
+          this.editBannerInfoEl.appendChild(idSpan);
+        }
       } else {
         this.editBannerEl.hidden = true;
       }
@@ -3305,6 +3462,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       if (this.editingFeedbackId !== null) {
         this.submitBtn.setAttribute("aria-label", "Save feedback changes");
         this.submitBtn.innerHTML = `${ICON_CHECK}<span>Save</span>`;
+      } else if (this.commentingFeedbackId !== null) {
+        this.submitBtn.setAttribute("aria-label", "Submit comment");
+        this.submitBtn.innerHTML = `${ICON_SEND}<span>Comment</span>`;
       } else {
         this.submitBtn.setAttribute("aria-label", "Submit feedback");
         this.submitBtn.innerHTML = `${ICON_SEND}<span>Send</span>`;
@@ -3547,11 +3707,18 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     for (const entry of this.sessionHistory) {
       const entryIdStr = String(entry.id);
       const isEditingThis = this.editingFeedbackId === entryIdStr;
+      const isCommentingThis = this.commentingFeedbackId === entryIdStr;
+      const isReviewingThis = this.reviewingFeedbackId === entryIdStr;
       const isConfirmingDelete = this.confirmingDeleteId === entryIdStr;
       const isDeletingThis = this.deletingFeedbackId === entryIdStr;
+      const statusName = entry.status || "new";
 
       const msgCard = document.createElement("div");
-      msgCard.className = isEditingThis ? "cd-chat-msg is-editing" : "cd-chat-msg";
+      msgCard.className = isEditingThis
+        ? "cd-chat-msg is-editing"
+        : isCommentingThis
+          ? "cd-chat-msg is-commenting"
+          : "cd-chat-msg";
       msgCard.setAttribute("data-feedback-id", entryIdStr);
 
       if (entry.elements.length > 0 || entry.attachments.length > 0) {
@@ -3585,11 +3752,67 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         msgCard.appendChild(textP);
       }
 
+      if (entry.comments && entry.comments.length > 0) {
+        const commentsList = document.createElement("div");
+        commentsList.className = "cd-comments-list";
+        for (const comment of entry.comments) {
+          const cItem = document.createElement("div");
+          cItem.className = "cd-comment-item";
+
+          const cHeader = document.createElement("div");
+          cHeader.className = "cd-comment-header";
+          const cAuthor = document.createElement("span");
+          cAuthor.className = "cd-comment-author";
+          cAuthor.textContent = comment.author_label || "You";
+          const cTime = document.createElement("span");
+          cTime.textContent = comment.createdAt;
+          cHeader.appendChild(cAuthor);
+          cHeader.appendChild(cTime);
+          cItem.appendChild(cHeader);
+
+          if (comment.body) {
+            const cBody = document.createElement("p");
+            cBody.className = "cd-comment-body";
+            cBody.textContent = comment.body;
+            cItem.appendChild(cBody);
+          }
+
+          if (comment.attachments && comment.attachments.length > 0) {
+            const cImgs = document.createElement("div");
+            cImgs.className = "cd-comment-images";
+            for (const att of comment.attachments) {
+              if (att.preview_url) {
+                const imgLink = document.createElement("a");
+                imgLink.href = att.preview_url;
+                imgLink.target = "_blank";
+                imgLink.rel = "noopener noreferrer";
+                const img = document.createElement("img");
+                img.src = att.preview_url;
+                img.alt = att.label || "Comment image";
+                img.className = "cd-comment-thumb";
+                imgLink.appendChild(img);
+                cImgs.appendChild(imgLink);
+              }
+            }
+            if (cImgs.childNodes.length > 0) {
+              cItem.appendChild(cImgs);
+            }
+          }
+
+          commentsList.appendChild(cItem);
+        }
+        msgCard.appendChild(commentsList);
+      }
+
       const meta = document.createElement("div");
       meta.className = "cd-chat-msg-meta";
 
       const metaInfo = document.createElement("div");
       metaInfo.className = "cd-chat-msg-meta-info";
+
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `cd-msg-status-badge is-${statusName}`;
+      statusBadge.textContent = statusName;
 
       const idSpan = document.createElement("span");
       const baseLabel = smartMode ? "Feedback sent" : `Dropped #${entry.id}`;
@@ -3602,12 +3825,43 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       const timeSpan = document.createElement("span");
       timeSpan.textContent = entry.createdAt;
 
+      metaInfo.appendChild(statusBadge);
       metaInfo.appendChild(idSpan);
       metaInfo.appendChild(sepSpan);
       metaInfo.appendChild(timeSpan);
 
       const actions = document.createElement("div");
       actions.className = "cd-chat-msg-actions";
+
+      if (statusName === "fixed") {
+        const reviewBtn = document.createElement("button");
+        reviewBtn.type = "button";
+        reviewBtn.className = "cd-review-btn";
+        reviewBtn.title = "Confirm fix was tested and reviewed";
+        reviewBtn.setAttribute("aria-label", "Mark fix as reviewed");
+        reviewBtn.disabled = isReviewingThis || this.isSubmitting || this.deletingFeedbackId !== null;
+        reviewBtn.innerHTML = `${ICON_CHECK}<span>${isReviewingThis ? "Saving..." : "Mark Reviewed"}</span>`;
+        reviewBtn.addEventListener("click", () => {
+          void this.markFeedbackReviewed(entry.id);
+        });
+        actions.appendChild(reviewBtn);
+      }
+
+      const commentBtn = document.createElement("button");
+      commentBtn.type = "button";
+      commentBtn.className = `cd-msg-action-btn${isCommentingThis ? " is-active" : ""}`;
+      commentBtn.title = isCommentingThis ? "Cancel comment" : "Add comment";
+      commentBtn.setAttribute("aria-label", "Add comment");
+      commentBtn.setAttribute("aria-pressed", String(isCommentingThis));
+      commentBtn.disabled = this.isSubmitting || this.deletingFeedbackId !== null;
+      commentBtn.innerHTML = ICON_COMMENT;
+      commentBtn.addEventListener("click", () => {
+        if (this.commentingFeedbackId === entryIdStr) {
+          this.cancelCommentingFeedback();
+        } else {
+          this.startCommentingFeedback(entry.id);
+        }
+      });
 
       const editBtn = document.createElement("button");
       editBtn.type = "button";
@@ -3636,6 +3890,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         this.requestDeleteFeedback(entry.id);
       });
 
+      actions.appendChild(commentBtn);
       actions.appendChild(editBtn);
       actions.appendChild(deleteBtn);
 
@@ -4072,13 +4327,19 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     if (this.isSubmitting) return;
     const smartMode = this.isSmartSelectionMode();
     const editingId = this.editingFeedbackId;
+    const commentingId = this.commentingFeedbackId;
 
     if (this.pendingSmartCaptures.size > 0) {
       await Promise.allSettled(Array.from(this.pendingSmartCaptures));
     }
 
     const message = (this.textareaEl?.value || "").trim();
-    if (
+    if (commentingId !== null) {
+      if (message.length === 0 && this.attachments.length === 0) {
+        this.showStatus("Write a comment or attach an image first.", "error");
+        return;
+      }
+    } else if (
       message.length === 0 &&
       this.attachments.length === 0 &&
       this.elementReferences.length === 0
@@ -4096,7 +4357,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     if (this.submitBtn) {
       this.submitBtn.disabled = true;
       this.submitBtn.innerHTML =
-        editingId !== null ? `<span>Saving...</span>` : `<span>Sending...</span>`;
+        editingId !== null
+          ? `<span>Saving...</span>`
+          : commentingId !== null
+            ? `<span>Posting...</span>`
+            : `<span>Sending...</span>`;
     }
 
     try {
@@ -4124,6 +4389,55 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
         },
         locale: typeof navigator !== "undefined" ? navigator.language : "en"
       };
+
+      if (commentingId !== null) {
+        const existingIdx = this.sessionHistory.findIndex(
+          (item) => String(item.id) === commentingId
+        );
+        const existingEntry = existingIdx >= 0 ? this.sessionHistory[existingIdx] : undefined;
+
+        const commentPayload: CreateCommentPayload = {
+          body: message,
+          attachments: this.attachments.map((att) => ({
+            attachment_type: att.attachment_type,
+            filename: att.filename,
+            signed_blob_id: att.signed_blob_id,
+            data_url: att.signed_blob_id ? undefined : att.data_url,
+            metadata: att.metadata
+          }))
+        };
+
+        const commentRes = await this.apiClient.createComment(
+          existingEntry?.id ?? commentingId,
+          commentPayload,
+          existingEntry?.ownershipToken
+        );
+
+        if (commentRes?.feedback) {
+          const updatedEntry = this.mapOwnRecordToSessionEntry(commentRes.feedback, existingEntry);
+          if (existingIdx >= 0) {
+            this.sessionHistory[existingIdx] = updatedEntry;
+          }
+        } else if (existingEntry) {
+          existingEntry.status = commentRes?.status || "updated";
+          if (!existingEntry.comments) existingEntry.comments = [];
+          existingEntry.comments.push({
+            id: commentRes?.id ?? Date.now(),
+            author_label: commentRes?.comment?.author_label || "You",
+            body: message || null,
+            createdAt: this.formatTimestampLabel(commentRes?.created_at),
+            attachments: submittedAttachments
+          });
+        }
+
+        this.cancelCommentingFeedback();
+        this.showStatus("Comment added.", "success");
+        this.emitWidgetEvent("context-drop:comment", {
+          response: commentRes,
+          payload: commentPayload
+        });
+        return;
+      }
 
       if (editingId !== null) {
         const existingIdx = this.sessionHistory.findIndex(

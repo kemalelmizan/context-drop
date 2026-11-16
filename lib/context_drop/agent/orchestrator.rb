@@ -53,7 +53,7 @@ module ContextDrop
             type: "object",
             properties: {
               environment: { type: "string", description: "Environment filter: 'all' (default), 'local', 'staging', 'production', etc." },
-              status: { type: "string", enum: %w[new reviewed resolved dismissed], description: "Workflow status filter." },
+              status: { type: "string", enum: %w[new updated fixed reviewed dismissed], description: "Workflow status filter." },
               page_url: { type: "string", description: "Originating page URL substring filter." },
               query: { type: "string", description: "Free-text search across message and DOM selectors." },
               limit: { type: "integer", description: "Max items (default 15)." }

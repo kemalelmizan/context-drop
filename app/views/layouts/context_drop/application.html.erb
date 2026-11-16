@@ -26,13 +26,17 @@
       --cd-new-border: #bfdbfe;
       --cd-new-text: #1d4ed8;
 
-      --cd-reviewed-bg: #fffbeb;
-      --cd-reviewed-border: #fde68a;
-      --cd-reviewed-text: #b45309;
+      --cd-updated-bg: #fffbeb;
+      --cd-updated-border: #fde68a;
+      --cd-updated-text: #b45309;
 
-      --cd-resolved-bg: #f0fdf4;
-      --cd-resolved-border: #bbf7d0;
-      --cd-resolved-text: #15803d;
+      --cd-fixed-bg: #eef2ff;
+      --cd-fixed-border: #c7d2fe;
+      --cd-fixed-text: #4338ca;
+
+      --cd-reviewed-bg: #f0fdf4;
+      --cd-reviewed-border: #bbf7d0;
+      --cd-reviewed-text: #15803d;
 
       --cd-dismissed-bg: #f8fafc;
       --cd-dismissed-border: #e2e8f0;
@@ -373,10 +377,125 @@
       letter-spacing: 0.01em;
     }
     .cd-badge-new { background: var(--cd-new-bg); border-color: var(--cd-new-border); color: var(--cd-new-text); }
+    .cd-badge-updated { background: var(--cd-updated-bg); border-color: var(--cd-updated-border); color: var(--cd-updated-text); }
+    .cd-badge-fixed { background: var(--cd-fixed-bg); border-color: var(--cd-fixed-border); color: var(--cd-fixed-text); }
     .cd-badge-reviewed { background: var(--cd-reviewed-bg); border-color: var(--cd-reviewed-border); color: var(--cd-reviewed-text); }
-    .cd-badge-resolved { background: var(--cd-resolved-bg); border-color: var(--cd-resolved-border); color: var(--cd-resolved-text); }
     .cd-badge-dismissed { background: var(--cd-dismissed-bg); border-color: var(--cd-dismissed-border); color: var(--cd-dismissed-text); }
     .cd-badge-deleted { background: var(--cd-deleted-bg); border-color: var(--cd-deleted-border); color: var(--cd-deleted-text); }
+
+    /* Comments Thread & Composer */
+    .cd-comment-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .cd-comment-item {
+      border: 1px solid var(--cd-border-subtle);
+      border-radius: 0.5rem;
+      padding: 0.875rem 1rem;
+      background: var(--cd-surface-recessed);
+    }
+    .cd-comment-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.45rem;
+      font-size: 0.75rem;
+    }
+    .cd-comment-author {
+      font-weight: 600;
+      color: var(--cd-text);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .cd-comment-time {
+      font-family: var(--cd-font-mono);
+      font-size: 0.6875rem;
+      color: var(--cd-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .cd-comment-body {
+      font-size: 0.875rem;
+      line-height: 1.55;
+      color: var(--cd-text);
+      white-space: pre-wrap;
+      margin: 0;
+    }
+    .cd-comment-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.625rem;
+      margin-top: 0.625rem;
+    }
+    .cd-comment-thumb {
+      max-width: 220px;
+      max-height: 150px;
+      object-fit: cover;
+      border-radius: 0.375rem;
+      border: 1px solid var(--cd-border);
+      display: block;
+      background: var(--cd-surface);
+    }
+    .cd-comment-form {
+      border: 1px solid var(--cd-border);
+      border-radius: 0.5rem;
+      background: var(--cd-surface);
+      padding: 0.75rem;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .cd-comment-form:focus-within {
+      border-color: var(--cd-primary);
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.08);
+    }
+    .cd-comment-textarea {
+      width: 100%;
+      min-height: 76px;
+      border: none;
+      outline: none;
+      resize: vertical;
+      font-family: inherit;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: var(--cd-text);
+      background: transparent;
+      padding: 0.125rem 0.25rem;
+    }
+    .cd-comment-previews {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .cd-comment-preview-chip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+      border: 1px solid var(--cd-border);
+      border-radius: 0.375rem;
+      background: var(--cd-surface-recessed);
+      font-size: 0.75rem;
+      color: var(--cd-text-secondary);
+    }
+    .cd-comment-preview-chip img {
+      width: 28px;
+      height: 28px;
+      object-fit: cover;
+      border-radius: 0.25rem;
+    }
+    .cd-comment-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-top: 0.625rem;
+      padding-top: 0.625rem;
+      border-top: 1px solid var(--cd-border-subtle);
+    }
 
     .cd-mono {
       font-family: var(--cd-font-mono);

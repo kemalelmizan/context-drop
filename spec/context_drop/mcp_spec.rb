@@ -141,7 +141,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
 
     @fb43 = FakeFeedbackRecord.new(
       id: 43,
-      status: "resolved",
+      status: "fixed",
       message: "Settings header typo",
       page_url: "https://app.example.com/settings",
       element_references: [],
@@ -153,7 +153,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
 
     unless defined?(ContextDrop::Feedback)
       ContextDrop.const_set(:Feedback, Class.new do
-        const_set(:STATUSES, %w[new reviewed resolved dismissed].freeze)
+        const_set(:STATUSES, %w[new updated fixed reviewed dismissed].freeze)
       end)
     end
 
@@ -206,7 +206,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       "method" => "tools/list"
     )
     tool_names = tools_res[:result][:tools].map { |t| t[:name] }
-    expect(tool_names).to eq(%w[list_environments list_feedbacks get_feedback get_feedback_attachment update_feedback_status])
+    expect(tool_names).to eq(%w[list_environments list_feedbacks get_feedback get_feedback_attachment update_feedback_status add_feedback_comment])
   end
 
   it "filters feedbacks via list_feedbacks tool" do
@@ -282,7 +282,7 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       "method" => "tools/call",
       "params" => {
         "name" => "update_feedback_status",
-        "arguments" => { "id" => 42, "status" => "resolved" }
+        "arguments" => { "id" => 42, "status" => "fixed" }
       }
     )
     expect(blocked_update[:result][:isError]).to eq(true)
@@ -318,13 +318,13 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
       "method" => "tools/call",
       "params" => {
         "name" => "update_feedback_status",
-        "arguments" => { "id" => 42, "status" => "resolved" }
+        "arguments" => { "id" => 42, "status" => "fixed" }
       }
     )
 
     parsed = JSON.parse(res[:result][:content].first[:text])
-    expect(parsed["status"]).to eq("resolved")
-    expect(@fb42.status).to eq("resolved")
+    expect(parsed["status"]).to eq("fixed")
+    expect(@fb42.status).to eq("fixed")
   end
 
   it "generates an investigation brief via prompts/get investigate_feedback" do
@@ -528,12 +528,12 @@ RSpec.describe "ContextDrop::MCP::Server & Dispatcher" do
         "method" => "tools/call",
         "params" => {
           "name" => "update_feedback_status",
-          "arguments" => { "id" => "staging:901", "status" => "resolved" }
+          "arguments" => { "id" => "staging:901", "status" => "fixed" }
         }
       )
       upd_json = JSON.parse(upd_res[:result][:content].first[:text])
       expect(upd_json["environment"]).to eq("staging")
-      expect(upd_json["status"]).to eq("resolved")
+      expect(upd_json["status"]).to eq("fixed")
     end
 
     it "prevents recursive remote fan-out when invoked via handle_http_payload(local_only: true)" do

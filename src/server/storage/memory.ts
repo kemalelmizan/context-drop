@@ -86,6 +86,7 @@ export function toFeedbackSummary(record: StoredFeedbackRecord): FeedbackSummary
     submitter: formatSubmitterLabel(record.submitter),
     attachments_count: record.attachments.length,
     element_references_count: record.element_references.length,
+    comments_count: record.comments?.length ?? 0,
     element_selectors: record.element_references.map((el) => el.selector),
     created_at: record.created_at
   };
@@ -142,6 +143,7 @@ export function createMemoryStorageAdapter(): StorageAdapter {
   let nextFeedbackId = 1;
   let nextElementId = 1;
   let nextAttachmentId = 1;
+  let nextCommentId = 1;
 
   const secret = crypto.randomBytes(32);
   const pendingBlobs = new Map<string, ValidatedUpload>();
@@ -250,6 +252,7 @@ export function createMemoryStorageAdapter(): StorageAdapter {
         metadata: { ...input.metadata },
         element_references: storedElements,
         attachments: storedAttachments,
+        comments: [],
         created_at: now,
         updated_at: now,
         deleted_at: null
@@ -306,11 +309,21 @@ export function createMemoryStorageAdapter(): StorageAdapter {
       if (!existing || existing.deleted_at) return null;
 
       const now = new Date().toISOString();
+      const contentEdited =
+        input.message !== undefined ||
+        input.metadata !== undefined ||
+        input.element_references !== undefined ||
+        input.attachments !== undefined;
       if (input.message !== undefined) {
         existing.message = input.message;
       }
       if (input.metadata !== undefined) {
         existing.metadata = { ...input.metadata };
+      }
+      if (input.status !== undefined) {
+        existing.status = input.status;
+      } else if (contentEdited) {
+        existing.status = "updated";
       }
 
       const elementsByRef = new Map<string, StoredElementReference>();
@@ -431,6 +444,17 @@ export function createMemoryStorageAdapter(): StorageAdapter {
             data: bytes ? new Uint8Array(bytes) : null
           };
         }
+        for (const comment of fb.comments ?? []) {
+          const commentAtt = comment.attachments.find((a) => Number(a.id) === numAttId);
+          if (commentAtt) {
+            const bytes = commentAtt.blob_key ? attachmentBlobs.get(commentAtt.blob_key) ?? null : null;
+            return {
+              attachment: structuredClone(commentAtt),
+              element_selector: null,
+              data: bytes ? new Uint8Array(bytes) : null
+            };
+          }
+        }
       }
       return null;
     },
@@ -438,6 +462,58 @@ export function createMemoryStorageAdapter(): StorageAdapter {
     async getAttachmentBytes(attachmentId: string | number): Promise<Uint8Array | null> {
       const res = await this.getAttachment(attachmentId);
       return res?.data ?? null;
+    },
+
+    async addComment(feedbackId: string | number, input: import("../types.ts").CreateCommentInput) {
+      const numId = Number(feedbackId);
+      const existing = feedbacks.get(numId);
+      if (!existing || existing.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      const commentId = nextCommentId++;
+      const commentAttachments: StoredAttachment[] = [];
+
+      for (const att of input.attachments ?? []) {
+        const attId = nextAttachmentId++;
+        const blobKey = att.data ? `att_${attId}` : null;
+        if (blobKey && att.data) {
+          attachmentBlobs.set(blobKey, new Uint8Array(att.data));
+        }
+        commentAttachments.push({
+          id: attId,
+          feedback_id: existing.id,
+          comment_id: commentId,
+          element_reference_id: null,
+          attachment_type: att.attachment_type,
+          filename: att.filename,
+          content_type: att.content_type,
+          byte_size: att.byte_size,
+          blob_key: blobKey,
+          metadata: { ...att.metadata },
+          created_at: now
+        });
+      }
+
+      const comment: import("../types.ts").StoredComment = {
+        id: commentId,
+        feedback_id: existing.id,
+        author_type: input.author_type ?? "User",
+        author_label: input.author_label || "You",
+        body: input.body,
+        attachments: commentAttachments,
+        created_at: now,
+        updated_at: now
+      };
+
+      if (!existing.comments) existing.comments = [];
+      existing.comments.push(comment);
+      existing.status = input.status ?? "updated";
+      existing.updated_at = now;
+
+      return {
+        comment: structuredClone(comment),
+        feedback: structuredClone(existing)
+      };
     },
 
     async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {

@@ -51,6 +51,7 @@ type ParsedSubRoute =
       name: "assets/context_drop.js" | "config" | "attachments" | "feedback" | "health" | "mcp";
     }
   | { kind: "feedback_item"; feedbackId: string }
+  | { kind: "feedback_comments"; feedbackId: string }
   | { kind: "feedback_attachment"; feedbackId: string; attachmentId: string }
   | { kind: "unknown" };
 
@@ -258,6 +259,14 @@ function parseSubRoute(pathname: string): ParsedSubRoute {
     };
   }
 
+  const fbCommentsMatch = /\/feedback\/([^/]+)\/comments$/.exec(clean);
+  if (fbCommentsMatch) {
+    return {
+      kind: "feedback_comments",
+      feedbackId: decodeURIComponent(fbCommentsMatch[1]!)
+    };
+  }
+
   const fbItemMatch = /\/feedback\/([^/]+)$/.exec(clean);
   if (fbItemMatch) {
     return {
@@ -432,7 +441,28 @@ function serializeOwnFeedback(record: StoredFeedbackRecord, ownershipToken: stri
         metadata: att.metadata ?? {},
         created_at: att.created_at
       };
-    })
+    }),
+    comments_count: (record.comments ?? []).length,
+    comments: (record.comments ?? []).map((comment) => ({
+      id: comment.id,
+      feedback_id: comment.feedback_id,
+      author_label: comment.author_label,
+      author_type: comment.author_type ?? null,
+      body: comment.body,
+      attachments: (comment.attachments ?? []).map((att) => ({
+        id: att.id,
+        attachment_type: att.attachment_type,
+        element_reference_id: null,
+        element_reference_ref: null,
+        filename: att.filename,
+        content_type: att.content_type,
+        byte_size: att.byte_size,
+        metadata: att.metadata ?? {},
+        created_at: att.created_at
+      })),
+      created_at: comment.created_at,
+      updated_at: comment.updated_at
+    }))
   };
 }
 
@@ -1133,6 +1163,16 @@ export function createContextDropFetchHandler(
         const hasMetadataKey = Object.prototype.hasOwnProperty.call(payload, "metadata");
         const hasElementsKey = Object.prototype.hasOwnProperty.call(payload, "element_references");
         const hasAttachmentsKey = Object.prototype.hasOwnProperty.call(payload, "attachments");
+        const hasStatusKey = Object.prototype.hasOwnProperty.call(payload, "status");
+        const requestedStatus = hasStatusKey ? String(payload["status"] ?? "").trim() : undefined;
+
+        if (hasStatusKey && requestedStatus !== "reviewed" && requestedStatus !== "dismissed") {
+          return jsonResponse(
+            { error: `Invalid status '${requestedStatus}'` },
+            422,
+            corsHeaders
+          );
+        }
 
         const rawElements = hasElementsKey
           ? Array.isArray(payload["element_references"])
@@ -1262,6 +1302,7 @@ export function createContextDropFetchHandler(
 
         const updated = await storage.updateFeedback(existing.id, {
           ...(hasMessageKey ? { message: nextMessage } : {}),
+          ...(hasStatusKey ? { status: requestedStatus as "reviewed" | "dismissed" } : {}),
           ...(nextMetadata !== undefined ? { metadata: nextMetadata } : {}),
           ...(sanitizedElements !== undefined ? { element_references: sanitizedElements } : {}),
           ...(preparedAttachmentSpecs !== undefined ? { attachments: preparedAttachmentSpecs } : {})
@@ -1305,6 +1346,144 @@ export function createContextDropFetchHandler(
         }
         return jsonResponse(
           { error: (err as Error).message || "Failed to update feedback" },
+          422,
+          corsHeaders
+        );
+      }
+    }
+
+    if (parsedRoute.kind === "feedback_comments" && method === "POST") {
+      const originCheck = verifyMutationOrigin(request, config.allowedOrigins);
+      if (!originCheck.ok) {
+        return jsonResponse({ error: originCheck.error }, 403, corsHeaders);
+      }
+
+      const auth = await checkSubmissionAuth(request);
+      if (!auth.ok) {
+        return jsonResponse({ error: auth.error }, auth.status, corsHeaders);
+      }
+
+      if (!checkRateLimit(request)) {
+        return jsonResponse(
+          { error: "Rate limit exceeded. Please try again later." },
+          429,
+          corsHeaders
+        );
+      }
+
+      const storage = getStorage();
+      const existing = await storage.getFeedback(parsedRoute.feedbackId);
+      if (!existing || existing.deleted_at) {
+        return jsonResponse({ error: "Feedback not found" }, 404, corsHeaders);
+      }
+
+      try {
+        const rawJson = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const payload =
+          rawJson["comment"] && typeof rawJson["comment"] === "object"
+            ? asRecord(rawJson["comment"])
+            : asRecord(rawJson);
+
+        const secret = getOwnershipSecret();
+        const rawTokens = combineRequestOwnershipTokens(
+          request,
+          url,
+          payload["ownership_token"] ?? rawJson["ownership_token"]
+        );
+        const tokenIds = extractVerifiedOwnershipIds(rawTokens, secret);
+
+        if (
+          !matchesOwnFeedback(existing, {
+            submitter: auth.submitter,
+            session_id: extractHashedSessionId(request),
+            token_ids: tokenIds
+          })
+        ) {
+          return jsonResponse({ error: "Forbidden" }, 403, corsHeaders);
+        }
+
+        const rawAttachments = Array.isArray(payload["attachments"]) ? payload["attachments"] : [];
+        const maxAttachments = config.limits?.maxAttachments ?? 10;
+        if (rawAttachments.length > maxAttachments) {
+          return jsonResponse(
+            {
+              error: `Attachments count (${rawAttachments.length}) exceeds maximum allowed (${maxAttachments})`
+            },
+            422,
+            corsHeaders
+          );
+        }
+
+        const uploadOpts = getUploadValidationOptions();
+        const preparedAttachments = await Promise.all(
+          rawAttachments.map((rawAtt) => parseNewAttachmentSpec(rawAtt, storage, uploadOpts))
+        );
+
+        const bodyText = String(payload["body"] ?? "").trim() || null;
+        if (!bodyText && preparedAttachments.length === 0) {
+          return jsonResponse(
+            { error: "Comment must include text or an image attachment" },
+            422,
+            corsHeaders
+          );
+        }
+
+        if (!storage.addComment) {
+          return jsonResponse(
+            { error: "Storage adapter does not support comments" },
+            501,
+            corsHeaders
+          );
+        }
+
+        const authorLabel =
+          auth.submitter?.label ||
+          (auth.submitter?.type && auth.submitter?.id !== undefined && auth.submitter?.id !== null
+            ? `${auth.submitter.type}#${auth.submitter.id}`
+            : "You");
+
+        const result = await storage.addComment(existing.id, {
+          author_type: auth.submitter?.type ?? "User",
+          author_label: authorLabel,
+          body: bodyText,
+          attachments: preparedAttachments,
+          status: "updated"
+        });
+
+        if (!result) {
+          return jsonResponse({ error: "Feedback not found" }, 404, corsHeaders);
+        }
+
+        if (config.onFeedbackUpdated) {
+          try {
+            await config.onFeedbackUpdated(result.feedback);
+          } catch (cbErr) {
+            console.error("[context-drop] onFeedbackUpdated callback error:", cbErr);
+          }
+        }
+
+        const ownershipToken =
+          findOwnershipTokenFor(rawTokens, result.feedback.id, secret) ??
+          generateOwnershipToken(result.feedback.id, secret);
+
+        return jsonResponse(
+          {
+            id: result.comment.id,
+            feedback_id: result.feedback.id,
+            status: result.feedback.status,
+            comment: result.comment,
+            feedback: serializeOwnFeedback(result.feedback, ownershipToken),
+            created_at: result.comment.created_at
+          },
+          201,
+          corsHeaders
+        );
+      } catch (err) {
+        if (err instanceof SensitiveElementError || err instanceof UploadValidationError) {
+          return jsonResponse({ error: err.message }, err.status, corsHeaders);
+        }
+        return jsonResponse(
+          { error: (err as Error).message || "Failed to add comment" },
           422,
           corsHeaders
         );
@@ -1410,7 +1589,11 @@ export function createContextDropFetchHandler(
         return new Response("Forbidden", { status: 403, headers: corsHeaders });
       }
 
-      const attMeta = existing.attachments.find(
+      const allFeedbackAttachments = [
+        ...existing.attachments,
+        ...(existing.comments ?? []).flatMap((c) => c.attachments ?? [])
+      ];
+      const attMeta = allFeedbackAttachments.find(
         (a) => String(a.id) === String(parsedRoute.attachmentId)
       );
       if (!attMeta) {

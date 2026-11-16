@@ -218,9 +218,20 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         captured_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS context_drop_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        feedback_id INTEGER NOT NULL REFERENCES context_drop_feedbacks(id) ON DELETE CASCADE,
+        author_type TEXT,
+        author_label TEXT,
+        body TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS context_drop_attachments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         feedback_id INTEGER NOT NULL REFERENCES context_drop_feedbacks(id) ON DELETE CASCADE,
+        comment_id INTEGER REFERENCES context_drop_comments(id) ON DELETE CASCADE,
         element_reference_id INTEGER REFERENCES context_drop_element_references(id) ON DELETE SET NULL,
         attachment_type TEXT NOT NULL,
         filename TEXT,
@@ -236,6 +247,11 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
     if (!cols.some((c) => String(c["name"]) === "deleted_at")) {
       sqliteDb.exec("ALTER TABLE context_drop_feedbacks ADD COLUMN deleted_at TEXT;");
     }
+    const attCols = sqliteDb.prepare("PRAGMA table_info(context_drop_attachments)").all();
+    if (!attCols.some((c) => String(c["name"]) === "comment_id")) {
+      sqliteDb.exec("ALTER TABLE context_drop_attachments ADD COLUMN comment_id INTEGER REFERENCES context_drop_comments(id) ON DELETE CASCADE;");
+    }
+    sqliteDb.exec("UPDATE context_drop_feedbacks SET status = 'fixed' WHERE status = 'resolved';");
 
     const hydrateFeedbackRow = (row: Record<string, unknown>): StoredFeedbackRecord => {
       const fbId = Number(row["id"]);
@@ -244,6 +260,9 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         .all(fbId);
       const attRows = sqliteDb
         .prepare("SELECT * FROM context_drop_attachments WHERE feedback_id = ? ORDER BY id ASC")
+        .all(fbId);
+      const commentRows = sqliteDb
+        .prepare("SELECT * FROM context_drop_comments WHERE feedback_id = ? ORDER BY id ASC")
         .all(fbId);
 
       const elements: StoredElementReference[] = elRows.map((el) => ({
@@ -261,9 +280,13 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         captured_at: String(el["captured_at"])
       }));
 
-      const attachments: StoredAttachment[] = attRows.map((att) => ({
+      const allAttachments: StoredAttachment[] = attRows.map((att) => ({
         id: Number(att["id"]),
         feedback_id: fbId,
+        comment_id:
+          att["comment_id"] !== null && att["comment_id"] !== undefined
+            ? Number(att["comment_id"])
+            : null,
         element_reference_id:
           att["element_reference_id"] !== null && att["element_reference_id"] !== undefined
             ? Number(att["element_reference_id"])
@@ -280,10 +303,37 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         created_at: String(att["created_at"])
       }));
 
+      const attachments = allAttachments.filter((a) => a.comment_id === null || a.comment_id === undefined);
+      const attachmentsByComment = new Map<number, StoredAttachment[]>();
+      for (const a of allAttachments) {
+        if (a.comment_id !== null && a.comment_id !== undefined) {
+          const list = attachmentsByComment.get(Number(a.comment_id)) ?? [];
+          list.push(a);
+          attachmentsByComment.set(Number(a.comment_id), list);
+        }
+      }
+
+      const comments: import("../types.ts").StoredComment[] = commentRows.map((c) => {
+        const cid = Number(c["id"]);
+        return {
+          id: cid,
+          feedback_id: fbId,
+          author_type: (c["author_type"] as string | null) ?? null,
+          author_label: String(c["author_label"] || "You"),
+          body: (c["body"] as string | null) ?? null,
+          attachments: attachmentsByComment.get(cid) ?? [],
+          created_at: String(c["created_at"]),
+          updated_at: String(c["updated_at"])
+        };
+      });
+
+      const rawStatus = String(row["status"]);
+      const normalizedStatus = (rawStatus === "resolved" ? "fixed" : rawStatus) as FeedbackStatus;
+
       return {
         id: fbId,
         environment: String(row["environment"]),
-        status: String(row["status"]) as FeedbackStatus,
+        status: normalizedStatus,
         message: (row["message"] as string | null) ?? null,
         page_url: String(row["page_url"]),
         user_agent: (row["user_agent"] as string | null) ?? null,
@@ -292,6 +342,7 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         metadata: JSON.parse(String(row["metadata_json"] || "{}")),
         element_references: elements,
         attachments,
+        comments,
         created_at: String(row["created_at"]),
         updated_at: String(row["updated_at"]),
         deleted_at: (row["deleted_at"] as string | null) ?? null
@@ -489,12 +540,18 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         const now = new Date().toISOString();
         const nextMessage = input.message !== undefined ? input.message : existing.message;
         const nextMetadata = input.metadata !== undefined ? input.metadata : existing.metadata;
+        const contentEdited =
+          input.message !== undefined ||
+          input.metadata !== undefined ||
+          input.element_references !== undefined ||
+          input.attachments !== undefined;
+        const nextStatus = input.status ?? (contentEdited ? "updated" : existing.status);
 
         sqliteDb
           .prepare(
-            "UPDATE context_drop_feedbacks SET message = ?, metadata_json = ?, updated_at = ? WHERE id = ?"
+            "UPDATE context_drop_feedbacks SET message = ?, metadata_json = ?, status = ?, updated_at = ? WHERE id = ?"
           )
-          .run(nextMessage, JSON.stringify(nextMetadata || {}), now, fbId);
+          .run(nextMessage, JSON.stringify(nextMetadata || {}), nextStatus, now, fbId);
 
         const elIdByRef = new Map<string, number>();
         if (input.element_references !== undefined) {
@@ -679,6 +736,66 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
 
         return {
           previous_status: existing.status,
+          feedback: updated
+        };
+      },
+
+      async addComment(feedbackId: string | number, input: import("../types.ts").CreateCommentInput) {
+        const fbId = Number(feedbackId);
+        const existing = await this.getFeedback(fbId);
+        if (!existing || existing.deleted_at) return null;
+
+        const now = new Date().toISOString();
+        const commentRes = sqliteDb
+          .prepare(
+            `INSERT INTO context_drop_comments (feedback_id, author_type, author_label, body, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(fbId, input.author_type ?? "User", input.author_label || "You", input.body, now, now);
+        const commentId = Number(commentRes.lastInsertRowid);
+
+        const insertAttStmt = sqliteDb.prepare(
+          `INSERT INTO context_drop_attachments
+           (feedback_id, comment_id, element_reference_id, attachment_type, filename, content_type, byte_size, blob_key, metadata_json, created_at)
+           VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
+        );
+
+        for (const att of input.attachments ?? []) {
+          let blobKey: string | null = null;
+          if (att.data) {
+            const saved = await blobStore.putBlob({
+              key: `fb_${fbId}_comment_${commentId}_${crypto.randomUUID()}`,
+              data: att.data,
+              contentType: att.content_type || "image/png",
+              filename: att.filename || "image.png"
+            });
+            blobKey = saved.key;
+          }
+          insertAttStmt.run(
+            fbId,
+            commentId,
+            att.attachment_type,
+            att.filename,
+            att.content_type,
+            att.byte_size,
+            blobKey,
+            JSON.stringify(att.metadata || {}),
+            now
+          );
+        }
+
+        const nextStatus = input.status ?? "updated";
+        sqliteDb
+          .prepare("UPDATE context_drop_feedbacks SET status = ?, updated_at = ? WHERE id = ?")
+          .run(nextStatus, now, fbId);
+
+        const updated = await this.getFeedback(fbId);
+        if (!updated) return null;
+        const createdComment = (updated.comments ?? []).find((c) => Number(c.id) === commentId);
+        if (!createdComment) return null;
+
+        return {
+          comment: createdComment,
           feedback: updated
         };
       }
@@ -895,11 +1012,21 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
       if (!found || found.deleted_at) return null;
 
       const now = new Date().toISOString();
+      const contentEdited =
+        input.message !== undefined ||
+        input.metadata !== undefined ||
+        input.element_references !== undefined ||
+        input.attachments !== undefined;
       if (input.message !== undefined) {
         found.message = input.message;
       }
       if (input.metadata !== undefined) {
         found.metadata = { ...input.metadata };
+      }
+      if (input.status !== undefined) {
+        found.status = input.status;
+      } else if (contentEdited) {
+        found.status = "updated";
       }
 
       const elementsByRef = new Map<string, StoredElementReference>();
@@ -1028,6 +1155,17 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
             data: bytes
           };
         }
+        for (const comment of fb.comments ?? []) {
+          const commentAtt = comment.attachments.find((a) => String(a.id) === String(attachmentId));
+          if (commentAtt) {
+            const bytes = commentAtt.blob_key ? await blobStore.getBlob(commentAtt.blob_key) : null;
+            return {
+              attachment: structuredClone(commentAtt),
+              element_selector: null,
+              data: bytes
+            };
+          }
+        }
       }
       return null;
     },
@@ -1035,6 +1173,66 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
     async getAttachmentBytes(attachmentId: string | number): Promise<Uint8Array | null> {
       const res = await this.getAttachment(attachmentId);
       return res?.data ?? null;
+    },
+
+    async addComment(feedbackId: string | number, input: import("../types.ts").CreateCommentInput) {
+      const state = readJsonStore();
+      const found = state.feedbacks.find((fb) => String(fb.id) === String(feedbackId));
+      if (!found || found.deleted_at) return null;
+
+      const now = new Date().toISOString();
+      const commentId = (state as unknown as { nextCommentId?: number }).nextCommentId ?? 1;
+      (state as unknown as { nextCommentId?: number }).nextCommentId = commentId + 1;
+
+      const commentAttachments: StoredAttachment[] = [];
+      for (const att of input.attachments ?? []) {
+        const attId = state.nextAttachmentId++;
+        let blobKey: string | null = null;
+        if (att.data) {
+          const saved = await blobStore.putBlob({
+            key: `fb_${found.id}_comment_${commentId}_${attId}_${crypto.randomUUID()}`,
+            data: att.data,
+            contentType: att.content_type || "image/png",
+            filename: att.filename || "image.png"
+          });
+          blobKey = saved.key;
+        }
+        commentAttachments.push({
+          id: attId,
+          feedback_id: found.id,
+          comment_id: commentId,
+          element_reference_id: null,
+          attachment_type: att.attachment_type,
+          filename: att.filename,
+          content_type: att.content_type,
+          byte_size: att.byte_size,
+          blob_key: blobKey,
+          metadata: { ...att.metadata },
+          created_at: now
+        });
+      }
+
+      const comment: import("../types.ts").StoredComment = {
+        id: commentId,
+        feedback_id: found.id,
+        author_type: input.author_type ?? "User",
+        author_label: input.author_label || "You",
+        body: input.body,
+        attachments: commentAttachments,
+        created_at: now,
+        updated_at: now
+      };
+
+      if (!found.comments) found.comments = [];
+      found.comments.push(comment);
+      found.status = input.status ?? "updated";
+      found.updated_at = now;
+      writeJsonStore(state);
+
+      return {
+        comment: structuredClone(comment),
+        feedback: structuredClone(found)
+      };
     },
 
     async updateFeedbackStatus(id: string | number, status: FeedbackStatus) {

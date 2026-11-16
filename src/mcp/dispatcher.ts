@@ -149,7 +149,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "update_feedback_status",
     description:
-      "Transition a ContextDrop feedback record's status ('new', 'reviewed', 'resolved', 'dismissed') in local or remote environments.",
+      "Transition a ContextDrop feedback record's status ('new', 'updated', 'fixed', 'reviewed', 'dismissed') in local or remote environments.",
     inputSchema: {
       type: "object",
       required: ["id", "status"],
@@ -297,6 +297,21 @@ function serializeFullFeedback(record: StoredFeedbackRecord, router: Environment
       content_type: att.content_type,
       byte_size: att.byte_size,
       created_at: att.created_at
+    })),
+    comments: (record.comments ?? []).map((comment) => ({
+      id: comment.id,
+      author_label: comment.author_label,
+      author_type: comment.author_type ?? null,
+      body: comment.body,
+      attachments: (comment.attachments ?? []).map((att) => ({
+        id: att.id,
+        attachment_type: att.attachment_type,
+        filename: att.filename,
+        content_type: att.content_type,
+        byte_size: att.byte_size,
+        created_at: att.created_at
+      })),
+      created_at: comment.created_at
     }))
   };
 }
@@ -705,6 +720,18 @@ export class ContextDropMcpDispatcher {
           });
         }
       }
+      for (const comment of feedback.comments ?? []) {
+        for (const att of comment.attachments ?? []) {
+          const bytes = await this.storage.getAttachmentBytes(att.id);
+          if (bytes && bytes.byteLength > 0 && bytes.byteLength <= MAX_INLINE_IMAGE_BYTES) {
+            contentBlocks.push({
+              type: "image",
+              data: Buffer.from(bytes).toString("base64"),
+              mimeType: att.content_type || "image/png"
+            });
+          }
+        }
+      }
     }
 
     return {
@@ -1046,7 +1073,7 @@ export class ContextDropMcpDispatcher {
       `1. Locate the page route corresponding to \`${pageUrl}\` (in Next.js \`app/**/page.tsx\` / \`pages/**\`, React router, or Rails \`config/routes.rb\` & \`app/views/\`).`,
       `2. Search components and templates for the attached DOM selectors (\`${selectorsList || "N/A"}\`) and data-testid / class / text landmarks.`,
       `3. Inspect any attached screenshots (\`get_feedback\` with \`id: "${qualified}"\`) to verify the visual layout or behavior issue.`,
-      `4. Implement and verify the fix locally, then call \`update_feedback_status\` (\`id: "${qualified}"\`, \`status: "resolved"\`) once complete.`
+      `4. Implement and verify the fix locally, then call \`update_feedback_status\` (\`id: "${qualified}"\`, \`status: "fixed"\`) once complete.`
     ].join("\n");
 
     const imageBlocks = res.content.filter((b) => b.type === "image");

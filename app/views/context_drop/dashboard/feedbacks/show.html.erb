@@ -60,9 +60,11 @@
   </div>
 
   <div style="display: flex; gap: 0.375rem; flex-wrap: wrap; align-items: center;">
+    <% primary_status = @feedback.status == "fixed" ? "reviewed" : "fixed" %>
     <% [
-      ["reviewed", "Mark Reviewed", ""],
-      ["resolved", "Mark Resolved", "cd-btn-primary"],
+      ["updated", "Mark Updated", primary_status == "updated" ? "cd-btn-primary" : ""],
+      ["fixed", "Mark Fixed", primary_status == "fixed" ? "cd-btn-primary" : ""],
+      ["reviewed", "Mark Reviewed", primary_status == "reviewed" ? "cd-btn-primary" : ""],
       ["dismissed", "Dismiss", ""]
     ].each do |target_status, label, extra_class| %>
       <%= form_with url: dashboard_feedback_path(@feedback), method: :patch, local: true, style: "display: inline;" do %>
@@ -231,8 +233,164 @@
   <% end %>
 </div>
 
+<div class="cd-card">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
+    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+      <%= cd_icon_comment(size: 14) %>
+      <span>Comments</span>
+      <span class="cd-tab-count"><%= @feedback.comments.size %></span>
+    </h2>
+    <span style="font-size: 0.75rem; color: var(--cd-muted);">Adding a comment sets status to <strong>Updated</strong></span>
+  </div>
+
+  <% if @feedback.comments.empty? %>
+    <p style="color: var(--cd-muted); margin: 0 0 1rem 0; font-size: 0.8125rem;">No comments yet. Add a note or screenshot below to follow up.</p>
+  <% else %>
+    <div class="cd-comment-list">
+      <% @feedback.comments.each do |comment| %>
+        <div class="cd-comment-item" id="comment-<%= comment.id %>">
+          <div class="cd-comment-header">
+            <span class="cd-comment-author">
+              <%= cd_icon_user(size: 12) %>
+              <span><%= comment.display_author_label %></span>
+            </span>
+            <span class="cd-comment-time"><%= comment.created_at&.strftime("%Y-%m-%d %H:%M:%S UTC") %></span>
+          </div>
+          <% if comment.body.present? %>
+            <p class="cd-comment-body"><%= comment.body %></p>
+          <% end %>
+          <% if comment.attachments.any? %>
+            <div class="cd-comment-images">
+              <% comment.attachments.each do |att| %>
+                <% if att.respond_to?(:file) && att.file.attached? && main_app.respond_to?(:url_for) %>
+                  <a href="<%= main_app.url_for(att.file) %>" target="_blank" rel="noopener noreferrer" title="<%= att.file.filename %>">
+                    <img src="<%= main_app.url_for(att.file) %>"
+                         alt="Comment attachment #<%= att.id %>"
+                         class="cd-comment-thumb" />
+                  </a>
+                <% end %>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%= form_with url: comments_dashboard_feedback_path(@feedback), method: :post, multipart: true, local: true, class: "cd-comment-form", id: "cd-dashboard-comment-form" do %>
+    <textarea name="body"
+              id="cd-dashboard-comment-body"
+              class="cd-comment-textarea"
+              placeholder="Write a comment... (You can paste or attach images below)"
+              aria-label="Comment body"></textarea>
+    <div class="cd-comment-previews" id="cd-dashboard-comment-previews" hidden></div>
+    <div class="cd-comment-toolbar">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label for="cd-dashboard-comment-images" class="cd-btn cd-btn-sm" style="cursor: pointer;">
+          <%= cd_icon_attachment(size: 13) %>
+          <span>Attach Images</span>
+        </label>
+        <input type="file"
+               id="cd-dashboard-comment-images"
+               name="images[]"
+               multiple
+               accept="image/png,image/jpeg,image/webp,image/gif"
+               style="display: none;">
+        <span style="font-size: 0.75rem; color: var(--cd-muted);" id="cd-dashboard-comment-files-label"></span>
+      </div>
+      <button type="submit" class="cd-btn cd-btn-sm cd-btn-primary">Post Comment</button>
+    </div>
+  <% end %>
+</div>
+
 <script>
   (function() {
+    var form = document.getElementById("cd-dashboard-comment-form");
+    var textarea = document.getElementById("cd-dashboard-comment-body");
+    var fileInput = document.getElementById("cd-dashboard-comment-images");
+    var previews = document.getElementById("cd-dashboard-comment-previews");
+    var filesLabel = document.getElementById("cd-dashboard-comment-files-label");
+    var selectedFiles = [];
+
+    function syncFileInput() {
+      if (!fileInput || typeof DataTransfer === "undefined") return;
+      var dt = new DataTransfer();
+      selectedFiles.forEach(function(f) { dt.items.add(f); });
+      fileInput.files = dt.files;
+      renderPreviews();
+    }
+
+    function renderPreviews() {
+      if (!previews || !filesLabel) return;
+      previews.innerHTML = "";
+      if (selectedFiles.length === 0) {
+        previews.hidden = true;
+        filesLabel.textContent = "";
+        return;
+      }
+      previews.hidden = false;
+      filesLabel.textContent = selectedFiles.length + " image(s) selected";
+      selectedFiles.forEach(function(file, idx) {
+        var chip = document.createElement("span");
+        chip.className = "cd-comment-preview-chip";
+        var img = document.createElement("img");
+        img.alt = file.name;
+        var reader = new FileReader();
+        reader.onload = function(ev) { img.src = ev.target.result; };
+        reader.readAsDataURL(file);
+        var nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name.length > 24 ? file.name.slice(0, 21) + "..." : file.name;
+        var rmBtn = document.createElement("button");
+        rmBtn.type = "button";
+        rmBtn.textContent = "×";
+        rmBtn.setAttribute("aria-label", "Remove image");
+        rmBtn.style.cssText = "border:none;background:none;cursor:pointer;font-size:14px;color:var(--cd-muted);padding:0 2px;";
+        rmBtn.addEventListener("click", function() {
+          selectedFiles.splice(idx, 1);
+          syncFileInput();
+        });
+        chip.appendChild(img);
+        chip.appendChild(nameSpan);
+        chip.appendChild(rmBtn);
+        previews.appendChild(chip);
+      });
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener("change", function() {
+        if (fileInput.files && fileInput.files.length > 0) {
+          Array.prototype.forEach.call(fileInput.files, function(f) { selectedFiles.push(f); });
+          syncFileInput();
+        }
+      });
+    }
+
+    if (textarea) {
+      textarea.addEventListener("keydown", function(e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && form) {
+          e.preventDefault();
+          form.submit();
+        }
+      });
+      textarea.addEventListener("paste", function(e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        var added = false;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].type && items[i].type.indexOf("image/") === 0) {
+            var file = items[i].getAsFile();
+            if (file) {
+              selectedFiles.push(file);
+              added = true;
+            }
+          }
+        }
+        if (added) {
+          syncFileInput();
+        }
+      });
+    }
+
     window.addEventListener("keydown", function(e) {
       if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT" || e.target.isContentEditable)) {
         return;

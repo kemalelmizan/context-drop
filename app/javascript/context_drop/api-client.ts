@@ -6,6 +6,8 @@ import type {
   AgentStatusResponse,
   ContextDropApiClientOptions,
   CrossEnvFeedbackListResponse,
+  CreateCommentPayload,
+  CreateCommentResponse,
   FeedbackDeleteResponse,
   FeedbackSubmissionPayload,
   FeedbackSubmissionResponse,
@@ -453,6 +455,41 @@ export class ContextDropApiClient {
     const nextToken = response?.ownership_token || response?.feedback?.ownership_token;
     if (response?.id !== undefined && nextToken) {
       this.setOwnershipToken(response.id, nextToken);
+    }
+    return response;
+  }
+
+  public async createComment(
+    id: number | string,
+    payload: CreateCommentPayload,
+    ownershipToken?: string | null
+  ): Promise<CreateCommentResponse> {
+    const resolvedToken = ownershipToken || this.getOwnershipToken(id);
+    const makeRequest = async (csrfToken: string | null) => {
+      const headers = this.buildJsonHeaders(csrfToken);
+      if (resolvedToken) {
+        headers["X-Context-Drop-Ownership-Token"] = resolvedToken;
+      }
+      const bodyPayload: Record<string, unknown> = { comment: payload };
+      if (resolvedToken) {
+        bodyPayload.ownership_token = resolvedToken;
+      }
+      return fetch(`${this.baseUrl}/feedback/${encodeURIComponent(String(id))}/comments`, {
+        method: "POST",
+        credentials: this.credentials,
+        headers,
+        body: JSON.stringify(bodyPayload)
+      });
+    };
+
+    const response = await this.executeWithCsrfRetry<CreateCommentResponse>(
+      makeRequest,
+      "Comment failed"
+    );
+
+    const nextToken = response?.feedback?.ownership_token;
+    if (response?.feedback?.id !== undefined && nextToken) {
+      this.setOwnershipToken(response.feedback.id, nextToken);
     }
     return response;
   }

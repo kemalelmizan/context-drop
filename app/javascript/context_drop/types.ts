@@ -79,6 +79,16 @@ export interface SessionFeedbackAttachmentItem {
   metadata?: Record<string, unknown>;
 }
 
+export interface SessionFeedbackCommentItem {
+  id: number | string;
+  author_label: string;
+  author_type?: string | null;
+  body: string | null;
+  createdAt: string;
+  rawCreatedAt?: string;
+  attachments: SessionFeedbackAttachmentItem[];
+}
+
 export interface SessionFeedbackEntry {
   id: number | string;
   message: string;
@@ -91,6 +101,7 @@ export interface SessionFeedbackEntry {
   ownershipToken?: string;
   elements: ElementReferenceSnapshot[];
   attachments: SessionFeedbackAttachmentItem[];
+  comments?: SessionFeedbackCommentItem[];
 }
 
 export interface ContextDropApiClientOptions {
@@ -153,6 +164,17 @@ export interface OwnFeedbackAttachment {
   created_at?: string;
 }
 
+export interface FeedbackCommentRecord {
+  id: number | string;
+  feedback_id?: number | string;
+  author_label: string;
+  author_type?: string | null;
+  body: string | null;
+  attachments: OwnFeedbackAttachment[];
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface OwnFeedbackRecord {
   id: number;
   environment?: string;
@@ -164,6 +186,8 @@ export interface OwnFeedbackRecord {
   element_references_count: number;
   element_references: ElementReferenceSnapshot[];
   attachments: OwnFeedbackAttachment[];
+  comments_count?: number;
+  comments?: FeedbackCommentRecord[];
   created_at: string;
   updated_at: string;
   ownership_token?: string;
@@ -185,10 +209,31 @@ export interface FeedbackAttachmentUpdateInput {
 }
 
 export interface FeedbackUpdatePayload {
-  message: string;
+  message?: string;
+  status?: string;
   metadata?: Record<string, unknown>;
-  element_references: ElementReferenceSnapshot[];
-  attachments: FeedbackAttachmentUpdateInput[];
+  element_references?: ElementReferenceSnapshot[];
+  attachments?: FeedbackAttachmentUpdateInput[];
+}
+
+export interface CreateCommentPayload {
+  body: string;
+  attachments: Array<{
+    attachment_type: "image" | "screenshot";
+    filename: string;
+    signed_blob_id?: string;
+    data_url?: string;
+    metadata: Record<string, unknown>;
+  }>;
+}
+
+export interface CreateCommentResponse {
+  id: number | string;
+  feedback_id: number | string;
+  status: string;
+  comment: FeedbackCommentRecord;
+  feedback?: OwnFeedbackRecord;
+  created_at: string;
 }
 
 export interface FeedbackUpdateResponse {

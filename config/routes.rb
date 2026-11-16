@@ -5,6 +5,7 @@ ContextDrop::Engine.routes.draw do
   match "attachments", to: "configs#cors_preflight", via: :options
   match "feedback", to: "configs#cors_preflight", via: :options
   match "feedback/:id", to: "configs#cors_preflight", via: :options
+  match "feedback/:id/comments", to: "configs#cors_preflight", via: :options
   match "feedback/:feedback_id/attachments/:id", to: "configs#cors_preflight", via: :options
   match "health", to: "configs#cors_preflight", via: :options
 
@@ -15,6 +16,7 @@ ContextDrop::Engine.routes.draw do
   post "feedback", to: "feedbacks#create"
   match "feedback/:id", to: "feedbacks#update", via: %i[patch put]
   delete "feedback/:id", to: "feedbacks#destroy"
+  post "feedback/:id/comments", to: "feedbacks#create_comment"
   get "feedback/:feedback_id/attachments/:id", to: "feedbacks#attachment"
   get "health", to: "health#show"
   post "mcp", to: "mcp#create"
@@ -32,7 +34,9 @@ ContextDrop::Engine.routes.draw do
 
   namespace :dashboard do
     root to: "feedbacks#index"
-    resources :feedbacks, only: %i[index show update]
+    resources :feedbacks, only: %i[index show update] do
+      post :comments, on: :member, action: :create_comment
+    end
   end
 
   root to: "dashboard/feedbacks#index"

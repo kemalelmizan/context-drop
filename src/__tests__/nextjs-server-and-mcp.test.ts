@@ -366,9 +366,9 @@ describe("Pluggable Storage Adapters (Local SQLite, Local JSON, and Postgres)", 
         assert.equal(att.element_selector, "section.kpi-card");
         assert.equal(att.data?.byteLength, VALID_1X1_PNG_BYTES.byteLength);
 
-        const updated = await writer.updateFeedbackStatus(created.id, "resolved");
+        const updated = await writer.updateFeedbackStatus(created.id, "fixed");
         assert.equal(updated?.previous_status, "new");
-        assert.equal(updated?.feedback.status, "resolved");
+        assert.equal(updated?.feedback.status, "fixed");
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
@@ -704,19 +704,19 @@ describe("Unified Multi-Environment MCP Hub (Stdio + Remote HTTP Federation)", (
     assert.ok(promptMessages[0]?.content[0]?.text?.includes("app/**/page.tsx"));
     assert.equal(promptMessages[0]?.content[1]?.type, "image");
 
-    // 5. update_feedback_status("staging:1", "resolved") transitions remote record
+    // 5. update_feedback_status("staging:1", "fixed") transitions remote record
     const updateRpc = await hub.dispatch({
       jsonrpc: "2.0",
       id: 5,
       method: "tools/call",
       params: {
         name: "update_feedback_status",
-        arguments: { id: "staging:1", status: "resolved" }
+        arguments: { id: "staging:1", status: "fixed" }
       }
     });
     assert.ok(updateRpc && !Array.isArray(updateRpc));
     const stagingAfter = await stagingStorage.getFeedback(1);
-    assert.equal(stagingAfter?.status, "resolved");
+    assert.equal(stagingAfter?.status, "fixed");
   });
 
   it("streams newline-delimited JSON-RPC over stdio", async () => {
@@ -1177,7 +1177,7 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
         method: "tools/call",
         params: {
           name: "update_feedback_status",
-          arguments: { id: fbId, status: "resolved" }
+          arguments: { id: fbId, status: "fixed" }
         }
       });
       assert.ok(blockedStatus && !Array.isArray(blockedStatus));
@@ -1250,6 +1250,58 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
         ((await alphaOwn.json()) as { total_count: number }).total_count,
         1
       );
+
+      // Add comment with image attachment -> transitions status to 'updated'
+      const commentRes = await authHandler.POST(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${alphaBody.id}/comments`, {
+          method: "POST",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            comment: {
+              body: "Here is a follow-up image",
+              attachments: [
+                {
+                  attachment_type: "image",
+                  filename: "followup.png",
+                  data_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                }
+              ]
+            }
+          })
+        })
+      );
+      assert.equal(commentRes.status, 201);
+      const commentJson = (await commentRes.json()) as {
+        status: string;
+        comment: { body: string; attachments: Array<{ id: number | string }> };
+      };
+      assert.equal(commentJson.status, "updated");
+      assert.equal(commentJson.comment.body, "Here is a follow-up image");
+      assert.equal(commentJson.comment.attachments.length, 1);
+
+      // Comment attachment preview works for owner
+      const attId = commentJson.comment.attachments[0]!.id;
+      const attPreview = await authHandler.GET(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${alphaBody.id}/attachments/${attId}`)
+      );
+      assert.equal(attPreview.status, 200);
+
+      // Owner can transition status to 'reviewed'
+      const reviewRes = await authHandler.PATCH(
+        new Request(`http://localhost:3000/api/context-drop/feedback/${alphaBody.id}`, {
+          method: "PATCH",
+          headers: {
+            Origin: "http://localhost:3000",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ feedback: { status: "reviewed" } })
+        })
+      );
+      assert.equal(reviewRes.status, 200);
+      assert.equal(((await reviewRes.json()) as { status: string }).status, "reviewed");
     } finally {
       fs.rmSync(tmpJsonDir, { recursive: true, force: true });
     }

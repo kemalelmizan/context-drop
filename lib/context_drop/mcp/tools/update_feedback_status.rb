@@ -6,7 +6,7 @@ module ContextDrop
       class UpdateFeedbackStatus
         DEFINITION = {
           name: "update_feedback_status",
-          description: "Transition a ContextDrop feedback record's status ('new', 'reviewed', 'resolved', 'dismissed') in local or remote environments.",
+          description: "Transition a ContextDrop feedback record's status ('new', 'updated', 'fixed', 'reviewed', 'dismissed') in local or remote environments.",
           inputSchema: {
             type: "object",
             required: %w[id status],
@@ -21,7 +21,7 @@ module ContextDrop
               },
               status: {
                 type: "string",
-                enum: %w[new reviewed resolved dismissed],
+                enum: %w[new updated fixed reviewed dismissed],
                 description: "Target workflow status."
               }
             }
