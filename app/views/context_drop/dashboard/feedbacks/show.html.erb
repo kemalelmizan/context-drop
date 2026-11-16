@@ -4,6 +4,7 @@
   <span class="cd-crumb cd-crumb-active">Feedback #<%= @feedback.id %></span>
 <% end %>
 
+<div class="cd-detail-shell">
 <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.875rem; margin-bottom: 1.25rem;">
   <div style="display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap;">
     <a href="<%= @triage_index_back_path %>" class="cd-btn cd-btn-sm" title="Back to triage list (Esc)">
@@ -49,7 +50,7 @@
     </div>
 
     <div style="display: inline-flex; align-items: center; gap: 0.5rem; margin-left: 0.25rem;">
-      <h1 style="margin: 0; font-size: 1.125rem; font-weight: 700; color: var(--cd-text);">
+      <h1 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--cd-text);">
         Feedback #<%= @feedback.id %>
       </h1>
       <span class="cd-badge cd-badge-<%= @feedback.status %>"><%= @feedback.status %></span>
@@ -80,12 +81,10 @@
 </div>
 
 <div class="cd-card">
-  <h2 style="margin: 0 0 0.5rem 0; font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cd-muted);">
+  <h2 style="margin: 0 0 0.625rem 0; font-size: 1rem; font-weight: 600; color: var(--cd-text);">
     Feedback Message
   </h2>
-  <div style="font-size: 0.9375rem; line-height: 1.6; white-space: pre-wrap; margin-bottom: 1.25rem; color: var(--cd-text); font-weight: 500;">
-    <%= @feedback.message.presence || content_tag(:span, "(No message text provided)", style: "color: var(--cd-muted); font-style: italic; font-weight: normal;") %>
-  </div>
+  <div class="cd-feedback-prose" style="font-size: 1rem; line-height: 1.6; white-space: pre-wrap; margin-bottom: 1.25rem; color: var(--cd-text); font-weight: 500;"><%= @feedback.message.presence || content_tag(:span, "(No message text provided)", style: "color: var(--cd-muted); font-style: italic; font-weight: normal;") %></div>
 
   <dl class="cd-meta-list">
     <dt>Environment</dt>
@@ -129,7 +128,7 @@
 
 <div class="cd-card">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
-    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+    <h2 style="margin: 0; font-size: 1rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
       <%= cd_icon_pin(size: 14) %>
       <span>DOM Element References</span>
       <span class="cd-tab-count"><%= @feedback.element_references.size %></span>
@@ -139,16 +138,16 @@
   <% if @feedback.element_references.empty? %>
     <p style="color: var(--cd-muted); margin: 0; font-size: 0.8125rem;">No DOM elements were selected for this submission.</p>
   <% else %>
-    <div class="cd-grid">
+    <div class="cd-grid" style="gap: 1.25rem 2rem;">
       <% @feedback.element_references.each_with_index do |el, idx| %>
-        <div style="border: 1px solid var(--cd-border-subtle); border-radius: 0.5rem; padding: 0.875rem; background: var(--cd-surface);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem; border-bottom: 1px solid var(--cd-border-subtle); padding-bottom: 0.5rem;">
+        <div class="cd-inspector-item">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem;">
             <div style="display: flex; align-items: center; gap: 0.35rem;">
               <span class="cd-mono-id">#<%= idx + 1 %></span>
               <code class="cd-mono" style="font-weight: 600;">&lt;<%= el.tag_name %>&gt;</code>
             </div>
             <% if el.captured_at %>
-              <span style="font-size: 0.6875rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
+              <span style="font-size: 0.75rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
                 <%= el.captured_at.strftime("%H:%M:%S UTC") %>
               </span>
             <% end %>
@@ -185,7 +184,7 @@
 
 <div class="cd-card">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
-    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+    <h2 style="margin: 0; font-size: 1rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
       <%= cd_icon_attachment(size: 14) %>
       <span>Screenshots &amp; Attachments</span>
       <span class="cd-tab-count"><%= @feedback.attachments.size %></span>
@@ -195,9 +194,9 @@
   <% if @feedback.attachments.empty? %>
     <p style="color: var(--cd-muted); margin: 0; font-size: 0.8125rem;">No binary attachments or screenshots were included.</p>
   <% else %>
-    <div class="cd-grid">
+    <div class="cd-grid" style="gap: 1.25rem 2rem;">
       <% @feedback.attachments.each do |att| %>
-        <div style="border: 1px solid var(--cd-border-subtle); border-radius: 0.5rem; padding: 0.875rem; background: var(--cd-surface);">
+        <div class="cd-inspector-item">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
             <span class="cd-badge cd-badge-new"><%= att.attachment_type %></span>
             <% if att.element_reference %>
@@ -213,18 +212,18 @@
                 <a href="<%= main_app.url_for(att.file) %>" target="_blank" rel="noopener noreferrer">
                   <img src="<%= main_app.url_for(att.file) %>"
                        alt="Attachment #<%= att.id %>"
-                       style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 0.375rem; border: 1px solid var(--cd-border-subtle); display: block;" />
+                       style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--cd-border-subtle); display: block;" />
                 </a>
               <% end %>
             </div>
-            <div style="font-size: 0.6875rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
+            <div style="font-size: 0.75rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
               <%= att.file.filename %> (<%= att.file.content_type %>, <%= att.file.byte_size %> bytes)
             </div>
           <% end %>
 
           <% if att.metadata.present? && !att.metadata.empty? %>
             <div style="margin-top: 0.5rem;">
-              <code class="cd-mono" style="font-size: 0.6875rem;"><%= JSON.generate(att.metadata || {}) %></code>
+              <code class="cd-mono" style="font-size: 0.75rem;"><%= JSON.generate(att.metadata || {}) %></code>
             </div>
           <% end %>
         </div>
@@ -235,7 +234,7 @@
 
 <div class="cd-card">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem;">
-    <h2 style="margin: 0; font-size: 0.9375rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+    <h2 style="margin: 0; font-size: 1rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
       <%= cd_icon_comment(size: 14) %>
       <span>Comments</span>
       <span class="cd-tab-count"><%= @feedback.comments.size %></span>
@@ -301,6 +300,7 @@
       <button type="submit" class="cd-btn cd-btn-sm cd-btn-primary">Post Comment</button>
     </div>
   <% end %>
+</div>
 </div>
 
 <script>

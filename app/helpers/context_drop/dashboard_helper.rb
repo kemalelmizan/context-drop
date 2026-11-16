@@ -16,6 +16,25 @@ module ContextDrop
       [raw_url.to_s, nil]
     end
 
+    def split_submitter_label(raw_label)
+      label = raw_label.to_s.strip
+      return ["Anonymous", nil] if label.empty?
+
+      if (match = /\A(.+?)\s*\((.+)\)\z/.match(label))
+        [match[1].strip, match[2].strip]
+      else
+        [label, nil]
+      end
+    end
+
+    def format_breakable_text(raw_text)
+      str = raw_text.to_s
+      return "".html_safe if str.empty?
+
+      segments = str.gsub(%r{[/?&=@]}) { |delim| "#{delim}\0" }.split("\0", -1)
+      segments.reject(&:empty?).map { |seg| ERB::Util.html_escape(seg) }.join("<wbr>").html_safe
+    end
+
     def cd_icon_arrow_left(size: 14)
       %(<svg width="#{size}" height="#{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>).html_safe
     end

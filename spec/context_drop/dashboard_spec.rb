@@ -47,6 +47,17 @@ RSpec.describe "ContextDrop::Dashboard" do
       expect(path).to eq("/")
       expect(host).to be_nil
     end
+
+    it "splits submitter labels with parenthetical details cleanly" do
+      expect(helper.split_submitter_label("User#2 (itpac@gotocompany.net)")).to eq(["User#2", "itpac@gotocompany.net"])
+      expect(helper.split_submitter_label("Anonymous")).to eq(["Anonymous", nil])
+      expect(helper.split_submitter_label("")).to eq(["Anonymous", nil])
+    end
+
+    it "inserts <wbr> break opportunities without corrupting HTML entities" do
+      formatted = helper.format_breakable_text("/sheets?id=101&tab=<main>")
+      expect(formatted).to eq("/<wbr>sheets?<wbr>id=<wbr>101&amp;<wbr>tab=<wbr>&lt;main&gt;")
+    end
   end
 
   describe "GET /context_drop/dashboard/feedbacks" do
@@ -107,8 +118,13 @@ RSpec.describe "ContextDrop::Dashboard" do
 
       # URL Path and Host separation
       expect(body).to include("cd-url-path")
-      expect(body).to include("/rails/adaptive/modeling/dimensions")
+      expect(body).to include("/<wbr>rails/<wbr>adaptive/<wbr>modeling/<wbr>dimensions")
       expect(body).to include("mcp-itpac.gotocompany.net")
+
+      # Emoji icon action button with accessible label
+      expect(body).to include("cd-btn-icon")
+      expect(body).to include("Inspect feedback ##{fb1.id}")
+      expect(body).to include("🔍")
 
       # Selector chip and context count
       expect(body).to include("table.data-grid &gt; tbody")

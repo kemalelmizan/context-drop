@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-12T11:31:00+07:00",
+  "generatedAt": "2026-11-16T08:38:30+07:00",
   "title": "Design System: ContextDrop",
   "extensions": {
     "colorMeta": {
@@ -63,6 +63,18 @@
         "displayName": "Subtle Ink",
         "canonical": "#5c6478",
         "tonalRamp": ["#111318", "#1e222b", "#323846", "#4b5262", "#687082", "#9ca3b5", "#d6d3cd", "#faf9f6"]
+      },
+      "cool-canvas": {
+        "role": "neutral",
+        "displayName": "Cool Canvas",
+        "canonical": "#f1f5f9",
+        "tonalRamp": ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f1f5f9"]
+      },
+      "cool-recessed": {
+        "role": "neutral",
+        "displayName": "Cool Recessed",
+        "canonical": "#e2e8f0",
+        "tonalRamp": ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f1f5f9"]
       },
       "warm-paper": {
         "role": "neutral",
@@ -256,7 +268,7 @@
       "Do use the authored 1.75px stroke SVG icons from icons.ts for all actions."
     ],
     "donts": [
-      "Don't use Unicode glyphs or emojis as UI icons.",
+      "Don't use Unicode glyphs (✕, ×, 📷, ›) or emojis as UI icons.",
       "Don't place kickers or eyebrows above headings inside the chatbox or dashboard.",
       "Don't allow selection or unredacted screenshot capture of elements matching [data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], or [autocomplete^='cc-']."
     ]

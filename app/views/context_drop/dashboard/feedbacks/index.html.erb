@@ -1,98 +1,108 @@
-<div class="cd-tabs" role="tablist" aria-label="Filter feedback by status">
-  <a href="<%= dashboard_feedbacks_path(q: @search_query.presence, page_url: @page_url_filter.presence) %>"
-     class="cd-tab <%= 'active' if @current_status.blank? %>">
-    <span>All</span>
-    <span class="cd-tab-count"><%= @status_counts["all"] || 0 %></span>
-  </a>
-  <% ContextDrop::Feedback::STATUSES.each do |status_name| %>
-    <a href="<%= dashboard_feedbacks_path(status: status_name, q: @search_query.presence, page_url: @page_url_filter.presence) %>"
-       class="cd-tab <%= 'active' if @current_status == status_name %>">
-      <span><%= status_name.capitalize %></span>
-      <span class="cd-tab-count"><%= @status_counts[status_name] || 0 %></span>
-    </a>
-  <% end %>
-  <a href="<%= dashboard_feedbacks_path(status: 'deleted', q: @search_query.presence, page_url: @page_url_filter.presence) %>"
-     class="cd-tab <%= 'active' if @current_status == 'deleted' %>">
-    <span>Deleted</span>
-    <span class="cd-tab-count"><%= @status_counts["deleted"] || 0 %></span>
-  </a>
-</div>
-
 <div class="cd-card cd-card-tight">
-  <form method="get" action="<%= dashboard_feedbacks_path %>" class="cd-filter-bar">
-    <% if @current_status.present? %>
-      <input type="hidden" name="status" value="<%= @current_status %>">
-    <% end %>
-    <div class="cd-input-wrap" style="flex: 1 1 260px;">
-      <span class="cd-input-icon"><%= cd_icon_search(size: 14) %></span>
-      <input type="search"
-             name="q"
-             value="<%= @search_query %>"
-             placeholder="Search message, selector, or DOM text..."
-             class="cd-input"
-             style="width: 100%;"
-             aria-label="Search feedback">
+  <div class="cd-toolbar">
+    <div class="cd-tabs" role="tablist" aria-label="Filter feedback by status">
+      <% all_count = @status_counts["all"] || 0 %>
+      <a href="<%= dashboard_feedbacks_path(q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+         class="cd-tab <%= 'active' if @current_status.blank? %>">
+        <span>All</span>
+        <span class="cd-tab-count <%= 'is-zero' if all_count.zero? %>"><%= all_count %></span>
+      </a>
+      <% ContextDrop::Feedback::STATUSES.each do |status_name| %>
+        <% count = @status_counts[status_name] || 0 %>
+        <a href="<%= dashboard_feedbacks_path(status: status_name, q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+           class="cd-tab <%= 'active' if @current_status == status_name %>">
+          <span><%= status_name.capitalize %></span>
+          <span class="cd-tab-count <%= 'is-zero' if count.zero? %>"><%= count %></span>
+        </a>
+      <% end %>
+      <span class="cd-tabs-sep" aria-hidden="true"></span>
+      <% deleted_count = @status_counts["deleted"] || 0 %>
+      <a href="<%= dashboard_feedbacks_path(status: 'deleted', q: @search_query.presence, page_url: @page_url_filter.presence) %>"
+         class="cd-tab <%= 'active' if @current_status == 'deleted' %>">
+        <span>Deleted</span>
+        <span class="cd-tab-count <%= 'is-zero' if deleted_count.zero? %>"><%= deleted_count %></span>
+      </a>
     </div>
-    <div class="cd-input-wrap" style="flex: 1 1 220px;">
-      <span class="cd-input-icon"><%= cd_icon_link(size: 14) %></span>
-      <input type="text"
-             name="page_url"
-             value="<%= @page_url_filter %>"
-             placeholder="Filter by page URL (e.g. /checkout)"
-             class="cd-input"
-             style="width: 100%;"
-             aria-label="Filter by page URL">
-    </div>
-    <button type="submit" class="cd-btn cd-btn-primary">Filter</button>
-    <% if @search_query.present? || @page_url_filter.present? || @current_status.present? %>
-      <a href="<%= dashboard_feedbacks_path %>" class="cd-btn">Reset</a>
-    <% end %>
-  </form>
+
+    <form method="get" action="<%= dashboard_feedbacks_path %>" class="cd-filter-bar">
+      <% if @current_status.present? %>
+        <input type="hidden" name="status" value="<%= @current_status %>">
+      <% end %>
+      <div class="cd-input-wrap">
+        <span class="cd-input-icon"><%= cd_icon_search(size: 14) %></span>
+        <input type="search"
+               name="q"
+               value="<%= @search_query %>"
+               placeholder="Search message, selector, or DOM text..."
+               class="cd-input"
+               aria-label="Search feedback">
+      </div>
+      <div class="cd-input-wrap">
+        <span class="cd-input-icon"><%= cd_icon_link(size: 14) %></span>
+        <input type="text"
+               name="page_url"
+               value="<%= @page_url_filter %>"
+               placeholder="Filter by page URL (e.g. /checkout)"
+               class="cd-input"
+               aria-label="Filter by page URL">
+      </div>
+      <button type="submit" class="cd-btn cd-btn-primary">Filter</button>
+      <% if @search_query.present? || @page_url_filter.present? || @current_status.present? %>
+        <a href="<%= dashboard_feedbacks_path %>" class="cd-btn">Reset</a>
+      <% end %>
+    </form>
+  </div>
 
   <% if @feedbacks.empty? %>
     <div style="color: var(--cd-muted); padding: 3rem 1.5rem; text-align: center;">
-      <p style="margin: 0 0 0.5rem 0; font-size: 0.9375rem; font-weight: 500; color: var(--cd-text);">No feedback matches current filters</p>
+      <p style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: var(--cd-text);">No feedback matches current filters</p>
       <p style="margin: 0; font-size: 0.8125rem;">Try adjusting your search terms or clearing status filters.</p>
     </div>
   <% else %>
     <div class="cd-table-wrap">
       <table class="cd-table">
         <colgroup>
-          <col style="width: 68px;">
-          <col style="width: 104px;">
-          <col style="width: 36%;">
-          <col style="width: 28%;">
-          <col style="width: 120px;">
-          <col style="width: 140px;">
-          <col style="width: 88px;">
+          <col class="cd-col-id">
+          <col class="cd-col-status">
+          <col class="cd-col-message">
+          <col class="cd-col-url">
+          <col class="cd-col-submitter">
+          <col class="cd-col-created">
+          <col class="cd-col-actions">
         </colgroup>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Status</th>
-            <th>Message &amp; Context</th>
-            <th>Page URL</th>
-            <th>Submitter</th>
-            <th>Created</th>
-            <th>Actions</th>
+            <th class="cd-cell-id">ID</th>
+            <th class="cd-cell-status">Status</th>
+            <th class="cd-cell-message">Message &amp; Context</th>
+            <th class="cd-cell-url">Page URL</th>
+            <th class="cd-cell-submitter">Submitter</th>
+            <th class="cd-cell-created">Created</th>
+            <th class="cd-cell-actions">Actions</th>
           </tr>
         </thead>
         <tbody>
           <% @feedbacks.each do |fb| %>
             <tr id="feedback-row-<%= fb.id %>">
-              <td>
+              <td class="cd-cell-id">
                 <a href="<%= dashboard_feedback_path(fb) %>" class="cd-mono-id">#<%= fb.id %></a>
               </td>
-              <td>
+              <td class="cd-cell-status">
                 <span class="cd-badge cd-badge-<%= fb.status %>"><%= fb.status %></span>
                 <% if fb.respond_to?(:deleted?) && fb.deleted? %>
-                  <span class="cd-badge cd-badge-deleted" style="margin-top: 0.2rem;">deleted</span>
+                  <div style="margin-top: 0.25rem;">
+                    <span class="cd-badge cd-badge-deleted">deleted</span>
+                  </div>
                 <% end %>
               </td>
-              <td>
-                <div style="font-weight: 500; color: var(--cd-text); margin-bottom: 0.25rem; line-height: 1.4;">
-                  <%= fb.message.present? ? truncate(fb.message, length: 120) : content_tag(:span, "(No text message)", style: "color: var(--cd-muted); font-style: italic;") %>
-                </div>
+              <td class="cd-cell-message">
+                <a href="<%= dashboard_feedback_path(fb) %>" class="cd-message-link">
+                  <% if fb.message.present? %>
+                    <%= truncate(fb.message, length: 160) %>
+                  <% else %>
+                    <span style="color: var(--cd-muted); font-style: italic; font-weight: 400;">(No text message)</span>
+                  <% end %>
+                </a>
                 <div class="cd-context-chips">
                   <% if fb.respond_to?(:environment) && fb.environment.present? %>
                     <span class="cd-context-chip" style="font-family: var(--cd-font-mono);" title="Environment: <%= fb.environment %>">
@@ -121,43 +131,53 @@
                     <code class="cd-selector-chip" title="<%= el.selector %>"><%= el.selector %></code>
                   <% end %>
                   <% if fb.element_references.size > 2 %>
-                    <span style="font-size: 0.6875rem; color: var(--cd-muted); font-variant-numeric: tabular-nums;">
+                    <span style="font-size: 0.75rem; color: var(--cd-muted); font-variant-numeric: tabular-nums;">
                       +<%= fb.element_references.size - 2 %> more
                     </span>
                   <% end %>
                 </div>
               </td>
-              <td>
+              <td class="cd-cell-url">
                 <% path, host = url_path_and_host(fb.page_url) %>
-                <div class="cd-url-box" title="<%= fb.page_url %>">
+                <div class="cd-url-box">
                   <div class="cd-url-top">
-                    <span class="cd-url-path"><%= path %></span>
-                    <% if fb.page_url.present? %>
-                      <a href="<%= fb.page_url %>"
+                    <span class="cd-url-path"><%= format_breakable_text(path) %></span><% if fb.page_url.present? %><a href="<%= fb.page_url %>"
                          target="_blank"
                          rel="noopener noreferrer"
                          class="cd-icon-link"
-                         title="Open <%= fb.page_url %> in new tab">
-                        <%= cd_icon_external_link(size: 12) %>
-                      </a>
-                    <% end %>
+                         title="Open <%= fb.page_url %> in new tab"
+                         aria-label="Open <%= fb.page_url %> in new tab"><%= cd_icon_external_link(size: 12) %></a><% end %>
                   </div>
                   <% if host.present? %>
-                    <span class="cd-url-host"><%= host %></span>
+                    <span class="cd-url-host"><%= format_breakable_text(host) %></span>
                   <% end %>
                 </div>
               </td>
-              <td>
-                <div style="display: flex; align-items: center; gap: 0.35rem; color: var(--cd-text-secondary); font-size: 0.8125rem;">
-                  <%= cd_icon_user(size: 12) %>
-                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<%= fb.submitter_label %>"><%= fb.submitter_label %></span>
+              <td class="cd-cell-submitter">
+                <% submitter_primary, submitter_secondary = split_submitter_label(fb.submitter_label) %>
+                <div class="cd-submitter-box">
+                  <span class="cd-submitter-icon"><%= cd_icon_user(size: 13) %></span>
+                  <div class="cd-submitter-meta">
+                    <span class="cd-submitter-primary"><%= format_breakable_text(submitter_primary) %></span>
+                    <% if submitter_secondary.present? %>
+                      <span class="cd-submitter-secondary"><%= format_breakable_text(submitter_secondary) %></span>
+                    <% end %>
+                  </div>
                 </div>
               </td>
-              <td style="white-space: nowrap; color: var(--cd-muted); font-size: 0.75rem; font-family: var(--cd-font-mono); font-variant-numeric: tabular-nums;">
-                <%= fb.created_at&.strftime("%Y-%m-%d %H:%M UTC") %>
+              <td class="cd-cell-created">
+                <% if fb.created_at %>
+                  <span><%= fb.created_at.strftime("%Y-%m-%d") %></span>
+                  <span class="cd-created-time"><%= fb.created_at.strftime("%H:%M UTC") %></span>
+                <% end %>
               </td>
-              <td>
-                <a href="<%= dashboard_feedback_path(fb) %>" class="cd-btn cd-btn-sm">Inspect</a>
+              <td class="cd-cell-actions">
+                <a href="<%= dashboard_feedback_path(fb) %>"
+                   class="cd-btn cd-btn-icon"
+                   title="Inspect feedback #<%= fb.id %>"
+                   aria-label="Inspect feedback #<%= fb.id %>">
+                  <span aria-hidden="true">🔍</span>
+                </a>
               </td>
             </tr>
           <% end %>
