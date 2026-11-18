@@ -487,20 +487,22 @@ class MockDomElement {
   public parentNode: MockDomElement | null = null;
   public childNodes: MockDomElement[] = [];
   public hidden: boolean = false;
-  public type: string = "";
   public title: string = "";
   public textContent: string = "";
   public placeholder: string = "";
   public value: string = "";
   public disabled: boolean = false;
   public selected: boolean = false;
-  public autocomplete: string = "";
+  public noValidate: boolean = false;
+  public spellcheck: boolean = true;
   public multiple: boolean = false;
   public accept: string = "";
   public src: string = "";
   public alt: string = "";
   public scrollTop: number = 0;
   public scrollHeight: number = 0;
+  private _type: string = "";
+  private _autocomplete: string = "";
   private rawHtml: string = "";
   private attrs: Map<string, string> = new Map();
   private listeners: Map<string, MockListenerEntry[]> = new Map();
@@ -543,10 +545,39 @@ class MockDomElement {
     }
   }
 
+  public get type(): string {
+    return this._type;
+  }
+
+  public set type(val: string) {
+    this._type = val;
+    this.attrs.set("type", val);
+  }
+
+  public get autocomplete(): string {
+    return this._autocomplete;
+  }
+
+  public set autocomplete(val: string) {
+    this._autocomplete = val;
+    this.attrs.set("autocomplete", val);
+  }
+
+  public get form(): MockDomElement | null {
+    if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(this.tagName)) {
+      return this.closest("form");
+    }
+    return null;
+  }
+
   public setAttribute(name: string, value: string): void {
     this.attrs.set(name, value);
     if (name === "class") {
       this.classList.syncFromString(value);
+    } else if (name === "type") {
+      this._type = value;
+    } else if (name === "autocomplete") {
+      this._autocomplete = value;
     }
   }
 
@@ -567,10 +598,30 @@ class MockDomElement {
   }
 
   public appendChild(child: MockDomElement): MockDomElement {
+    if (child.parentNode && child.parentNode !== this) {
+      child.parentNode.removeChild(child);
+    }
     child.parentElement = this;
     child.parentNode = this;
     this.childNodes.push(child);
     return child;
+  }
+
+  public insertBefore(newChild: MockDomElement, refChild: MockDomElement | null): MockDomElement {
+    if (!refChild) {
+      return this.appendChild(newChild);
+    }
+    const idx = this.childNodes.indexOf(refChild);
+    if (idx === -1) {
+      return this.appendChild(newChild);
+    }
+    if (newChild.parentNode) {
+      newChild.parentNode.removeChild(newChild);
+    }
+    newChild.parentElement = this;
+    newChild.parentNode = this;
+    this.childNodes.splice(idx, 0, newChild);
+    return newChild;
   }
 
   public removeChild(child: MockDomElement): MockDomElement {
@@ -593,18 +644,52 @@ class MockDomElement {
   }
 
   public matches(selector: string): boolean {
-    if (selector.startsWith(".")) {
-      return this.classList.contains(selector.slice(1));
+    if (selector.includes(",")) {
+      return selector
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .some((part) => this.matchesSingleSelector(part));
     }
-    if (selector.startsWith("#")) {
-      return this.getAttribute("id") === selector.slice(1);
+    return this.matchesSingleSelector(selector.trim());
+  }
+
+  private matchesSingleSelector(sel: string): boolean {
+    if (!sel) return false;
+    let rest = sel;
+
+    const tagMatch = rest.match(/^[a-zA-Z][a-zA-Z0-9_-]*/);
+    if (tagMatch) {
+      if (this.tagName.toLowerCase() !== tagMatch[0].toLowerCase()) return false;
+      rest = rest.slice(tagMatch[0].length);
     }
-    const attrMatch = selector.match(/^\[([a-zA-Z0-9_-]+)(?:=['"]([^'"]*)['"])?\]$/);
-    if (attrMatch) {
-      if (!this.hasAttribute(attrMatch[1])) return false;
-      return attrMatch[2] === undefined || this.getAttribute(attrMatch[1]) === attrMatch[2];
+
+    while (rest.length > 0) {
+      if (rest.startsWith(".")) {
+        const clsMatch = rest.match(/^\.([a-zA-Z0-9_-]+)/);
+        if (!clsMatch) return false;
+        if (!this.classList.contains(clsMatch[1])) return false;
+        rest = rest.slice(clsMatch[0].length);
+      } else if (rest.startsWith("#")) {
+        const idMatch = rest.match(/^#([a-zA-Z0-9_-]+)/);
+        if (!idMatch) return false;
+        if (this.getAttribute("id") !== idMatch[1]) return false;
+        rest = rest.slice(idMatch[0].length);
+      } else if (rest.startsWith("[")) {
+        const attrMatch = rest.match(/^\[([a-zA-Z0-9_-]+)(?:(\^=|=)['"]?([^'"\]]*)['"]?)?\]/);
+        if (!attrMatch) return false;
+        const [, attrName, op, expected] = attrMatch;
+        if (!this.hasAttribute(attrName)) return false;
+        const actual = this.getAttribute(attrName) ?? "";
+        if (op === "=" && actual !== expected) return false;
+        if (op === "^=" && !actual.startsWith(expected)) return false;
+        rest = rest.slice(attrMatch[0].length);
+      } else {
+        return false;
+      }
     }
-    return this.tagName.toLowerCase() === selector.toLowerCase();
+
+    return true;
   }
 
   public closest(selector: string): MockDomElement | null {
@@ -623,6 +708,20 @@ class MockDomElement {
       if (nested) return nested;
     }
     return null;
+  }
+
+  public querySelectorAll(selector: string): MockDomElement[] {
+    const results: MockDomElement[] = [];
+    const walk = (node: MockDomElement): void => {
+      for (const child of node.childNodes) {
+        if (child.matches(selector)) {
+          results.push(child);
+        }
+        walk(child);
+      }
+    };
+    walk(this);
+    return results;
   }
 
   public getBoundingClientRect(): {
@@ -824,11 +923,11 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
       const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
       const compactBar = shadowRoot.querySelector(".cd-compact-bar");
 
-      assert.ok(bookCorner && composer && sidebar && compactBar);
+      assert.ok(bookCorner && composer && compactBar);
+      assert.equal(sidebar, null, "Agent sidebar must not mount when agent.enabled is false");
       assert.equal(bookCorner.hidden, false);
       assert.equal(bookCorner.classList.contains("corner-bottom_right"), true);
       assert.equal(composer.hidden, true);
-      assert.equal(sidebar.hidden, true);
       assert.equal(compactBar.hidden, true);
 
       // Pointer click without drag opens normal floating feedback composer
@@ -1582,11 +1681,12 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
       async ({ widget, shadowRoot }) => {
         const bookCorner = shadowRoot.querySelector(".cd-book-corner");
         const composer = shadowRoot.querySelector(".cd-composer");
-        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
         const modeSwitch = composer ? composer.querySelector(".cd-composer-mode-switch-wrap") : null;
-        assert.ok(bookCorner && composer && sidebar && modeSwitch);
+        assert.ok(bookCorner && composer && modeSwitch);
 
-        // When agent is disabled for local development:
+        // When agent is disabled, no agent sidebar or BYOK drawer exists in shadowRoot:
+        assert.equal(shadowRoot.querySelector(".cd-agent-sidebar"), null);
+        assert.equal(shadowRoot.querySelector(".cd-byok-drawer"), null);
         assert.equal(widget.isAgentModeActive(), false);
         assert.equal(widget.isSmartSelectionMode(), false); // verbose mode
         assert.equal(modeSwitch.hidden, true);
@@ -1594,13 +1694,20 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
         // Clicking the book corner opens the floating verbose composer
         bookCorner.dispatchEvent(new MockUiEvent("click"));
         assert.equal(composer.hidden, false);
-        assert.equal(sidebar.hidden, true);
+        assert.equal(shadowRoot.querySelector(".cd-agent-sidebar"), null);
 
-        // Opting into agent enables agent mode
+        // Opting into agent dynamically mounts sidebar and enables agent mode
         widget.setWidgetConfig({ agent: { enabled: true } });
+        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+        assert.ok(sidebar);
         assert.equal(widget.isAgentModeActive(), true);
         assert.equal(sidebar.hidden, false);
         assert.equal(composer.hidden, true);
+
+        // Disabling agent again unmounts the sidebar cleanly
+        widget.setWidgetConfig({ agent: { enabled: false } });
+        assert.equal(shadowRoot.querySelector(".cd-agent-sidebar"), null);
+        assert.equal(shadowRoot.querySelector(".cd-byok-drawer"), null);
       },
       {
         "data-config": JSON.stringify({
@@ -1608,6 +1715,110 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
           environment: "development",
           position: "bottom_right",
           agent: { enabled: false }
+        })
+      }
+    );
+  });
+
+  it("does not mount .cd-agent-sidebar, .cd-byok-drawer, or input[type='password'] when agent.enabled is false", async () => {
+    await withMountedWidget(
+      ({ shadowRoot }) => {
+        assert.equal(shadowRoot.querySelector(".cd-agent-sidebar"), null);
+        assert.equal(shadowRoot.querySelector(".cd-byok-drawer"), null);
+        assert.equal(shadowRoot.querySelector('input[type="password"]'), null);
+        assert.equal(shadowRoot.querySelector("[aria-label='Provider API Key']"), null);
+
+        // Even feedback composer controls must have an owning <form autocomplete="off"> so nothing leaks into Chromium's synthetic unowned form
+        const controls = shadowRoot.querySelectorAll("input, textarea, select");
+        assert.ok(controls.length >= 2, "Expected composer file input and textarea");
+        for (const control of controls) {
+          assert.notEqual(
+            control.form,
+            null,
+            `Expected <${control.tagName.toLowerCase()}> to have an owning <form>`
+          );
+          assert.equal(control.form?.getAttribute("autocomplete"), "off");
+        }
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "production",
+          position: "bottom_right",
+          agent: { enabled: false }
+        })
+      }
+    );
+  });
+
+  it("wraps all shadowRoot form controls in <form autocomplete='off'> and avoids input[type='password'] when agent.enabled is true", async () => {
+    await withMountedWidget(
+      ({ shadowRoot }) => {
+        const sidebar = shadowRoot.querySelector(".cd-agent-sidebar");
+        const byokDrawer = shadowRoot.querySelector(".cd-byok-drawer");
+        const byokBtn = shadowRoot.querySelector("[aria-label='Open BYOK API key settings']");
+        const keyInput = shadowRoot.querySelector("[aria-label='Provider API Key']");
+        assert.ok(sidebar && byokDrawer && byokBtn && keyInput);
+
+        // Never mounts any <input type="password"> (uses CSS-masked type="text" instead)
+        assert.equal(shadowRoot.querySelector('input[type="password"]'), null);
+        assert.equal(keyInput.type, "text");
+        assert.equal(keyInput.getAttribute("type"), "text");
+        assert.equal(keyInput.classList.contains("is-masked-secret"), true);
+        assert.equal(keyInput.disabled, true, "BYOK key input stays disabled while drawer is closed");
+
+        // Verify stylesheet masks .cd-input.is-masked-secret with -webkit-text-security: disc
+        const styleEl = shadowRoot.querySelector("style");
+        assert.ok(styleEl);
+        assert.equal(styleEl.textContent.includes("-webkit-text-security: disc"), true);
+
+        // Opening BYOK drawer enables keyInput while still keeping zero input[type="password"]
+        byokBtn.dispatchEvent(new MockUiEvent("click"));
+        assert.equal(byokDrawer.hidden, false);
+        assert.equal(keyInput.disabled, false);
+        assert.equal(shadowRoot.querySelector('input[type="password"]'), null);
+
+        // Every BYOK control has explicit autofill & password-manager extension ignore attributes
+        const byokControls = byokDrawer.querySelectorAll("input, select");
+        assert.equal(byokControls.length, 5);
+        for (const byokCtrl of byokControls) {
+          assert.equal(byokCtrl.getAttribute("autocomplete"), "off");
+          assert.equal(byokCtrl.getAttribute("spellcheck"), "false");
+          assert.equal(byokCtrl.getAttribute("data-1p-ignore"), "true");
+          assert.equal(byokCtrl.getAttribute("data-lpignore"), "true");
+          assert.equal(byokCtrl.getAttribute("data-bwignore"), "true");
+          assert.equal(byokCtrl.getAttribute("data-form-type"), "other");
+        }
+
+        // Every <input>, <textarea>, and <select> across shadowRoot has an owning <form autocomplete="off">
+        const allControls = shadowRoot.querySelectorAll("input, textarea, select");
+        assert.equal(allControls.length, 8);
+        for (const control of allControls) {
+          assert.notEqual(
+            control.form,
+            null,
+            `Expected <${control.tagName.toLowerCase()}> (${control.getAttribute("aria-label") || control.type}) to be owned by a <form>`
+          );
+          assert.equal(control.form?.getAttribute("autocomplete"), "off");
+          assert.notEqual(control.type, "password");
+        }
+
+        // Every owning <form> prevents default navigation on submit
+        const forms = shadowRoot.querySelectorAll("form");
+        assert.ok(forms.length >= 3);
+        for (const form of forms) {
+          assert.equal(form.getAttribute("autocomplete"), "off");
+          const submitEv = new MockUiEvent("submit");
+          form.dispatchEvent(submitEv);
+          assert.equal(submitEv.defaultPrevented, true);
+        }
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "development",
+          position: "bottom_right",
+          agent: { enabled: true }
         })
       }
     );

@@ -173,6 +173,13 @@ export const WIDGET_SHADOW_STYLES = `
   box-sizing: border-box;
 }
 
+.cd-form-shell {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 ::selection {
   background: var(--cd-pin-soft);
   color: var(--cd-ink);
@@ -1498,6 +1505,15 @@ select:focus-visible {
 .cd-input.is-mono {
   font-family: var(--cd-mono);
   font-size: 11.5px;
+}
+
+.cd-input.is-masked-secret {
+  -webkit-text-security: disc;
+}
+
+.cd-input.is-masked-secret:placeholder-shown,
+.cd-input.is-masked-secret:disabled {
+  -webkit-text-security: none;
 }
 
 .cd-drawer-actions {

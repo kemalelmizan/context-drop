@@ -569,6 +569,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.setCornerPosition(partial.position);
     }
     const nowAgentEnabled = Boolean(this.config.agent?.enabled);
+    this.syncAgentSidebarMount();
     if (nowAgentEnabled && !wasAgentEnabled) {
       this.surfaceMode = "agent";
       if (this.isOpen) {
@@ -1787,9 +1788,95 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
   }
 
+  private clearAgentSidebarRefs(): void {
+    this.agentSidebarEl = null;
+    this.sidebarPinBtn = null;
+    this.sidebarEnvPillEl = null;
+    this.sidebarThemeToggleBtn = null;
+    this.sidebarPushBtn = null;
+    this.keyDotEl = null;
+    this.providerPillLabelEl = null;
+    this.keysToggleBtn = null;
+    this.feedbacksToggleBtn = null;
+    this.byokDrawerEl = null;
+    this.byokProviderSelect = null;
+    this.byokModelInput = null;
+    this.byokModelPresetsSelect = null;
+    this.byokBaseUrlField = null;
+    this.byokBaseUrlInput = null;
+    this.byokKeySourceBadge = null;
+    this.byokKeyInput = null;
+    this.feedbacksDrawerEl = null;
+    this.feedbacksTabsEl = null;
+    this.feedbacksListEl = null;
+    this.agentStreamEl = null;
+    this.agentTrayEl = null;
+    this.agentStatusEl = null;
+    this.agentTextareaEl = null;
+    this.agentSendBtn = null;
+  }
+
+  private syncAgentSidebarMount(): void {
+    const enabled = Boolean(this.config.agent?.enabled);
+    if (enabled) {
+      if (!this.agentSidebarEl && this.shadow) {
+        const sidebar = this.buildAgentSidebarDom();
+        sidebar.setAttribute("data-theme", this.currentTheme);
+        if (
+          this.bookCornerBtn &&
+          this.bookCornerBtn.parentNode === this.shadow &&
+          typeof this.shadow.insertBefore === "function"
+        ) {
+          this.shadow.insertBefore(sidebar, this.bookCornerBtn);
+        } else {
+          this.shadow.appendChild(sidebar);
+        }
+      }
+      return;
+    }
+
+    this.isByokDrawerOpen = false;
+    this.isFeedbacksDrawerOpen = false;
+    if (this.agentSidebarEl) {
+      this.agentSidebarEl.parentNode?.removeChild(this.agentSidebarEl);
+    }
+    this.clearAgentSidebarRefs();
+  }
+
+  private buildFormShell(): HTMLFormElement {
+    const form = document.createElement("form");
+    form.className = "cd-form-shell";
+    form.autocomplete = "off";
+    form.setAttribute("autocomplete", "off");
+    form.noValidate = true;
+    form.setAttribute("novalidate", "");
+    form.setAttribute("data-1p-ignore", "true");
+    form.setAttribute("data-lpignore", "true");
+    form.setAttribute("data-bwignore", "true");
+    form.setAttribute("data-form-type", "other");
+    form.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+    });
+    return form;
+  }
+
+  private applyByokAutofillIgnore(control: HTMLInputElement | HTMLSelectElement): void {
+    control.autocomplete = "off";
+    control.setAttribute("autocomplete", "off");
+    control.spellcheck = false;
+    control.setAttribute("spellcheck", "false");
+    control.setAttribute("autocorrect", "off");
+    control.setAttribute("autocapitalize", "off");
+    control.setAttribute("data-1p-ignore", "true");
+    control.setAttribute("data-lpignore", "true");
+    control.setAttribute("data-bwignore", "true");
+    control.setAttribute("data-form-type", "other");
+  }
+
   private renderShadowDom(): void {
     if (!this.shadow) return;
     this.shadow.innerHTML = "";
+    this.clearAgentSidebarRefs();
 
     const styleEl = document.createElement("style");
     styleEl.textContent = WIDGET_SHADOW_STYLES;
@@ -1809,9 +1896,11 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
     this.shadow.appendChild(root);
 
-    // 3. Docked Local BYOK Agentic Coding Sidebar (active in local development mode)
-    const sidebar = this.buildAgentSidebarDom();
-    this.shadow.appendChild(sidebar);
+    // 3. Docked Local BYOK Agentic Coding Sidebar (mounted only when local agent is enabled)
+    if (Boolean(this.config.agent?.enabled)) {
+      const sidebar = this.buildAgentSidebarDom();
+      this.shadow.appendChild(sidebar);
+    }
 
     // 4. Book-Corner Fold Launcher (flush at viewport corner, peels into pushpin on drag)
     const bookCorner = document.createElement("button");
@@ -2071,8 +2160,13 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.statusEl = status;
     composer.appendChild(status);
 
+    const composerForm = this.buildFormShell();
+
     const fileInput = document.createElement("input");
     fileInput.type = "file";
+    fileInput.setAttribute("type", "file");
+    fileInput.autocomplete = "off";
+    fileInput.setAttribute("autocomplete", "off");
     fileInput.multiple = true;
     fileInput.accept = this.config.limits.allowed_content_types.join(",");
     fileInput.hidden = true;
@@ -2083,7 +2177,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       }
     });
     this.fileInputEl = fileInput;
-    composer.appendChild(fileInput);
+    composerForm.appendChild(fileInput);
 
     const promptShell = document.createElement("div");
     promptShell.className = "cd-prompt-shell";
@@ -2115,6 +2209,12 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
     const textarea = document.createElement("textarea");
     textarea.className = "cd-textarea";
+    textarea.autocomplete = "off";
+    textarea.setAttribute("autocomplete", "off");
+    textarea.setAttribute("data-1p-ignore", "true");
+    textarea.setAttribute("data-lpignore", "true");
+    textarea.setAttribute("data-bwignore", "true");
+    textarea.setAttribute("data-form-type", "other");
     textarea.placeholder = this.config.placeholder;
     textarea.setAttribute("aria-label", "Feedback description");
     textarea.addEventListener("keydown", (ev) => {
@@ -2157,7 +2257,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     toolbar.appendChild(actions);
     toolbar.appendChild(submitBtn);
     promptShell.appendChild(toolbar);
-    composer.appendChild(promptShell);
+    composerForm.appendChild(promptShell);
+    composer.appendChild(composerForm);
 
     return composer;
   }
@@ -2414,11 +2515,19 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.agentStatusEl = agentStatus;
     sidebar.appendChild(agentStatus);
 
+    const agentPromptForm = this.buildFormShell();
+
     const promptShell = document.createElement("div");
     promptShell.className = "cd-prompt-shell";
 
     const textarea = document.createElement("textarea");
     textarea.className = "cd-textarea";
+    textarea.autocomplete = "off";
+    textarea.setAttribute("autocomplete", "off");
+    textarea.setAttribute("data-1p-ignore", "true");
+    textarea.setAttribute("data-lpignore", "true");
+    textarea.setAttribute("data-bwignore", "true");
+    textarea.setAttribute("data-form-type", "other");
     textarea.placeholder =
       "Ask the local agent to inspect pinned DOM elements, read Rails views, or propose a fix...";
     textarea.setAttribute("aria-label", "Agent prompt");
@@ -2451,7 +2560,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
 
     toolbar.appendChild(sendBtn);
     promptShell.appendChild(toolbar);
-    sidebar.appendChild(promptShell);
+    agentPromptForm.appendChild(promptShell);
+    sidebar.appendChild(agentPromptForm);
 
     this.syncProviderControls();
     return sidebar;
@@ -2468,6 +2578,8 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     securityNote.innerHTML = `${ICON_SHIELD}<span>Keys stay encrypted on disk in <code>tmp/context_drop_byok.enc</code> (AES-256-GCM) or read from server ENV—never stored in browser storage.</span>`;
     drawer.appendChild(securityNote);
 
+    const byokForm = this.buildFormShell();
+
     const grid = document.createElement("div");
     grid.className = "cd-form-grid";
 
@@ -2480,6 +2592,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const provSelect = document.createElement("select");
     provSelect.className = "cd-select";
     provSelect.setAttribute("aria-label", "LLM Provider");
+    this.applyByokAutofillIgnore(provSelect);
     provSelect.addEventListener("change", () => {
       this.selectedVaultProviderId = provSelect.value;
       this.syncByokDrawerFields();
@@ -2498,6 +2611,7 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const presetSelect = document.createElement("select");
     presetSelect.className = "cd-select";
     presetSelect.setAttribute("aria-label", "Model preset");
+    this.applyByokAutofillIgnore(presetSelect);
     presetSelect.addEventListener("change", () => {
       if (this.byokModelInput && presetSelect.value) {
         this.byokModelInput.value = presetSelect.value;
@@ -2516,8 +2630,10 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     modelLabel.textContent = "Model ID";
     const modelInput = document.createElement("input");
     modelInput.type = "text";
+    modelInput.setAttribute("type", "text");
     modelInput.className = "cd-input is-mono";
     modelInput.setAttribute("aria-label", "Model identifier");
+    this.applyByokAutofillIgnore(modelInput);
     this.byokModelInput = modelInput;
     modelField.appendChild(modelLabel);
     modelField.appendChild(modelInput);
@@ -2532,16 +2648,19 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     baseUrlLabel.textContent = "OpenAI-Compatible Base URL";
     const baseUrlInput = document.createElement("input");
     baseUrlInput.type = "url";
+    baseUrlInput.setAttribute("type", "url");
     baseUrlInput.className = "cd-input is-mono";
     baseUrlInput.placeholder = "https://openrouter.ai/api/v1 or http://localhost:11434/v1";
     baseUrlInput.setAttribute("aria-label", "Custom OpenAI-compatible Base URL");
+    this.applyByokAutofillIgnore(baseUrlInput);
     this.byokBaseUrlInput = baseUrlInput;
     baseUrlField.appendChild(baseUrlLabel);
     baseUrlField.appendChild(baseUrlInput);
     this.byokBaseUrlField = baseUrlField;
     grid.appendChild(baseUrlField);
 
-    // API Key field
+    // API Key field — uses CSS-masked type="text" rather than type="password" so Chromium/browser
+    // password managers never classify preceding or host-page inputs as login username fields.
     const keyField = document.createElement("div");
     keyField.className = "cd-field is-full";
     const keyLabel = document.createElement("label");
@@ -2556,17 +2675,20 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     keyLabel.appendChild(keyBadge);
 
     const keyInput = document.createElement("input");
-    keyInput.type = "password";
-    keyInput.autocomplete = "off";
-    keyInput.className = "cd-input is-mono";
+    keyInput.type = "text";
+    keyInput.setAttribute("type", "text");
+    keyInput.className = "cd-input is-mono is-masked-secret";
     keyInput.placeholder = "Paste API key (leave blank to keep existing key)";
     keyInput.setAttribute("aria-label", "Provider API Key");
+    keyInput.disabled = !this.isByokDrawerOpen;
+    this.applyByokAutofillIgnore(keyInput);
     this.byokKeyInput = keyInput;
     keyField.appendChild(keyLabel);
     keyField.appendChild(keyInput);
     grid.appendChild(keyField);
 
-    drawer.appendChild(grid);
+    byokForm.appendChild(grid);
+    drawer.appendChild(byokForm);
 
     const actions = document.createElement("div");
     actions.className = "cd-drawer-actions";
@@ -3482,6 +3604,9 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
     if (this.byokDrawerEl) {
       this.byokDrawerEl.hidden = !this.isByokDrawerOpen;
+    }
+    if (this.byokKeyInput) {
+      this.byokKeyInput.disabled = !this.isByokDrawerOpen;
     }
     if (this.keysToggleBtn) {
       this.keysToggleBtn.classList.toggle("is-active", this.isByokDrawerOpen);
