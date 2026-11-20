@@ -266,7 +266,7 @@ Already running `ContextDrop::Engine` on Rails? Point `<ContextDrop />` at your 
 
 ### Requirements
 
-- **Ruby** `>= 3.1`
+- **Ruby** `>= 3.3.14` (`3.3.14+`, `3.4.13+`, or `4.0.10+` to address [CVE-2026-132825](https://www.ruby-lang.org/en/news/2026/11/18/multiple-vulnerabilities-in-regexp-and-string/))
 - **Ruby on Rails** `>= 7.1` (`7.1`, `7.2`, `8.0+`)
 - **Active Storage** installed in the host application (`bin/rails active_storage:install`)
 
