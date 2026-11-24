@@ -5,7 +5,7 @@ import type {
   WidgetPosition
 } from "../../app/javascript/context_drop/types.ts";
 
-export const VERSION = "0.3.4";
+export const VERSION = "0.3.5";
 
 export type FeedbackStatus = "new" | "updated" | "fixed" | "reviewed" | "dismissed";
 

@@ -16,7 +16,7 @@ import {
   type McpToolResult,
   type RemoteMcpTransport
 } from "./remote-client.ts";
-import type { LocalEventStore } from "../events/local-event-store.ts";
+import { LocalEventStore } from "../events/local-event-store.ts";
 import {
   eventsList,
   eventsPoll,
