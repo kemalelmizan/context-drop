@@ -440,6 +440,79 @@ ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`Cont
 | **Resource** | `contextdrop://feedbacks/{id}` | Full JSON snapshot of a specific feedback submission, its pinned elements, and attachment metadata. |
 | **Prompt** | `investigate_feedback` | Generates a structured root-cause investigation brief (with attached screenshots) for any local or remote `feedback_id` (`"staging:18"`). |
 
+### MCP Events, Webhooks & Lark (v0.3+)
+
+ContextDrop implements the official MCP **Events** extension ([overview](https://modelcontextprotocol.io/extensions/events/overview)) so agents can react to feedback without constant tool polling.
+
+| Delivery | Rails | `@context-drop` (Next.js / Node) |
+|---|---|---|
+| **Poll** | `events/poll` via `POST /context_drop/mcp` | `events/poll` via `POST …/mcp` |
+| **Push (SSE)** | `GET /context_drop/mcp/events/stream` | `GET …/mcp/events/stream` |
+| **Webhook** | `events/subscribe` (signed HTTPS callbacks) | Same |
+
+**Lifecycle event types:** `feedback.created`, `feedback.updated`, `feedback.status_changed`, `feedback.deleted`.
+
+**Rails — configure destinations in the dashboard**
+
+1. Run `bin/rails db:migrate` (includes event/notification tables).
+2. Open **`/context_drop/dashboard/integrations`** (header: **Integrations**).
+3. Add **Lark** (App ID, App Secret, `chat_id` / `receive_id`) or **HTTPS webhook** (callback URL + optional signing secret). Credentials are encrypted at rest. Use **Test** to verify delivery.
+
+**Lark:** Create a custom app with Bot + `im:chat` / `im:message`, add the bot to your triage group, copy `chat_id` from the [API Explorer](https://open.larksuite.com/api-explorer) or group settings ([message card guide](https://open.larksuite.com/document/)).
+
+**Standalone Node / Next.js — REST integrations API**
+
+When you deploy with `createContextDropNextHandler` / `createContextDropPagesHandler`, destinations are stored under `<CONTEXT_DROP_STORAGE_DIR>/events-state.json`:
+
+```bash
+curl -sS -X POST "https://your-app.com/api/context-drop/integrations/destinations" \
+  -H "Authorization: Bearer $CONTEXT_DROP_INTEGRATIONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Lark triage",
+    "destination_type": "lark",
+    "event_types": ["feedback.created"],
+    "settings": { "receive_id": "oc_xxx", "receive_id_type": "chat_id" },
+    "secrets": { "app_id": "cli_xxx", "app_secret": "..." }
+  }'
+```
+
+Defaults: authorize with `CONTEXT_DROP_INTEGRATIONS_API_KEY` (or the MCP API key); disable the pipeline with `notifications: { enabled: false }` in handler config.
+
+**Example MCP client calls**
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "events/list" }
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "events/poll",
+  "params": {
+    "name": "feedback.created",
+    "arguments": { "environment": "production" },
+    "cursor": null
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "events/subscribe",
+  "params": {
+    "name": "feedback.created",
+    "callbackUrl": "https://agent.example/hooks/contextdrop",
+    "ttlHours": 24
+  }
+}
+```
+
+`npx context-drop mcp` stdio sessions use the same `events/*` methods and persist occurrences in `.context-drop/` alongside feedback storage.
+
 ---
 
 ### Recommended Setup: One Unified MCP Server for All Environments (`local` + `staging` + `production`)

@@ -41,7 +41,10 @@ export function createContextDropMcpServer(options: Partial<ContextDropMcpOption
 
   const dispatcher = new ContextDropMcpDispatcher({
     ...options,
-    storage
+    storage,
+    eventStoreDir: process.env.CONTEXT_DROP_STORAGE_DIR,
+    eventStoreOwnershipSecret:
+      process.env.CONTEXT_DROP_SECRET_KEY ?? process.env.CONTEXT_DROP_SECRET
   });
 
   return {
@@ -54,7 +57,10 @@ export function createContextDropMcpServer(options: Partial<ContextDropMcpOption
         const localOnlyDispatcher = new ContextDropMcpDispatcher({
           ...options,
           storage,
-          localOnly: true
+          localOnly: true,
+          eventStoreDir: process.env.CONTEXT_DROP_STORAGE_DIR,
+          eventStoreOwnershipSecret:
+            process.env.CONTEXT_DROP_SECRET_KEY ?? process.env.CONTEXT_DROP_SECRET
         });
         return localOnlyDispatcher.dispatch(payload);
       }
@@ -94,7 +100,10 @@ export async function runContextDropMcpStdio(
     storage,
     hostEnvironment: options.hostEnvironment,
     environments: options.environments,
-    localOnly: false
+    localOnly: false,
+    eventStoreDir: options.storageDir || process.env.CONTEXT_DROP_STORAGE_DIR,
+    eventStoreOwnershipSecret:
+      process.env.CONTEXT_DROP_SECRET_KEY ?? process.env.CONTEXT_DROP_SECRET
   });
 
   const rl = readline.createInterface({

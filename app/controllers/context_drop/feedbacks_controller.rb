@@ -54,6 +54,7 @@ module ContextDrop
       end
 
       feedback = nil
+      previous_status = nil
 
       ContextDrop::Feedback.transaction do
         sanitized_meta = ContextDrop::MetadataSanitizer.sanitize_feedback_metadata(payload["metadata"])
@@ -126,7 +127,11 @@ module ContextDrop
       return if performed?
 
       feedback.reload
-      invoke_lifecycle_callback(:on_feedback_created, feedback)
+      invoke_lifecycle_callback(
+        :on_feedback_created,
+        feedback,
+        dashboard_url: feedback_dashboard_url(feedback)
+      )
       ownership_token = ContextDrop::OwnershipToken.generate(feedback.id)
 
       render json: {
@@ -144,6 +149,7 @@ module ContextDrop
 
     def update
       feedback = ContextDrop::Feedback.includes(:element_references, :attachments, comments: :attachments).find_by(id: params[:id])
+      previous_status = feedback&.status
       if feedback.nil? || feedback.deleted?
         render json: { error: "Feedback not found" }, status: :not_found
         return
@@ -323,7 +329,12 @@ module ContextDrop
       return if performed?
 
       feedback.reload
-      invoke_lifecycle_callback(:on_feedback_updated, feedback)
+      invoke_lifecycle_callback(
+        :on_feedback_updated,
+        feedback,
+        previous_status: previous_status,
+        dashboard_url: feedback_dashboard_url(feedback)
+      )
 
       raw_tokens = combined_raw_ownership_tokens(payload["ownership_token"])
       ownership_token = ContextDrop::OwnershipToken.find_token_for(raw_tokens, feedback.id) ||
@@ -357,7 +368,11 @@ module ContextDrop
       end
 
       feedback.soft_delete!
-      invoke_lifecycle_callback(:on_feedback_deleted, feedback)
+      invoke_lifecycle_callback(
+        :on_feedback_deleted,
+        feedback,
+        dashboard_url: feedback_dashboard_url(feedback)
+      )
 
       render json: {
         id: feedback.id,
@@ -386,6 +401,8 @@ module ContextDrop
         }, status: :unprocessable_entity
         return
       end
+
+      previous_status = feedback.status
 
       submitter = current_context_drop_submitter
       author_label = if submitter
@@ -451,7 +468,12 @@ module ContextDrop
       return if performed?
 
       feedback.reload
-      invoke_lifecycle_callback(:on_feedback_updated, feedback)
+      invoke_lifecycle_callback(
+        :on_feedback_updated,
+        feedback,
+        previous_status: previous_status,
+        dashboard_url: feedback_dashboard_url(feedback)
+      )
 
       raw_tokens = combined_raw_ownership_tokens(payload["ownership_token"])
       ownership_token = ContextDrop::OwnershipToken.find_token_for(raw_tokens, feedback.id) ||
@@ -480,17 +502,9 @@ module ContextDrop
       end
 
       att = ContextDrop::Attachment.where(feedback_id: feedback.id).find_by(id: params[:id])
-      if att.nil? || !att.respond_to?(:file) || !att.file.attached?
+      if att.nil? || !stream_context_drop_attachment!(att)
         head :not_found
-        return
       end
-
-      response.set_header("Cache-Control", "private, max-age=3600")
-      response.set_header("Content-Security-Policy", "default-src 'none'; sandbox")
-      send_data att.file.download,
-                type: att.file.content_type || "image/png",
-                disposition: "inline",
-                filename: att.file.filename.to_s
     end
 
     private
@@ -715,13 +729,23 @@ module ContextDrop
       raise ContextDrop::UploadValidator::ValidationError, "Invalid base64 attachment data"
     end
 
-    def invoke_lifecycle_callback(hook_name, feedback)
+    def invoke_lifecycle_callback(hook_name, feedback, **context)
       return unless ContextDrop.config.respond_to?(hook_name)
 
       callback = ContextDrop.config.public_send(hook_name)
       callback.call(feedback) if callback.respond_to?(:call)
+      ContextDrop::FeedbackEvents::Publisher.map_lifecycle_callback(hook_name, feedback, **context)
     rescue StandardError => e
       Rails.logger.error("[ContextDrop] #{hook_name} callback error: #{e.class}: #{e.message}") if defined?(Rails.logger) && Rails.logger
+    end
+
+    def feedback_dashboard_url(feedback)
+      path = "/context_drop/dashboard/feedbacks/#{feedback.id}"
+      if respond_to?(:request) && request&.base_url.present?
+        "#{request.base_url}#{path}"
+      else
+        path
+      end
     end
 
     def stringify_hash(obj)

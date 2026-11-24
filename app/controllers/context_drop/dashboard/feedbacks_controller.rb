@@ -101,7 +101,14 @@ module ContextDrop
           return
         end
 
+        previous_status = @feedback.status
         @feedback.update!(status: next_status)
+        invoke_lifecycle_callback(
+          :on_feedback_updated,
+          @feedback,
+          previous_status: previous_status,
+          dashboard_url: dashboard_feedback_url(@feedback)
+        )
 
         respond_to do |format|
           format.json do
@@ -115,6 +122,17 @@ module ContextDrop
             redirect_to dashboard_feedback_path(@feedback), notice: "Feedback ##{@feedback.id} marked as #{@feedback.status}."
           end
         end
+      end
+
+      def attachment
+        @feedback = ContextDrop::Feedback.find_by(id: params[:id])
+        if @feedback.nil?
+          head :not_found
+          return
+        end
+
+        att = ContextDrop::Attachment.where(feedback_id: @feedback.id).find_by(id: params[:attachment_id])
+        head(:not_found) unless att && stream_context_drop_attachment!(att)
       end
 
       def create_comment
@@ -197,6 +215,26 @@ module ContextDrop
       end
 
       private
+
+      def invoke_lifecycle_callback(hook_name, feedback, **context)
+        return unless ContextDrop.config.respond_to?(hook_name)
+
+        callback = ContextDrop.config.public_send(hook_name)
+        callback.call(feedback) if callback.respond_to?(:call)
+        ContextDrop::FeedbackEvents::Publisher.map_lifecycle_callback(
+          hook_name,
+          feedback,
+          **context
+        )
+      rescue StandardError => e
+        Rails.logger.error("[ContextDrop] #{hook_name} callback error: #{e.class}: #{e.message}") if defined?(Rails.logger) && Rails.logger
+      end
+
+      def dashboard_feedback_url(feedback)
+        url_for(controller: "context_drop/dashboard/feedbacks", action: :show, id: feedback.id, only_path: false)
+      rescue StandardError
+        "/context_drop/dashboard/feedbacks/#{feedback.id}"
+      end
 
       def enforce_dashboard_authorization!
         return if ContextDrop.config.dashboard_authorized?(self)

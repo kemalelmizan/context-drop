@@ -1,0 +1,92 @@
+<%= form_with model: @destination, url: @destination.persisted? ? dashboard_integration_path(@destination) : dashboard_integrations_path, scope: :notification_destination, class: "cd-form-stack" do |f| %>
+  <% if @destination.errors.any? %>
+    <div class="cd-flash cd-flash-alert" role="alert">
+      <%= @destination.errors.full_messages.join(", ") %>
+    </div>
+  <% end %>
+
+  <div class="cd-form-grid">
+    <div class="cd-field">
+      <%= f.label :name, "Display name" %>
+      <%= f.text_field :name, class: "cd-input", required: true, placeholder: "Triage · Lark" %>
+    </div>
+
+    <div class="cd-field">
+      <%= f.label :destination_type, "Destination type" %>
+      <%= f.select :destination_type, ContextDrop::NotificationDestination::DESTINATION_TYPES, {}, class: "cd-input" %>
+    </div>
+
+    <div class="cd-field cd-field-span">
+      <span class="cd-label">Lifecycle events</span>
+      <div class="cd-check-grid">
+        <% ContextDrop::EventOccurrence::EVENT_NAMES.each do |ev| %>
+          <label class="cd-check-row">
+            <%= check_box_tag "notification_destination[event_types][]", ev, @destination.subscribed_to?(ev) %>
+            <span class="cd-chip cd-chip-mono cd-chip-compact"><%= ev %></span>
+          </label>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="cd-field">
+      <label class="cd-check-row">
+        <%= f.check_box :enabled %>
+        <span>Enabled</span>
+      </label>
+    </div>
+  </div>
+
+  <% if @destination.destination_type == "lark" %>
+    <div class="cd-card cd-card-inset" style="margin-top: 1rem;">
+      <h3 class="cd-section-title">Lark app bot</h3>
+      <p class="cd-section-hint">Credentials are encrypted at rest. Use a custom app with Bot capability and <code class="cd-inline-code">im:message</code> scope in your Lark developer console.</p>
+      <div class="cd-form-grid">
+        <div class="cd-field">
+          <label for="notification_destination_app_id">App ID</label>
+          <input type="text" name="notification_destination[app_id]" id="notification_destination_app_id" class="cd-input" autocomplete="off"
+                 placeholder="<%= @destination.masked_secrets['app_id'] || 'cli_xxxxxxxx' %>" />
+        </div>
+        <div class="cd-field">
+          <label for="notification_destination_app_secret">App Secret</label>
+          <input type="password" name="notification_destination[app_secret]" id="notification_destination_app_secret" class="cd-input" autocomplete="new-password"
+                 placeholder="<%= @destination.persisted? ? 'Leave blank to keep current secret' : 'Required' %>" />
+        </div>
+        <div class="cd-field">
+          <%= f.label :receive_id, "Receive ID (chat_id)", value: nil %>
+          <%= f.text_field :receive_id, name: "notification_destination[settings][receive_id]", value: @destination.settings["receive_id"], class: "cd-input", placeholder: "oc_xxxxxxxx" %>
+        </div>
+        <div class="cd-field">
+          <%= f.label :receive_id_type, "Receive ID type" %>
+          <%= select_tag "notification_destination[settings][receive_id_type]",
+                         options_for_select([%w[chat_id chat_id], %w[open_id open_id], %w[user_id user_id]], @destination.settings["receive_id_type"].presence || "chat_id"),
+                         class: "cd-input" %>
+        </div>
+        <div class="cd-field cd-field-span">
+          <%= f.label :api_host, "API host (optional)" %>
+          <%= f.text_field :api_host, name: "notification_destination[settings][api_host]", value: @destination.settings["api_host"], class: "cd-input", placeholder: "https://open.larksuite.com" %>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <div class="cd-card cd-card-inset" style="margin-top: 1rem;">
+      <h3 class="cd-section-title">HTTPS webhook</h3>
+      <p class="cd-section-hint">Deliveries use Standard Webhooks signatures (<code class="cd-inline-code">webhook-signature</code> header).</p>
+      <div class="cd-form-grid">
+        <div class="cd-field cd-field-span">
+          <%= f.label :url, "Callback URL" %>
+          <%= f.text_field :url, name: "notification_destination[settings][url]", value: @destination.settings["url"], class: "cd-input", placeholder: "https://example.com/hooks/contextdrop" %>
+        </div>
+        <div class="cd-field cd-field-span">
+          <label for="notification_destination_signing_secret">Signing secret</label>
+          <input type="password" name="notification_destination[signing_secret]" id="notification_destination_signing_secret" class="cd-input" autocomplete="new-password"
+                 placeholder="<%= @destination.persisted? ? 'Leave blank to keep current secret' : 'Optional HMAC secret' %>" />
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="cd-form-actions">
+    <%= f.submit @destination.persisted? ? "Save destination" : "Create destination", class: "cd-btn cd-btn-primary" %>
+    <%= link_to "Cancel", dashboard_integrations_path, class: "cd-btn" %>
+  </div>
+<% end %>

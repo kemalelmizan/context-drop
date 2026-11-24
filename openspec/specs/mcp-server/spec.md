@@ -64,3 +64,20 @@ The MCP server SHALL expose resource templates (`contextdrop://feedbacks/new` an
 - **GIVEN** feedback `#42` reports a broken checkout button on `/checkout` with selector `#checkout-button`
 - **WHEN** the developer invokes the MCP prompt `investigate_feedback` with `feedback_id: 42`
 - **THEN** the server returns prompt messages instructing the agent to locate the route/controller for `/checkout`, search view templates for `#checkout-button` (`html > body > main > button`), inspect the attached screenshot, and propose a fix
+
+### Requirement: MCP Events Extension (`io.modelcontextprotocol/events`)
+The MCP server (Rails `ContextDrop::MCP::Dispatcher` and TypeScript `ContextDropMcpDispatcher`) SHALL advertise the MCP Events extension in `initialize` capabilities and SHALL implement `events/list`, `events/poll`, `events/subscribe`, and `events/unsubscribe` for feedback lifecycle event types (`feedback.created`, `feedback.updated`, `feedback.status_changed`, `feedback.deleted`) with `poll`, `push`, and `webhook` delivery modes.
+
+#### Scenario: Polling new feedback events after IDE reconnect
+- **GIVEN** feedback event persistence is installed and MCP is authenticated
+- **WHEN** the client invokes `events/poll` with `{ "name": "feedback.created", "cursor": null }` after a new feedback is submitted
+- **THEN** the response includes at least one occurrence with `feedback_id`, `environment`, `status`, and `page_url` in `data`
+- **AND** returns a monotonically increasing opaque `cursor` for resumption
+
+### Requirement: MCP Events Push Stream Endpoint
+When remote HTTP MCP is enabled, ContextDrop SHALL expose `GET /context_drop/mcp/events/stream` (Rails) or `GET …/mcp/events/stream` (Node handler) as an SSE stream authenticated with the same Bearer token as `POST …/mcp`, emitting each persisted occurrence as an `mcp-event` frame.
+
+#### Scenario: SSE client receives feedback.created
+- **GIVEN** a client holds an authenticated SSE connection to the MCP events stream
+- **WHEN** a widget submits new feedback
+- **THEN** the client receives an SSE `data` payload matching the `events/poll` occurrence schema for `feedback.created`

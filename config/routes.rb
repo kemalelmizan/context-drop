@@ -20,6 +20,7 @@ ContextDrop::Engine.routes.draw do
   get "feedback/:feedback_id/attachments/:id", to: "feedbacks#attachment"
   get "health", to: "health#show"
   post "mcp", to: "mcp#create"
+  get "mcp/events/stream", to: "mcp_events#stream"
 
   scope "agent" do
     get "status", to: "agent#status"
@@ -34,8 +35,12 @@ ContextDrop::Engine.routes.draw do
 
   namespace :dashboard do
     root to: "feedbacks#index"
+    resources :integrations, only: %i[index new create edit update destroy] do
+      post :test_delivery, on: :member
+    end
     resources :feedbacks, only: %i[index show update] do
       post :comments, on: :member, action: :create_comment
+      get "attachments/:attachment_id", on: :member, action: :attachment, as: :attachment
     end
   end
 

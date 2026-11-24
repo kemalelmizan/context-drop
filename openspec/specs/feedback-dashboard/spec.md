@@ -37,3 +37,13 @@ The dashboard SHALL allow authorized users to transition a feedback record's `st
 - **GIVEN** an authorized developer is viewing feedback `#42` with `status: "new"`
 - **WHEN** the developer clicks `"Mark Resolved"` (`PATCH /context_drop/dashboard/feedbacks/42` with `status: "resolved"`)
 - **THEN** feedback `#42` is updated to `status: "resolved"` and the dashboard reflects the updated status badge
+
+### Requirement: Integrations & Notification Destinations Dashboard
+The engine SHALL provide dashboard routes under `/context_drop/dashboard/integrations` enabling authorized users to create, edit, test, enable, and delete notification destinations that deliver feedback lifecycle MCP event payloads to Lark interactive message cards or signed HTTPS webhooks, with Lark app credentials and webhook signing secrets encrypted at rest.
+
+#### Scenario: Operator adds a Lark destination for new feedback
+- **GIVEN** an authorized developer opens `GET /context_drop/dashboard/integrations`
+- **WHEN** they create a Lark destination subscribed to `feedback.created` with valid app credentials and `receive_id`
+- **THEN** the destination is persisted with encrypted secrets
+- **AND** a subsequent new feedback submission triggers a Lark card delivery
+- **AND** dashboard status changes emit `feedback.status_changed` when the destination subscribes to that event type

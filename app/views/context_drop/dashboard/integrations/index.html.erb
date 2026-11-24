@@ -1,0 +1,101 @@
+<% content_for :cd_breadcrumbs do %>
+  <span class="cd-crumb-current">Integrations</span>
+<% end %>
+
+<div class="cd-page-head">
+  <div>
+    <h1 class="cd-page-title">Notifications &amp; webhooks</h1>
+    <p class="cd-page-lede">Route ContextDrop lifecycle events to Lark message cards or signed HTTPS webhooks. MCP clients can also subscribe via <code class="cd-inline-code">events/poll</code>, <code class="cd-inline-code">events/stream</code>, and <code class="cd-inline-code">events/subscribe</code>.</p>
+  </div>
+  <div class="cd-page-actions">
+    <%= link_to "Add Lark bot", new_dashboard_integration_path(destination_type: "lark"), class: "cd-btn cd-btn-primary" %>
+    <%= link_to "Add webhook", new_dashboard_integration_path(destination_type: "webhook"), class: "cd-btn" %>
+  </div>
+</div>
+
+<div class="cd-card cd-card-tight" style="margin-bottom: 1rem;">
+  <h2 class="cd-section-title">MCP event types</h2>
+  <ul class="cd-chip-list" aria-label="Supported MCP events">
+    <% ContextDrop::EventOccurrence::EVENT_NAMES.each do |ev| %>
+      <li><span class="cd-chip cd-chip-mono"><%= ev %></span></li>
+    <% end %>
+  </ul>
+</div>
+
+<% if @destinations.empty? %>
+  <div class="cd-card" style="padding: 2.5rem 1.5rem; text-align: center;">
+    <p style="margin: 0 0 0.35rem; font-weight: 600;">No destinations configured</p>
+    <p style="margin: 0 0 1rem; color: var(--cd-muted); font-size: 0.875rem;">Add a Lark bot to notify your triage channel when new feedback arrives.</p>
+    <%= link_to "Configure Lark", new_dashboard_integration_path(destination_type: "lark"), class: "cd-btn cd-btn-primary" %>
+  </div>
+<% else %>
+  <div class="cd-table-wrap cd-card cd-card-tight">
+    <table class="cd-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Events</th>
+          <th>Status</th>
+          <th>Last delivery</th>
+          <th class="cd-cell-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @destinations.each do |dest| %>
+          <tr>
+            <td style="font-weight: 600;"><%= dest.name %></td>
+            <td><span class="cd-chip"><%= dest.destination_type %></span></td>
+            <td>
+              <div class="cd-chip-row">
+                <% dest.event_types.each do |ev| %>
+                  <span class="cd-chip cd-chip-mono cd-chip-compact"><%= ev %></span>
+                <% end %>
+              </div>
+            </td>
+            <td>
+              <% if dest.enabled? %>
+                <span class="cd-status-badge cd-status-reviewed">Enabled</span>
+              <% else %>
+                <span class="cd-status-badge cd-status-dismissed">Paused</span>
+              <% end %>
+            </td>
+            <td style="font-size: 0.8125rem; color: var(--cd-muted); max-width: 220px;">
+              <% if dest.last_delivered_at %>
+                <div><%= dest.last_delivery_status %> · <%= time_ago_in_words(dest.last_delivered_at) %> ago</div>
+                <% if dest.last_delivery_error.present? %>
+                  <div style="color: var(--cd-deleted-text); margin-top: 0.25rem;"><%= dest.last_delivery_error.truncate(120) %></div>
+                <% end %>
+              <% else %>
+                <span>Not yet delivered</span>
+              <% end %>
+            </td>
+            <td class="cd-cell-actions">
+              <div class="cd-btn-row">
+                <%= button_to "Test", test_delivery_dashboard_integration_path(dest), method: :post, class: "cd-btn cd-btn-compact", form: { data: { turbo: false } } %>
+                <%= link_to "Edit", edit_dashboard_integration_path(dest), class: "cd-btn cd-btn-compact" %>
+                <%= button_to "Remove", dashboard_integration_path(dest), method: :delete, class: "cd-btn cd-btn-danger cd-btn-compact", form: { data: { turbo_confirm: "Remove this destination?" } } %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% end %>
+
+<% if @mcp_subscriptions.present? %>
+  <div class="cd-card cd-card-tight" style="margin-top: 1.25rem;">
+    <h2 class="cd-section-title">Active MCP webhook subscriptions</h2>
+    <p class="cd-section-hint">Registered by MCP clients via <code class="cd-inline-code">events/subscribe</code> (expires automatically).</p>
+    <ul class="cd-meta-list" style="margin-top: 0.75rem;">
+      <% @mcp_subscriptions.each do |sub| %>
+        <dt><span class="cd-chip cd-chip-mono"><%= sub.event_name %></span></dt>
+        <dd>
+          <span class="cd-break-all"><%= sub.callback_url %></span>
+          <span style="color: var(--cd-muted);"> · expires <%= sub.expires_at.iso8601 %></span>
+        </dd>
+      <% end %>
+    </ul>
+  </div>
+<% end %>

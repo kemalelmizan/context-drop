@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "events"
+require_relative "event_stream_registry"
 
 module ContextDrop
   module MCP
     class Dispatcher
       PROTOCOL_VERSION = "2025-03-26"
+      EVENTS_PROTOCOL_VERSION = "2026-07-28"
 
       TOOLS = {
         "list_environments" => ContextDrop::MCP::Tools::ListEnvironments,
@@ -85,13 +88,17 @@ module ContextDrop
           when "initialize"
             client_version = params["protocolVersion"].to_s.strip
             negotiated_version = client_version.empty? ? PROTOCOL_VERSION : client_version
+            caps = {
+              tools: { listChanged: false },
+              resources: { subscribe: false, listChanged: false },
+              prompts: { listChanged: false },
+              extensions: {
+                ContextDrop::MCP::Events::EXTENSION_ID => ContextDrop::MCP::Events.capability_payload
+              }
+            }
             jsonrpc_result(id, {
               protocolVersion: negotiated_version,
-              capabilities: {
-                tools: { listChanged: false },
-                resources: { subscribe: false, listChanged: false },
-                prompts: { listChanged: false }
-              },
+              capabilities: caps,
               serverInfo: {
                 name: "context_drop",
                 version: ContextDrop::VERSION,
@@ -119,6 +126,14 @@ module ContextDrop
             })
           when "prompts/get"
             handle_prompt_get(id, params)
+          when "events/list"
+            jsonrpc_result(id, ContextDrop::MCP::Events.list(params))
+          when "events/poll"
+            jsonrpc_result(id, ContextDrop::MCP::Events.poll(params))
+          when "events/subscribe"
+            jsonrpc_result(id, ContextDrop::MCP::Events.subscribe(params, request: params["_context_drop_request"]))
+          when "events/unsubscribe"
+            jsonrpc_result(id, ContextDrop::MCP::Events.unsubscribe(params))
           else
             jsonrpc_error(id, -32_601, "Method not found: #{method}")
           end

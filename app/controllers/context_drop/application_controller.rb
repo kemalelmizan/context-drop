@@ -159,5 +159,17 @@ module ContextDrop
         request.headers["X-Context-Drop-Ownership-Token"].to_s.strip.present? ||
         request.content_type.to_s.downcase.start_with?("application/json")
     end
+
+    def stream_context_drop_attachment!(attachment)
+      return false unless attachment.respond_to?(:file) && attachment.file.attached?
+
+      response.set_header("Cache-Control", "private, max-age=3600")
+      response.set_header("Content-Security-Policy", "default-src 'none'; sandbox")
+      send_data attachment.file.download,
+                type: attachment.file.content_type || "image/png",
+                disposition: "inline",
+                filename: attachment.file.filename.to_s
+      true
+    end
   end
 end

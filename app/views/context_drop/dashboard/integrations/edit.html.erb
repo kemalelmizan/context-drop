@@ -1,0 +1,13 @@
+<% content_for :cd_breadcrumbs do %>
+  <%= link_to "Integrations", dashboard_integrations_path, class: "cd-crumb-link" %>
+  <span class="cd-crumb-sep">/</span>
+  <span class="cd-crumb-current"><%= @destination.name %></span>
+<% end %>
+
+<div class="cd-page-head">
+  <h1 class="cd-page-title">Edit destination</h1>
+</div>
+
+<div class="cd-card" style="padding: 1.25rem 1.5rem 1.5rem;">
+  <%= render "form" %>
+</div>

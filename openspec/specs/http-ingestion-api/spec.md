@@ -22,6 +22,7 @@ The engine SHALL expose `POST /context_drop/feedback` to validate and persist a 
 - **WHEN** the client sends `POST /context_drop/feedback` with a `message`, `page_url`, one `element_references` snapshot, and one `attachments` screenshot
 - **THEN** the engine creates the `ContextDrop::Feedback`, `ContextDrop::ElementReference`, and `ContextDrop::Attachment` records atomically
 - **AND** invokes `config.on_feedback_created` if configured
+- **AND** publishes `feedback.created` to the MCP Events store and matching notification destinations when configured
 - **AND** responds with `201 Created` including `id`, `status: "new"`, `attachments_count: 1`, `element_references_count: 1`, `created_at`, an HMAC-signed `ownership_token`, and serialized `feedback` context
 
 #### Scenario: Rejecting feedback submission exceeding max attachments or element references
@@ -35,12 +36,12 @@ Both the Rails Engine and Node.js/Next.js server handler SHALL expose `GET /feed
 #### Scenario: Updating own feedback message and context
 - **GIVEN** a user owns active feedback `#42` (via authenticated `submitter`, session identifier, or signed `ownership_token`)
 - **WHEN** the client sends `PATCH /context_drop/feedback/42` with updated `message`, `element_references`, and retained `existing_id` + new `attachments`
-- **THEN** the server sanitizes all element references and metadata, validates any new uploads, updates feedback `#42`, invokes `on_feedback_updated`, and responds with `200 OK`
+- **THEN** the server sanitizes all element references and metadata, validates any new uploads, updates feedback `#42`, invokes `on_feedback_updated`, publishes `feedback.updated` or `feedback.status_changed` as appropriate, and responds with `200 OK`
 
 #### Scenario: Soft-deleting own feedback and rejecting unauthorized access
 - **GIVEN** a user owns active feedback `#42`
 - **WHEN** the owner sends `DELETE /context_drop/feedback/42`
-- **THEN** the server sets `deleted_at` on feedback `#42`, invokes `on_feedback_deleted`, responds with `200 OK`, and excludes `#42` from subsequent `GET /context_drop/feedback` responses
+- **THEN** the server sets `deleted_at` on feedback `#42`, invokes `on_feedback_deleted`, publishes `feedback.deleted`, responds with `200 OK`, and excludes `#42` from subsequent `GET /context_drop/feedback` responses
 - **AND** if an unassociated user attempts `PATCH` or `DELETE` on another user's active feedback, the server responds with `403 Forbidden`
 
 ### Requirement: Attachment Upload Endpoint

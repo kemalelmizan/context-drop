@@ -280,6 +280,17 @@ export interface ContextDropServerConfig {
   onFeedbackCreated?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
   onFeedbackUpdated?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
   onFeedbackDeleted?: (feedback: StoredFeedbackRecord) => Promise<void> | void;
+  /** When false, skips MCP Events persistence and outbound notification delivery. Default: true. */
+  notifications?: {
+    enabled?: boolean;
+  };
+  /**
+   * Optional authorization for `GET/POST /integrations/*` notification destination API
+   * (standalone Next.js deployments without the Rails dashboard UI).
+   */
+  integrations?: {
+    authorize?: (request: Request) => Promise<boolean> | boolean;
+  };
   mcp?: {
     enabled?: boolean;
     apiKey?: string;

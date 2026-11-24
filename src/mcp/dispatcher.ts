@@ -16,6 +16,15 @@ import {
   type McpToolResult,
   type RemoteMcpTransport
 } from "./remote-client.ts";
+import type { LocalEventStore } from "../events/local-event-store.ts";
+import {
+  eventsList,
+  eventsPoll,
+  eventsSubscribe,
+  eventsUnsubscribe,
+  MCP_EVENTS_EXTENSION_ID,
+  mcpEventsCapability
+} from "./events.ts";
 
 export const MCP_PROTOCOL_VERSION = "2025-03-26";
 const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -27,6 +36,10 @@ export interface ContextDropMcpOptions {
   localOnly?: boolean;
   envVars?: EnvVarMap;
   remoteTransport?: RemoteMcpTransport;
+  eventStore?: LocalEventStore | null;
+  /** Lazily materializes `LocalEventStore` on first `events/*` call when `eventStore` is not provided. */
+  eventStoreDir?: string;
+  eventStoreOwnershipSecret?: string;
 }
 
 export interface JsonRpcResponse {
@@ -320,9 +333,16 @@ export class ContextDropMcpDispatcher {
   private readonly storage: StorageAdapter;
   private readonly router: EnvironmentRouter;
   private readonly remoteClient: RemoteMcpClient;
+  private readonly explicitEventStore: LocalEventStore | null | undefined;
+  private readonly eventStoreDir?: string;
+  private readonly eventStoreOwnershipSecret?: string;
+  private materializedEventStore: LocalEventStore | null = null;
 
   constructor(options: ContextDropMcpOptions) {
     this.storage = options.storage;
+    this.explicitEventStore = options.eventStore;
+    this.eventStoreDir = options.eventStoreDir;
+    this.eventStoreOwnershipSecret = options.eventStoreOwnershipSecret;
     this.router = new EnvironmentRouter({
       hostEnvironment: options.hostEnvironment,
       environments: options.environments,
@@ -373,7 +393,10 @@ export class ContextDropMcpDispatcher {
             capabilities: {
               tools: { listChanged: false },
               resources: { subscribe: false, listChanged: false },
-              prompts: { listChanged: false }
+              prompts: { listChanged: false },
+              extensions: {
+                [MCP_EVENTS_EXTENSION_ID]: mcpEventsCapability()
+              }
             },
             serverInfo: {
               name: "context_drop",
@@ -399,12 +422,90 @@ export class ContextDropMcpDispatcher {
           return this.jsonrpcResult(id, { prompts: PROMPT_DEFINITIONS });
         case "prompts/get":
           return await this.handlePromptGet(id, params);
+        case "events/list":
+          return this.jsonrpcResult(id, eventsList());
+        case "events/poll":
+          return this.handleEventsPoll(id, params);
+        case "events/subscribe":
+          return this.handleEventsSubscribe(id, params);
+        case "events/unsubscribe":
+          return this.handleEventsUnsubscribe(id, params);
         default:
           return this.jsonrpcError(id, -32601, `Method not found: ${method}`);
       }
     } catch (err) {
       return this.jsonrpcError(id, -32603, `Internal error: ${(err as Error).message}`);
     }
+  }
+
+  private ensureEventStore(): LocalEventStore | null {
+    if (this.explicitEventStore === null) return null;
+    if (this.materializedEventStore) return this.materializedEventStore;
+    if (this.explicitEventStore) {
+      this.materializedEventStore = this.explicitEventStore;
+      return this.materializedEventStore;
+    }
+    if (this.eventStoreDir) {
+      this.materializedEventStore = new LocalEventStore({
+        dir: this.eventStoreDir,
+        ownershipSecret: this.eventStoreOwnershipSecret
+      });
+      return this.materializedEventStore;
+    }
+    return null;
+  }
+
+  private handleEventsPoll(
+    id: string | number | null,
+    params: Record<string, unknown>
+  ): JsonRpcResponse {
+    const eventStore = this.ensureEventStore();
+    if (!eventStore) {
+      return this.jsonrpcError(
+        id,
+        -32602,
+        "ContextDrop events persistence is not configured on this MCP server"
+      );
+    }
+    try {
+      return this.jsonrpcResult(id, eventsPoll(eventStore, params));
+    } catch (err) {
+      return this.jsonrpcError(id, -32603, (err as Error).message);
+    }
+  }
+
+  private handleEventsSubscribe(
+    id: string | number | null,
+    params: Record<string, unknown>
+  ): JsonRpcResponse {
+    const eventStore = this.ensureEventStore();
+    if (!eventStore) {
+      return this.jsonrpcError(
+        id,
+        -32602,
+        "ContextDrop events persistence is not configured on this MCP server"
+      );
+    }
+    try {
+      return this.jsonrpcResult(id, eventsSubscribe(eventStore, params));
+    } catch (err) {
+      return this.jsonrpcError(id, -32602, (err as Error).message);
+    }
+  }
+
+  private handleEventsUnsubscribe(
+    id: string | number | null,
+    params: Record<string, unknown>
+  ): JsonRpcResponse {
+    const eventStore = this.ensureEventStore();
+    if (!eventStore) {
+      return this.jsonrpcError(
+        id,
+        -32602,
+        "ContextDrop events persistence is not configured on this MCP server"
+      );
+    }
+    return this.jsonrpcResult(id, eventsUnsubscribe(eventStore, params));
   }
 
   private async handleToolCall(

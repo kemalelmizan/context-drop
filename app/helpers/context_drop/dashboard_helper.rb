@@ -70,6 +70,12 @@ module ContextDrop
     def cd_icon_comment(size: 13)
       %(<svg width="#{size}" height="#{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>).html_safe
     end
+
+    # Serve binaries through the mounted engine (not host Active Storage URLs) so
+    # screenshots work when the host app uses a relative URL root or proxies storage.
+    def cd_dashboard_attachment_path(attachment)
+      attachment_dashboard_feedback_path(attachment.feedback_id, attachment_id: attachment.id)
+    end
   end
 end
 

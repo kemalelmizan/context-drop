@@ -3,8 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SelectionMode, WidgetConfig, WidgetPosition } from "../../app/javascript/context_drop/types.ts";
+import { LocalEventStore } from "../events/local-event-store.ts";
+import { mapLifecycleHook, publishFeedbackEvent } from "../events/publisher.ts";
+import { FEEDBACK_EVENT_NAMES, type FeedbackEventName } from "../events/types.ts";
+import { decryptSecrets, maskSecret } from "../notifications/secrets.ts";
 import { ContextDropMcpDispatcher } from "../mcp/dispatcher.ts";
+import { subscribeMcpEventStream } from "../mcp/event-stream-registry.ts";
 import { resolveHostEnvironment } from "../mcp/environment-router.ts";
+import { deliverOccurrenceToDestinations } from "../notifications/deliverer.ts";
 import {
   MANDATORY_SERVER_EXCLUDED_SELECTORS,
   SensitiveElementError,
@@ -53,6 +59,10 @@ type ParsedSubRoute =
   | { kind: "feedback_item"; feedbackId: string }
   | { kind: "feedback_comments"; feedbackId: string }
   | { kind: "feedback_attachment"; feedbackId: string; attachmentId: string }
+  | { kind: "mcp_events_stream" }
+  | { kind: "integrations_destinations" }
+  | { kind: "integrations_destination_item"; destinationId: string }
+  | { kind: "integrations_destination_test"; destinationId: string }
   | { kind: "unknown" };
 
 let sharedDefaultLocalStorage: StorageAdapter | null = null;
@@ -282,7 +292,30 @@ function parseSubRoute(pathname: string): ParsedSubRoute {
   if (clean.endsWith("/attachments")) return { kind: "static", name: "attachments" };
   if (clean.endsWith("/feedback")) return { kind: "static", name: "feedback" };
   if (clean.endsWith("/health")) return { kind: "static", name: "health" };
+  if (clean.endsWith("/mcp/events/stream")) return { kind: "mcp_events_stream" };
   if (clean.endsWith("/mcp")) return { kind: "static", name: "mcp" };
+
+  if (/\/integrations\/destinations\/[^/]+\/test$/.test(clean)) {
+    const testMatch = /\/integrations\/destinations\/([^/]+)\/test$/.exec(clean);
+    if (testMatch) {
+      return {
+        kind: "integrations_destination_test",
+        destinationId: decodeURIComponent(testMatch[1]!)
+      };
+    }
+  }
+  if (/\/integrations\/destinations\/[^/]+$/.test(clean)) {
+    const itemMatch = /\/integrations\/destinations\/([^/]+)$/.exec(clean);
+    if (itemMatch) {
+      return {
+        kind: "integrations_destination_item",
+        destinationId: decodeURIComponent(itemMatch[1]!)
+      };
+    }
+  }
+  if (clean.endsWith("/integrations/destinations")) {
+    return { kind: "integrations_destinations" };
+  }
 
   return { kind: "unknown" };
 }
@@ -530,6 +563,90 @@ export function createContextDropFetchHandler(
 
   const getEnvironment = (): string => resolveHostEnvironment(config.environment);
 
+  let sharedEventStore: LocalEventStore | null = null;
+  const notificationsEnabled = (): boolean => config.notifications?.enabled !== false;
+
+  const getEventStore = (): LocalEventStore | null => {
+    if (!notificationsEnabled()) return null;
+    if (!sharedEventStore) {
+      sharedEventStore = new LocalEventStore({
+        dir: config.storageDir,
+        ownershipSecret:
+          config.ownershipSecret?.trim() ||
+          process.env.CONTEXT_DROP_SECRET_KEY?.trim() ||
+          process.env.CONTEXT_DROP_SECRET?.trim()
+      });
+    }
+    return sharedEventStore;
+  };
+
+  const integrationDashboardPath = (feedbackId: string | number): string => {
+    const base = (config.integrations as { dashboardPathPrefix?: string } | undefined)
+      ?.dashboardPathPrefix;
+    if (base) return `${base.replace(/\/$/, "")}/${feedbackId}`;
+    return `/integrations/feedback/${feedbackId}`;
+  };
+
+  const emitFeedbackLifecycleEvent = async (
+    hook: "created" | "updated" | "deleted",
+    feedback: StoredFeedbackRecord,
+    previousStatus?: string | null
+  ): Promise<void> => {
+    const store = getEventStore();
+    if (!store) return;
+    const eventName = mapLifecycleHook(hook, feedback, previousStatus);
+    await publishFeedbackEvent(store, eventName, feedback, {
+      previous_status: previousStatus ?? null,
+      dashboard_url: integrationDashboardPath(feedback.id)
+    });
+  };
+
+  const authorizeIntegrations = async (request: Request): Promise<boolean> => {
+    if (config.integrations?.authorize) {
+      return Boolean(await config.integrations.authorize(request));
+    }
+    const expected = (
+      process.env.CONTEXT_DROP_INTEGRATIONS_API_KEY ??
+      config.mcp?.apiKey ??
+      process.env.CONTEXT_DROP_MCP_API_KEY ??
+      ""
+    ).trim();
+    if (!expected) return false;
+    const authHeader = request.headers.get("authorization") ?? "";
+    const provided = authHeader.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : "";
+    return timingSafeCompareStrings(provided, expected);
+  };
+
+  const serializeDestinationPublic = (
+    dest: import("../events/types.ts").NotificationDestinationRecord | null
+  ) => {
+    if (!dest) return null;
+    const store = getEventStore();
+    const secrets = store
+      ? decryptSecrets(dest.secrets_ciphertext, store.cryptoOptions)
+      : {};
+    return {
+      id: dest.id,
+      name: dest.name,
+      enabled: dest.enabled,
+      destination_type: dest.destination_type,
+      event_types: dest.event_types,
+      settings: dest.settings,
+      masked_secrets: {
+        app_id: maskSecret(secrets["app_id"]),
+        app_secret: maskSecret(secrets["app_secret"]),
+        signing_secret: maskSecret(secrets["signing_secret"])
+      },
+      last_delivery_status: dest.last_delivery_status ?? null,
+      last_delivery_error: dest.last_delivery_error ?? null,
+      last_delivered_at: dest.last_delivered_at ?? null,
+      created_at: dest.created_at,
+      updated_at: dest.updated_at
+    };
+  };
+
   const getResolvedSelectionMode = (envName: string): SelectionMode => {
     if (config.selectionMode === "smart") return "smart";
     if (config.selectionMode === "verbose") return "verbose";
@@ -773,7 +890,13 @@ export function createContextDropFetchHandler(
     const dispatcher = new ContextDropMcpDispatcher({
       storage: getStorage(),
       hostEnvironment: getEnvironment(),
-      localOnly: true
+      localOnly: true,
+      eventStore: getEventStore(),
+      eventStoreDir: config.storageDir ?? process.env.CONTEXT_DROP_STORAGE_DIR,
+      eventStoreOwnershipSecret:
+        config.ownershipSecret?.trim() ||
+        process.env.CONTEXT_DROP_SECRET_KEY?.trim() ||
+        process.env.CONTEXT_DROP_SECRET?.trim()
     });
 
     const rpcResponse = await dispatcher.dispatch(parsedPayload);
@@ -791,6 +914,166 @@ export function createContextDropFetchHandler(
     // Remote MCP endpoint has independent enablement & auth (matching Rails McpController)
     if (parsedRoute.kind === "static" && parsedRoute.name === "mcp" && method === "POST") {
       return handleMcpEndpoint(request);
+    }
+
+    if (parsedRoute.kind === "mcp_events_stream" && method === "GET") {
+      const expectedApiKey = (
+        config.mcp?.apiKey ??
+        process.env.CONTEXT_DROP_MCP_API_KEY ??
+        ""
+      ).trim();
+      const mcpEnabled =
+        config.mcp?.enabled !== undefined
+          ? Boolean(config.mcp.enabled)
+          : process.env.CONTEXT_DROP_MCP_ENABLED === "true" || expectedApiKey.length > 0;
+      if (!mcpEnabled) {
+        return new Response("Not Found", { status: 404 });
+      }
+      const authHeader = request.headers.get("authorization") ?? "";
+      const provided = authHeader.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : "";
+      if (!expectedApiKey || !timingSafeCompareStrings(provided, expectedApiKey)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const store = getEventStore();
+      if (!store) {
+        return new Response("Service Unavailable", { status: 503 });
+      }
+
+      const encoder = new TextEncoder();
+      let unsubscribe: (() => void) | null = null;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("event: ready\ndata: {}\n\n"));
+          unsubscribe = subscribeMcpEventStream((payload) => {
+            controller.enqueue(
+              encoder.encode(`event: mcp-event\ndata: ${JSON.stringify(payload)}\n\n`)
+            );
+          });
+        },
+        cancel() {
+          unsubscribe?.();
+        }
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no"
+        }
+      });
+    }
+
+    if (
+      parsedRoute.kind === "integrations_destinations" ||
+      parsedRoute.kind === "integrations_destination_item" ||
+      parsedRoute.kind === "integrations_destination_test"
+    ) {
+      if (!(await authorizeIntegrations(request))) {
+        return jsonResponse({ error: "Forbidden" }, 403);
+      }
+      const store = getEventStore();
+      if (!store) {
+        return jsonResponse({ error: "Notifications are disabled" }, 503);
+      }
+
+      if (parsedRoute.kind === "integrations_destinations" && method === "GET") {
+        const list = await store.listDestinations();
+        return jsonResponse({
+          destinations: list.map((d) => serializeDestinationPublic(d))
+        });
+      }
+
+      if (parsedRoute.kind === "integrations_destinations" && method === "POST") {
+        const body = JSON.parse(await request.text()) as Record<string, unknown>;
+        const settings = Object.fromEntries(
+          Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
+        );
+        const secrets = Object.fromEntries(
+          Object.entries(asRecord(body["secrets"])).map(([k, v]) => [k, String(v)])
+        );
+        const dest = store.createDestination({
+          name: String(body["name"] ?? "").trim(),
+          enabled: body["enabled"] !== false,
+          destination_type: String(body["destination_type"] ?? "webhook") as "lark" | "webhook",
+          event_types: (Array.isArray(body["event_types"])
+            ? body["event_types"]
+            : ["feedback.created"]
+          )
+            .map(String)
+            .filter((ev) => (FEEDBACK_EVENT_NAMES as readonly string[]).includes(ev)) as FeedbackEventName[],
+          settings,
+          secrets
+        });
+        return jsonResponse({ destination: serializeDestinationPublic(dest) }, 201);
+      }
+
+      if (parsedRoute.kind === "integrations_destination_item") {
+        const id = Number(parsedRoute.destinationId);
+        if (method === "GET") {
+          const dest = await store.getDestination(id);
+          if (!dest) return jsonResponse({ error: "Not found" }, 404);
+          return jsonResponse({ destination: serializeDestinationPublic(dest) });
+        }
+        if (method === "PATCH" || method === "PUT") {
+          const body = JSON.parse(await request.text()) as Record<string, unknown>;
+          const patchSecrets = asRecord(body["secrets"]) as Record<string, string>;
+          const updated = store.updateDestination(id, {
+            ...(body["name"] !== undefined ? { name: String(body["name"]) } : {}),
+            ...(body["enabled"] !== undefined ? { enabled: Boolean(body["enabled"]) } : {}),
+            ...(body["destination_type"] !== undefined
+              ? { destination_type: String(body["destination_type"]) as "lark" | "webhook" }
+              : {}),
+            ...(Array.isArray(body["event_types"])
+              ? { event_types: body["event_types"].map(String) as FeedbackEventName[] }
+              : {}),
+            ...(body["settings"]
+              ? {
+                  settings: Object.fromEntries(
+                    Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
+                  )
+                }
+              : {}),
+            ...(Object.keys(patchSecrets).length > 0 ? { secrets: patchSecrets } : {})
+          });
+          if (!updated) return jsonResponse({ error: "Not found" }, 404);
+          return jsonResponse({ destination: serializeDestinationPublic(updated) });
+        }
+        if (method === "DELETE") {
+          if (!store.deleteDestination(id)) return jsonResponse({ error: "Not found" }, 404);
+          return jsonResponse({ deleted: true });
+        }
+      }
+
+      if (parsedRoute.kind === "integrations_destination_test" && method === "POST") {
+        const id = Number(parsedRoute.destinationId);
+        const dest = await store.getDestination(id);
+        if (!dest) return jsonResponse({ error: "Not found" }, 404);
+        const name = (dest.event_types[0] ?? "feedback.created") as FeedbackEventName;
+        const occurrence = store.appendOccurrence({
+          event_id: `test:${crypto.randomUUID()}`,
+          name,
+          feedback_id: null,
+          data: {
+            feedback_id: 0,
+            environment: getEnvironment(),
+            status: "new",
+            message: "Test notification from ContextDrop integrations API.",
+            page_url: "/"
+          }
+        });
+        await deliverOccurrenceToDestinations(store, occurrence);
+        const fresh = (await store.getDestination(id))!;
+        return jsonResponse({
+          status: fresh.last_delivery_status,
+          error: fresh.last_delivery_error ?? null
+        });
+      }
+
+      return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
     const corsHeaders = buildCorsHeaders(request, config.allowedOrigins);
@@ -1069,6 +1352,7 @@ export function createContextDropFetchHandler(
             console.error("[context-drop] onFeedbackCreated callback error:", cbErr);
           }
         }
+        await emitFeedbackLifecycleEvent("created", created);
 
         const ownershipToken = generateOwnershipToken(created.id, getOwnershipSecret());
         const responseHeaders: Record<string, string> = { ...corsHeaders };
@@ -1133,6 +1417,7 @@ export function createContextDropFetchHandler(
       if (!existing || existing.deleted_at) {
         return jsonResponse({ error: "Feedback not found" }, 404, corsHeaders);
       }
+      const previousStatus = existing.status;
 
       try {
         const rawJson = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -1319,6 +1604,7 @@ export function createContextDropFetchHandler(
             console.error("[context-drop] onFeedbackUpdated callback error:", cbErr);
           }
         }
+        await emitFeedbackLifecycleEvent("updated", updated, previousStatus);
 
         const ownershipToken =
           findOwnershipTokenFor(rawTokens, updated.id, secret) ??
@@ -1376,6 +1662,7 @@ export function createContextDropFetchHandler(
       if (!existing || existing.deleted_at) {
         return jsonResponse({ error: "Feedback not found" }, 404, corsHeaders);
       }
+      const commentPreviousStatus = existing.status;
 
       try {
         const rawJson = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -1461,6 +1748,7 @@ export function createContextDropFetchHandler(
             console.error("[context-drop] onFeedbackUpdated callback error:", cbErr);
           }
         }
+        await emitFeedbackLifecycleEvent("updated", result.feedback, commentPreviousStatus);
 
         const ownershipToken =
           findOwnershipTokenFor(rawTokens, result.feedback.id, secret) ??
@@ -1551,6 +1839,7 @@ export function createContextDropFetchHandler(
           console.error("[context-drop] onFeedbackDeleted callback error:", cbErr);
         }
       }
+      await emitFeedbackLifecycleEvent("deleted", deleted);
 
       return jsonResponse(
         {

@@ -208,13 +208,11 @@
 
           <% if att.respond_to?(:file) && att.file.attached? %>
             <div style="margin: 0.5rem 0;">
-              <% if main_app.respond_to?(:url_for) %>
-                <a href="<%= main_app.url_for(att.file) %>" target="_blank" rel="noopener noreferrer">
-                  <img src="<%= main_app.url_for(att.file) %>"
-                       alt="Attachment #<%= att.id %>"
-                       style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--cd-border-subtle); display: block;" />
-                </a>
-              <% end %>
+              <a href="<%= cd_dashboard_attachment_path(att) %>" target="_blank" rel="noopener noreferrer">
+                <img src="<%= cd_dashboard_attachment_path(att) %>"
+                     alt="Attachment #<%= att.id %>"
+                     style="max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; border: 1px solid var(--cd-border-subtle); display: block;" />
+              </a>
             </div>
             <div style="font-size: 0.75rem; color: var(--cd-muted); font-family: var(--cd-font-mono);">
               <%= att.file.filename %> (<%= att.file.content_type %>, <%= att.file.byte_size %> bytes)
@@ -261,9 +259,9 @@
           <% if comment.attachments.any? %>
             <div class="cd-comment-images">
               <% comment.attachments.each do |att| %>
-                <% if att.respond_to?(:file) && att.file.attached? && main_app.respond_to?(:url_for) %>
-                  <a href="<%= main_app.url_for(att.file) %>" target="_blank" rel="noopener noreferrer" title="<%= att.file.filename %>">
-                    <img src="<%= main_app.url_for(att.file) %>"
+                <% if att.respond_to?(:file) && att.file.attached? %>
+                  <a href="<%= cd_dashboard_attachment_path(att) %>" target="_blank" rel="noopener noreferrer" title="<%= att.file.filename %>">
+                    <img src="<%= cd_dashboard_attachment_path(att) %>"
                          alt="Comment attachment #<%= att.id %>"
                          class="cd-comment-thumb" />
                   </a>

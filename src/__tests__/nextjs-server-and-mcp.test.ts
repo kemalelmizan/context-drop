@@ -6,6 +6,8 @@ import { PassThrough, Readable } from "node:stream";
 import { describe, it } from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadEnvFilesIfPresent, runCli } from "../cli.ts";
+import { LocalEventStore } from "../events/local-event-store.ts";
+import { publishFeedbackEvent } from "../events/publisher.ts";
 import {
   ContextDropMcpDispatcher,
   runContextDropMcpStdio
@@ -1391,6 +1393,62 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
     } finally {
       fs.rmSync(tmpProject, { recursive: true, force: true });
     }
+  });
+
+  it("advertises MCP Events extension and polls feedback.created occurrences", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-events-"));
+    const storage = createLocalStorageAdapter({ dir: tmpDir });
+    const eventStore = new LocalEventStore({ dir: tmpDir });
+    const dispatcher = new ContextDropMcpDispatcher({
+      storage,
+      hostEnvironment: "development",
+      eventStore
+    });
+
+  const init = await dispatcher.dispatch({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2026-07-28" }
+    });
+    assert.ok(init && !Array.isArray(init));
+    const caps = (init.result as { capabilities: { extensions: Record<string, unknown> } })
+      .capabilities.extensions;
+    assert.ok(caps["io.modelcontextprotocol/events"]);
+
+    const list = await dispatcher.dispatch({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "events/list"
+    });
+    const eventNames = (
+      (list!.result as { events: Array<{ name: string }> }).events ?? []
+    ).map((e) => e.name);
+    assert.ok(eventNames.includes("feedback.created"));
+
+    const created = await storage.createFeedback({
+      environment: "development",
+      message: "Events pipeline",
+      page_url: "https://example.com",
+      user_agent: null,
+      session_id: null,
+      submitter: {},
+      metadata: {},
+      element_references: [],
+      attachments: []
+    });
+    await publishFeedbackEvent(eventStore, "feedback.created", created);
+
+    const polled = await dispatcher.dispatch({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "events/poll",
+      params: { name: "feedback.created", cursor: null }
+    });
+    const events = (polled!.result as { events: Array<{ data: { feedback_id: number } }> }).events;
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.data.feedback_id, created.id);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

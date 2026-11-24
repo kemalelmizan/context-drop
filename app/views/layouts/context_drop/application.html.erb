@@ -828,6 +828,79 @@
     }
     .cd-meta-list dt { color: var(--cd-muted); font-weight: 500; }
     .cd-meta-list dd { margin: 0; overflow-wrap: anywhere; }
+  .cd-page-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .cd-page-title { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
+    .cd-page-lede { margin: 0.35rem 0 0; color: var(--cd-muted); font-size: 0.875rem; max-width: 52rem; line-height: 1.45; }
+    .cd-page-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .cd-section-title { margin: 0 0 0.35rem; font-size: 0.9375rem; font-weight: 650; }
+    .cd-section-hint { margin: 0; color: var(--cd-muted); font-size: 0.8125rem; line-height: 1.45; }
+    .cd-inline-code {
+      font-family: var(--cd-font-mono);
+      font-size: 0.8125rem;
+      background: var(--cd-surface-recessed);
+      border: 1px solid var(--cd-border-subtle);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+    }
+    .cd-chip-list { display: flex; flex-wrap: wrap; gap: 0.4rem; list-style: none; margin: 0.5rem 0 0; padding: 0; }
+    .cd-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .cd-chip {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 5px;
+      border: 1px solid var(--cd-border-subtle);
+      background: var(--cd-surface-recessed);
+      color: var(--cd-text-secondary);
+    }
+    .cd-chip-mono { font-family: var(--cd-font-mono); }
+    .cd-chip-compact { padding: 0.08rem 0.35rem; }
+    .cd-card-inset {
+      background: var(--cd-surface-subtle);
+      border-style: dashed;
+    }
+    .cd-form-stack { display: grid; gap: 0.75rem; }
+    .cd-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem 1rem;
+    }
+    .cd-field { display: grid; gap: 0.3rem; font-size: 0.875rem; }
+    .cd-field-span { grid-column: 1 / -1; }
+    .cd-label { color: var(--cd-muted); font-weight: 500; }
+    .cd-check-grid { display: grid; gap: 0.35rem; margin-top: 0.35rem; }
+    .cd-check-row { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+    .cd-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.25rem; }
+    .cd-btn-compact { padding: 0.25rem 0.55rem; font-size: 0.8125rem; }
+    .cd-btn-danger { color: var(--cd-deleted-text); border-color: var(--cd-deleted-border); background: var(--cd-deleted-bg); }
+    .cd-btn-row { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+    .cd-break-all { overflow-wrap: anywhere; font-family: var(--cd-font-mono); font-size: 0.75rem; }
+    .cd-crumb-link { color: var(--cd-primary); text-decoration: none; font-weight: 500; }
+    .cd-crumb-link:hover { text-decoration: underline; }
+    .cd-crumb-current { color: var(--cd-muted); font-weight: 500; }
+    .cd-header-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-left: 0.75rem;
+      font-size: 0.8125rem;
+    }
+    .cd-header-nav a {
+      color: var(--cd-text-secondary);
+      text-decoration: none;
+      padding: 0.2rem 0.45rem;
+      border-radius: 5px;
+    }
+    .cd-header-nav a:hover { background: var(--cd-surface-recessed); color: var(--cd-text); }
+    .cd-header-nav a.active { background: var(--cd-primary-soft); color: var(--cd-primary-hover); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -847,6 +920,11 @@
           <span class="cd-brand-pill">Triage</span>
           <span class="cd-context-chip" style="font-family: var(--cd-font-mono);"><%= ContextDrop.configuration.resolved_environment %></span>
         </a>
+
+        <nav class="cd-header-nav" aria-label="Dashboard sections">
+          <%= link_to "Feedback", dashboard_feedbacks_path, class: (controller_path == "context_drop/dashboard/feedbacks" ? "active" : nil) %>
+          <%= link_to "Integrations", dashboard_integrations_path, class: (controller_path == "context_drop/dashboard/integrations" ? "active" : nil) %>
+        </nav>
 
         <% if content_for?(:cd_breadcrumbs) %>
           <span class="cd-crumb-sep">/</span>

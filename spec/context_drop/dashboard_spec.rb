@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "stringio"
+
 require_relative "../spec_helper"
 require_relative "../dummy/config/environment"
 
@@ -234,6 +236,33 @@ RSpec.describe "ContextDrop::Dashboard" do
       expect(body).to include("&lt;button&gt;")
       expect(body).to include("#checkout-submit")
       expect(body).to include("cd-dashboard-comment-form")
+    end
+
+    it "serves screenshot bytes via dashboard attachment URLs (not host Active Storage) for fixed feedback" do
+      png_bytes = Base64.decode64(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+      )
+      fixed_fb = ContextDrop::Feedback.create!(
+        status: "fixed",
+        message: "Viewport layout regression",
+        page_url: "http://localhost/checkout"
+      )
+      att = fixed_fb.attachments.create!(attachment_type: "screenshot")
+      att.file.attach(io: StringIO.new(png_bytes), filename: "viewport.png", content_type: "image/png")
+
+      session.get "/context_drop/dashboard/feedbacks/#{fixed_fb.id}",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+
+      body = session.response.body
+      expect(body).to include("/context_drop/dashboard/feedbacks/#{fixed_fb.id}/attachments/#{att.id}")
+      expect(body).not_to include("/rails/active_storage/")
+
+      session.get "/context_drop/dashboard/feedbacks/#{fixed_fb.id}/attachments/#{att.id}",
+                  headers: { "HTTP_HOST" => "localhost" }
+      expect(session.response.status).to eq(200)
+      expect(session.response.media_type).to eq("image/png")
+      expect(session.response.body.b).to eq(png_bytes)
     end
 
     it "supports adding comments with images on the dashboard and transitions status to updated" do
