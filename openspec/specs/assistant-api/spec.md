@@ -6,7 +6,7 @@ Defines server-side Ask/Build/Feedback assistant turns, ChangeSet approval, and 
 ## Requirements
 
 ### Requirement: Assistant Turn Endpoint
-The engine SHALL expose `POST /context_drop/assistant/turn` accepting `mode` (`ask`, `build`, or `feedback`), `messages`, `page_url`, optional `element_references`, `attachments`, optional `change_set_id`, optional `feedback_id`, and optional `ownership_token`, returning assistant `reply`, optional `change_set`, `tool_calls`, and optional `feedback_confirmation` metadata.
+The engine SHALL expose `POST /context_drop/assistant/turn` accepting `mode` (`ask`, `build`, or `feedback`), `messages`, `page_url`, optional `element_references`, optional `change_set_id`, optional `feedback_id`, and optional `ownership_token`, returning assistant `reply`, optional `change_set`, `tool_calls`, and optional `feedback_confirmation` metadata. Optional `attachments` on the request body are reserved for a future turn context feature and MAY be ignored until implemented (see `openspec/STATE.md`).
 
 #### Scenario: Ask turn with configured BYOK
 - **GIVEN** Ask mode is enabled for the environment and org BYOK credentials resolve

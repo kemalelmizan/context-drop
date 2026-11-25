@@ -9,3 +9,4 @@
 - [x] 1.7 Widget: mode tabs, assistant turn API, ChangeSet UI
 - [x] 1.8 Install generator stub `config/context_drop/build.rb`
 - [x] 1.9 RSpec coverage for orchestrator, policy, and controller
+- [x] 1.10 Promote `change-set-persistence` and `host-assistant-tools` to `openspec/specs/` (`STATUS.md`)

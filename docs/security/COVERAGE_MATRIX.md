@@ -210,7 +210,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 |-----|----------------|-------------|
 | Ownership tokens in `localStorage` | Document risk; optional host flag to memory-only | `api-client.ts` |
 | ChangeSet visibility by `session_id` alone | Require submitter on shared staging | `assistant_controller.rb` |
-| Webhook URL HTTPS enforcement | Add validator on destination save | integrations controller |
+| Webhook URL HTTPS enforcement | `NotificationDestination` checks non-empty URL only; add HTTPS parse in production | `notification_destination.rb` |
 | Assistant vs agent LLM budget split | Separate vault keys / rate limits | `configuration.rb` |
 | Central secret-logging audit | RuboCop custom cop or logging filter | engine |
 

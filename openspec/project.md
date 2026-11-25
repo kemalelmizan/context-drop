@@ -8,12 +8,24 @@ ContextDrop functions as an independent, self-contained subsystem inside the hos
 ## Purpose
 **ContextDrop** (`context_drop`) is a self-hosted, open-source contextual feedback Ruby gem implemented as a **Mountable Rails Engine** (`isolate_namespace ContextDrop`) with an installation generator (`context_drop:install`), engine-owned database tables and migrations, a self-hosted feedback triage dashboard, a decoupled TypeScript frontend widget, and a built-in **Model Context Protocol (MCP) server** for IDEs and coding agents.
 
+## OpenSpec handoff
+- **Agent entrypoint:** `openspec/AGENTS.md` → `openspec/STATE.md` (implementation snapshot, drift, tests)
+- **Normative specs:** `openspec/specs/<capability>/spec.md` (see capability table in `STATE.md`)
+
 ## Security specifications
 - Baseline privacy: `openspec/specs/security-and-privacy/spec.md`
 - Cross-cutting hardening (MCP, dashboard, assistant, agent, ingestion): `openspec/specs/security-hardening/spec.md`
 - Widget assistant modes: `openspec/specs/assistant-security/spec.md`, `openspec/specs/assistant-feedback/spec.md`
 - Operator checklist: `docs/security/REVIEW_CHECKLIST.md`
 - Requirement → code matrix: `docs/security/COVERAGE_MATRIX.md`
+- Ops traceability: `openspec/specs/security-operations/spec.md`
+
+## Assistant (Ask / Build / Feedback)
+- HTTP API: `openspec/specs/assistant-api/spec.md` → `ContextDrop::AssistantController`
+- Widget UX: `openspec/specs/assistant-widget/spec.md` → `app/javascript/context_drop/widget.ts`
+- ChangeSets: `openspec/specs/change-set-persistence/spec.md` → `ContextDrop::ChangeSet`
+- Host tools: `openspec/specs/host-assistant-tools/spec.md` → `docs/assistant/host-*-pack.md`
+- Implementation library: `lib/context_drop/assistant/`
 
 ## Tech Stack
 - **Backend Architecture:** Mountable Ruby on Rails Engine (`rails plugin new context_drop --mountable`, `isolate_namespace ContextDrop`) targeting Ruby >= 3.1 and Rails >= 7.1 (including Rails 8+).
