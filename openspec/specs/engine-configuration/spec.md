@@ -24,7 +24,13 @@ The JavaScript widget (`app/javascript/context_drop/` and pre-bundled `app/asset
 - **THEN** the pre-bundled `<context-drop-widget>` JavaScript asset loads and initializes cleanly without requiring `npm` or `yarn` in the host project
 
 ### Requirement: Ruby Initializer & Environment Configuration
-ContextDrop SHALL provide a `ContextDrop.configure` block exposing settings for `enabled`, `position`, `storage`, `allow_anonymous`, `max_attachments`, `max_element_references`, `max_attachment_size`, `allowed_content_types`, `element_selection`, `screenshot_capture`, `excluded_selectors`, `current_submitter`, `authorize_submission`, `authorize_dashboard`, `rate_limit`, `on_feedback_created`, `mcp_enabled`, `mcp_api_key`, and `authorize_mcp`.
+ContextDrop SHALL provide a `ContextDrop.configure` block exposing settings for `enabled`, `position`, `storage`, `allow_anonymous`, `max_attachments`, `max_element_references`, `max_attachment_size`, `allowed_content_types`, `element_selection`, `screenshot_capture`, `excluded_selectors`, `current_submitter`, `authorize_submission`, `authorize_dashboard`, `rate_limit`, `on_feedback_created`, `mcp_enabled`, `mcp_api_key`, `authorize_mcp`, `assistant_enabled`, `assistant_modes_by_environment`, `assistant_models`, `assistant_feedback_confirmations`, `assistant_feedback_guidance`, `authorize_assistant_mode`, `build_target`, and host tool registration (`register_ask_tool`, `register_build_tool`).
+
+#### Scenario: Assistant disabled by default
+- **GIVEN** a fresh install without `CONTEXT_DROP_ASSISTANT_ENABLED`
+- **WHEN** the host boots
+- **THEN** `assistant_enabled` is `false`
+- **AND** `/context_drop/assistant/*` returns `404`
 
 #### Scenario: Configuring ContextDrop via initializer and environment variable
 - **GIVEN** `config/initializers/context_drop.rb` sets `config.enabled = ENV.fetch("CONTEXT_DROP_ENABLED", "false") == "true"`

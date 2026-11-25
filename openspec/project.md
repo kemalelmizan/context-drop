@@ -8,6 +8,11 @@ ContextDrop functions as an independent, self-contained subsystem inside the hos
 ## Purpose
 **ContextDrop** (`context_drop`) is a self-hosted, open-source contextual feedback Ruby gem implemented as a **Mountable Rails Engine** (`isolate_namespace ContextDrop`) with an installation generator (`context_drop:install`), engine-owned database tables and migrations, a self-hosted feedback triage dashboard, a decoupled TypeScript frontend widget, and a built-in **Model Context Protocol (MCP) server** for IDEs and coding agents.
 
+## Security specifications
+- Baseline privacy: `openspec/specs/security-and-privacy/spec.md`
+- Cross-cutting hardening (MCP, dashboard, assistant, agent, ingestion): `openspec/specs/security-hardening/spec.md`
+- Widget assistant modes: `openspec/specs/assistant-security/spec.md`, `openspec/specs/assistant-feedback/spec.md`
+
 ## Tech Stack
 - **Backend Architecture:** Mountable Ruby on Rails Engine (`rails plugin new context_drop --mountable`, `isolate_namespace ContextDrop`) targeting Ruby >= 3.1 and Rails >= 7.1 (including Rails 8+).
 - **Persistence & Storage:**

@@ -23,7 +23,13 @@ The engine SHALL expose `POST /context_drop/feedback` to validate and persist a 
 - **THEN** the engine creates the `ContextDrop::Feedback`, `ContextDrop::ElementReference`, and `ContextDrop::Attachment` records atomically
 - **AND** invokes `config.on_feedback_created` if configured
 - **AND** publishes `feedback.created` to the MCP Events store and matching notification destinations when configured
-- **AND** responds with `201 Created` including `id`, `status: "new"`, `attachments_count: 1`, `element_references_count: 1`, `created_at`, an HMAC-signed `ownership_token`, and serialized `feedback` context
+- **AND** responds with `201 Created` including `id`, `status: "new"`, `attachments_count: 1`, `element_references_count: 1`, `created_at`, an HMAC-signed `ownership_token`, `confirmation_message`, `confirmation_metadata`, and serialized `feedback` context
+
+#### Scenario: Confirmation message after create in smart mode
+- **GIVEN** `resolved_selection_mode` is `smart`
+- **WHEN** feedback is created with one pinned component labeled `"Complete Order" button`
+- **THEN** `confirmation_message` references feedback id and pin count
+- **AND** does not embed the raw selector string in user-facing confirmation text
 
 #### Scenario: Rejecting feedback submission exceeding max attachments or element references
 - **GIVEN** `ContextDrop.config.max_attachments` is `10`

@@ -1,5 +1,7 @@
 # Assistant Security: Ask, Build, Feedback
 
+> Normative OpenSpec: [`openspec/specs/assistant-security/spec.md`](../../openspec/specs/assistant-security/spec.md) and [`openspec/specs/security-hardening/spec.md`](../../openspec/specs/security-hardening/spec.md).
+
 ## Threat model (browser-facing)
 
 | Risk | Ask | Build | Feedback |

@@ -52,3 +52,10 @@ The engine SHALL enforce Rails CSRF token verification on all mutating HTTP requ
 - **GIVEN** `ContextDrop.config.rate_limit` allows at most `20` requests per hour per client IP
 - **WHEN** the same client sends a 21st submission request within one hour
 - **THEN** the engine responds with `429 Too Many Requests`
+
+### Requirement: Cross-Cutting Security Hardening Reference
+Implementations SHALL satisfy the normative requirements in [`security-hardening/spec.md`](../security-hardening/spec.md) and mode-specific controls in [`assistant-security/spec.md`](../assistant-security/spec.md) for Ask, Build, and Feedback assistant flows.
+
+#### Scenario: Security review checklist
+- **WHEN** an operator enables `assistant_enabled`, `mcp_enabled`, or `enable_local_agent`
+- **THEN** host runbooks SHALL verify rate limits, authorization procs, BYOK storage, and production Build mode policy per those specifications
