@@ -430,6 +430,7 @@ Production-ready **Ask** (product Q&A) and **Feedback** (pins + tickets) ship in
 - HTTP: `POST /context_drop/assistant/turn`, `POST .../change_sets/:id/approve`, `GET .../change_sets/:id`
 - Host git/CI: implement tools in `config/context_drop/build.rb` (see `docs/assistant/host-build-pack.md`)
 - BYOK policy: `docs/assistant/byok-policy.md`
+- Security review: [`docs/security/REVIEW_CHECKLIST.md`](docs/security/REVIEW_CHECKLIST.md) · [`docs/security/COVERAGE_MATRIX.md`](docs/security/COVERAGE_MATRIX.md)
 
 ---
 

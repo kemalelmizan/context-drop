@@ -5,3 +5,4 @@
 - [x] 1.3 Add `openspec/specs/assistant-feedback/spec.md`
 - [x] 1.4 Update `assistant-api`, `assistant-widget`, `http-ingestion-api` source specs
 - [x] 1.5 Add change deltas under `openspec/changes/assistant-security-and-confirmations/specs/`
+- [x] 1.6 Add `docs/security/REVIEW_CHECKLIST.md` and `docs/security/COVERAGE_MATRIX.md`

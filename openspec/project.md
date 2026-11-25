@@ -12,6 +12,8 @@ ContextDrop functions as an independent, self-contained subsystem inside the hos
 - Baseline privacy: `openspec/specs/security-and-privacy/spec.md`
 - Cross-cutting hardening (MCP, dashboard, assistant, agent, ingestion): `openspec/specs/security-hardening/spec.md`
 - Widget assistant modes: `openspec/specs/assistant-security/spec.md`, `openspec/specs/assistant-feedback/spec.md`
+- Operator checklist: `docs/security/REVIEW_CHECKLIST.md`
+- Requirement → code matrix: `docs/security/COVERAGE_MATRIX.md`
 
 ## Tech Stack
 - **Backend Architecture:** Mountable Ruby on Rails Engine (`rails plugin new context_drop --mountable`, `isolate_namespace ContextDrop`) targeting Ruby >= 3.1 and Rails >= 7.1 (including Rails 8+).

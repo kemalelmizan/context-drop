@@ -1,6 +1,7 @@
 # Assistant Security: Ask, Build, Feedback
 
-> Normative OpenSpec: [`openspec/specs/assistant-security/spec.md`](../../openspec/specs/assistant-security/spec.md) and [`openspec/specs/security-hardening/spec.md`](../../openspec/specs/security-hardening/spec.md).
+> Normative OpenSpec: [`openspec/specs/assistant-security/spec.md`](../../openspec/specs/assistant-security/spec.md) and [`openspec/specs/security-hardening/spec.md`](../../openspec/specs/security-hardening/spec.md).  
+> Release checklist: [`docs/security/REVIEW_CHECKLIST.md`](../security/REVIEW_CHECKLIST.md) · Code mapping: [`docs/security/COVERAGE_MATRIX.md`](../security/COVERAGE_MATRIX.md).
 
 ## Threat model (browser-facing)
 
