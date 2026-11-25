@@ -13,6 +13,13 @@ module ContextDrop
         template "initializer.rb.tt", "config/initializers/context_drop.rb"
       end
 
+      def create_build_pack_stub
+        dest = File.join(destination_root, "config/context_drop/build.rb")
+        return if File.exist?(dest)
+
+        template "context_drop_build.rb.tt", "config/context_drop/build.rb"
+      end
+
       def mount_engine_routes
         routes_path = File.join(destination_root, "config/routes.rb")
         return unless File.exist?(routes_path)

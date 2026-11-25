@@ -1,0 +1,146 @@
+# frozen_string_literal: true
+
+module ContextDrop
+  class AssistantController < ApplicationController
+    before_action :enforce_assistant_enabled!
+    before_action :enforce_rate_limit!, only: %i[turn approve_change_set]
+
+    def turn
+      mode = params[:mode].to_s.strip.downcase
+      unless ContextDrop.config.assistant_mode_enabled?(mode)
+        render json: { error: "Assistant mode '#{mode}' is not enabled for this environment" }, status: :forbidden
+        return
+      end
+
+      unless ContextDrop.config.assistant_authorized?(self, mode)
+        render json: { error: "Forbidden for assistant mode '#{mode}'" }, status: :forbidden
+        return
+      end
+
+      if %w[ask build].include?(mode) && !ContextDrop.config.assistant_llm_configured?
+        render json: { error: "Assistant LLM is not configured (org BYOK required for Ask and Build)" },
+               status: :unprocessable_entity
+        return
+      end
+
+      raw_messages = params[:messages].is_a?(Array) ? params[:messages].map { |m| to_plain_hash(m) } : []
+      raw_elements = params[:element_references].is_a?(Array) ? params[:element_references].map { |e| to_plain_hash(e) } : []
+
+      change_set = nil
+      if params[:change_set_id].present?
+        change_set = ChangeSet.find_by(id: params[:change_set_id])
+      end
+
+      orchestrator = Assistant::Orchestrator.new
+      result = orchestrator.run_turn(
+        mode: mode,
+        messages: raw_messages,
+        page_url: params[:page_url].to_s.strip.presence || request.referer,
+        element_references: raw_elements,
+        change_set: change_set,
+        submitter: ContextDrop.config.resolve_submitter(self),
+        session_id: assistant_session_id,
+        provider: params[:provider].to_s.strip.presence,
+        model: params[:model].to_s.strip.presence
+      )
+
+      render json: result, status: :ok
+    rescue ContextDrop::Error => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
+    def show_change_set
+      record = ChangeSet.find_by(id: params[:id])
+      unless record
+        render json: { error: "Change set not found" }, status: :not_found
+        return
+      end
+
+      unless change_set_visible?(record)
+        render json: { error: "Forbidden" }, status: :forbidden
+        return
+      end
+
+      Assistant::BuildExecutor.new(change_set: record).refresh_status! if ContextDrop.config.build_enabled?
+
+      render json: { change_set: record.reload.as_widget_json }, status: :ok
+    end
+
+    def approve_change_set
+      unless ContextDrop.config.build_enabled?
+        render json: { error: "Build mode is not enabled" }, status: :forbidden
+        return
+      end
+
+      unless ContextDrop.config.assistant_authorized?(self, "build")
+        render json: { error: "Forbidden" }, status: :forbidden
+        return
+      end
+
+      record = ChangeSet.find_by(id: params[:id])
+      unless record
+        render json: { error: "Change set not found" }, status: :not_found
+        return
+      end
+
+      unless change_set_visible?(record)
+        render json: { error: "Forbidden" }, status: :forbidden
+        return
+      end
+
+      unless record.status == "draft"
+        render json: { error: "Change set is not in draft status" }, status: :unprocessable_entity
+        return
+      end
+
+      record.approve!(raw_token: params[:approval_token].to_s)
+
+      result = Assistant::BuildExecutor.new(change_set: record).execute_after_approval!
+      if result[:is_error]
+        render json: { error: result[:error] || "Build execution failed", details: result }, status: :unprocessable_entity
+      else
+        render json: result, status: :ok
+      end
+    rescue ContextDrop::Error => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
+    def status
+      render json: {
+        enabled: ContextDrop.config.assistant_enabled?,
+        modes: ContextDrop.config.resolved_assistant_modes,
+        llm_configured: ContextDrop.config.assistant_llm_configured?,
+        build_enabled: ContextDrop.config.build_enabled?
+      }, status: :ok
+    end
+
+    private
+
+    def enforce_assistant_enabled!
+      return if ContextDrop.config.assistant_enabled?
+
+      render json: { error: "Assistant is disabled" }, status: :not_found
+    end
+
+    def assistant_session_id
+      session.id.to_s.presence || request.remote_ip.to_s
+    end
+
+    def change_set_visible?(record)
+      submitter = ContextDrop.config.resolve_submitter(self)
+      return true if submitter && record.submitter == submitter
+
+      record.session_id.present? && record.session_id == assistant_session_id
+    end
+
+    def to_plain_hash(obj)
+      if obj.respond_to?(:to_unsafe_h)
+        obj.to_unsafe_h.transform_keys(&:to_s)
+      elsif obj.is_a?(Hash)
+        obj.transform_keys(&:to_s)
+      else
+        {}
+      end
+    end
+  end
+end

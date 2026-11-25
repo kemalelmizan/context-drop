@@ -8,6 +8,9 @@ ContextDrop::Engine.routes.draw do
   match "feedback/:id/comments", to: "configs#cors_preflight", via: :options
   match "feedback/:feedback_id/attachments/:id", to: "configs#cors_preflight", via: :options
   match "health", to: "configs#cors_preflight", via: :options
+  match "assistant/turn", to: "configs#cors_preflight", via: :options
+  match "assistant/change_sets/:id", to: "configs#cors_preflight", via: :options
+  match "assistant/change_sets/:id/approve", to: "configs#cors_preflight", via: :options
 
   get "config", to: "configs#show"
   get "assets/context_drop.js", to: "configs#widget_bundle"
@@ -21,6 +24,13 @@ ContextDrop::Engine.routes.draw do
   get "health", to: "health#show"
   post "mcp", to: "mcp#create"
   get "mcp/events/stream", to: "mcp_events#stream"
+
+  scope "assistant" do
+    get "status", to: "assistant#status"
+    post "turn", to: "assistant#turn"
+    get "change_sets/:id", to: "assistant#show_change_set"
+    post "change_sets/:id/approve", to: "assistant#approve_change_set"
+  end
 
   scope "agent" do
     get "status", to: "agent#status"

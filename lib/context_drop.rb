@@ -17,6 +17,13 @@ require_relative "context_drop/agent/key_store"
 require_relative "context_drop/agent/workspace_sandbox"
 require_relative "context_drop/agent/llm_client"
 require_relative "context_drop/agent/orchestrator"
+require_relative "context_drop/assistant/tool_registry"
+require_relative "context_drop/assistant/ask_pack"
+require_relative "context_drop/assistant/build_pack"
+require_relative "context_drop/assistant/adapters/null_build"
+require_relative "context_drop/assistant/dom_context_formatter"
+require_relative "context_drop/assistant/build_executor"
+require_relative "context_drop/assistant/orchestrator"
 require_relative "context_drop/engine" if defined?(Rails::Engine)
 
 module ContextDrop

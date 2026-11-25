@@ -55,7 +55,13 @@ module ContextDrop
                   :local_agent_enabled,
                   :enable_local_agent,
                   :local_agent_workspace_root,
-                  :local_agent_key_store_path
+                  :local_agent_key_store_path,
+                  :assistant_enabled,
+                  :assistant_modes_by_environment,
+                  :assistant_models,
+                  :assistant_allow_code_tools_in_ask,
+                  :authorize_assistant_mode,
+                  :build_target
 
     attr_reader :position, :selection_mode
 
@@ -110,6 +116,28 @@ module ContextDrop
       @enable_local_agent = @local_agent_enabled
       @local_agent_workspace_root = nil
       @local_agent_key_store_path = nil
+
+      @assistant_enabled = ENV.fetch("CONTEXT_DROP_ASSISTANT_ENABLED", "false") == "true"
+      @assistant_modes_by_environment = nil
+      @assistant_models = {}
+      @assistant_allow_code_tools_in_ask = false
+      @build_target = {}
+      @assistant_ask_entries = []
+      @assistant_build_entries = []
+      @assistant_null_build_registered = false
+
+      @authorize_assistant_mode = lambda do |controller, mode|
+        mode_s = mode.to_s
+        if mode_s == "build"
+          user = controller.respond_to?(:current_user, true) ? controller.send(:current_user) : nil
+          is_staff = user.respond_to?(:staff?) && user.staff?
+          is_admin = user.respond_to?(:admin?) && user.admin?
+          is_dev = defined?(Rails) && Rails.respond_to?(:env) && Rails.env.development?
+          Boolean(is_staff || is_admin || is_dev)
+        else
+          Boolean(ContextDrop.config.submission_authorized?(controller))
+        end
+      end
     end
 
     def enable_local_agent
@@ -323,6 +351,109 @@ module ContextDrop
       !!@authorize_dashboard.call(controller)
     end
 
+    def assistant_ask_entries
+      @assistant_ask_entries
+    end
+
+    def assistant_build_entries
+      ensure_null_build_adapters!
+      @assistant_build_entries
+    end
+
+    def register_ask_tool(name:, description:, parameters: {}, &block)
+      raise ArgumentError, "Ask tool requires a block" unless block
+
+      Assistant::ToolRegistry.new(config: self).validate_ask_registration!(name)
+      @assistant_ask_entries << Assistant::ToolRegistry::Entry.new(
+        definition: {
+          name: name.to_s,
+          description: description.to_s,
+          parameters: parameters
+        },
+        callable: block,
+        write: false
+      )
+    end
+
+    def register_build_tool(name:, description:, parameters: {}, write: false, &block)
+      raise ArgumentError, "Build tool requires a block" unless block
+
+      @assistant_build_entries << Assistant::ToolRegistry::Entry.new(
+        definition: {
+          name: name.to_s,
+          description: description.to_s,
+          parameters: parameters
+        },
+        callable: block,
+        write: Boolean(write)
+      )
+    end
+
+    def ensure_null_build_adapters!
+      return if @assistant_null_build_registered
+      return if @assistant_build_entries.any?
+
+      Assistant::Adapters::NullBuild.register!(self)
+      @assistant_null_build_registered = true
+    end
+
+    def build_target_hash
+      case @build_target
+      when Hash
+        @build_target.transform_keys(&:to_s)
+      else
+        {}
+      end
+    end
+
+    def resolved_assistant_modes
+      explicit = @assistant_modes_by_environment
+      if explicit.is_a?(Hash)
+        env = resolved_environment
+        list = explicit[env.to_sym] || explicit[env.to_s] || explicit[env.to_s.downcase.to_sym]
+        return normalize_assistant_modes(list) if list
+      end
+
+      if rails_production?
+        %w[ask feedback]
+      else
+        %w[ask build feedback]
+      end
+    end
+
+    def assistant_mode_enabled?(mode)
+      resolved_assistant_modes.map(&:to_s).include?(mode.to_s)
+    end
+
+    def build_enabled?
+      assistant_enabled? && assistant_mode_enabled?("build")
+    end
+
+    def assistant_enabled?
+      Boolean(@assistant_enabled)
+    end
+
+    def assistant_llm_configured?
+      return false unless assistant_enabled?
+
+      store = Agent::KeyStore.new
+      store.providers_status[:providers].any? { |p| p[:configured] }
+    rescue StandardError
+      false
+    end
+
+    def assistant_authorized?(controller, mode)
+      return false unless authorize_assistant_mode.respond_to?(:call)
+
+      !!authorize_assistant_mode.call(controller, mode)
+    end
+
+    def normalize_assistant_modes(list)
+      Array(list).map { |m| m.to_s.strip.downcase }.select do |m|
+        %w[ask build feedback].include?(m)
+      end.uniq
+    end
+
     def public_widget_config(overrides = {})
       resolved_position = overrides[:position] ? normalize_position(overrides[:position]) : @position
       agent_active = if overrides.key?(:agent_enabled)
@@ -355,6 +486,14 @@ module ContextDrop
         },
         privacy: {
           excluded_selectors: effective_excluded_selectors
+        },
+        assistant: {
+          enabled: assistant_enabled?,
+          modes: resolved_assistant_modes,
+          llm_configured: assistant_llm_configured?,
+          build: {
+            enabled: build_enabled?
+          }
         }
       }
     end

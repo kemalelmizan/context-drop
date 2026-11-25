@@ -33,6 +33,11 @@ ContextDrop.configure do |config|
   config.element_capture_padding = 16
   config.smart_capture_padding = 84
 
+  # Widget assistant (Ask / Build / Feedback). Production defaults to Ask + Feedback; Build on staging/local.
+  # config.assistant_enabled = ENV.fetch("CONTEXT_DROP_ASSISTANT_ENABLED", "false") == "true"
+  # config.assistant_modes_by_environment = { production: %w[ask feedback], staging: %w[ask build feedback] }
+  # Load host Build pack (git/CI adapters): see config/context_drop/build.rb
+
   # Local development BYOK Agentic Sidebar (strictly active only in `development` on 127.0.0.1 / ::1)
   # In v0.2.0, local development defaults to staging/verbose mode so developers can test bug pinning
   # and use their preferred IDE coding agents (Antigravity, Cursor, Claude Code, etc.) via MCP.

@@ -2,6 +2,8 @@ export type WidgetPosition = "bottom_right" | "bottom_left" | "top_right" | "top
 
 export type WidgetSurfaceMode = "agent" | "feedback";
 
+export type AssistantChatMode = "ask" | "build" | "feedback";
+
 export type SelectionMode = "smart" | "verbose";
 
 export interface BoundingRectSnapshot {
@@ -135,6 +137,48 @@ export interface WidgetConfig {
   privacy: {
     excluded_selectors: string[];
   };
+  assistant?: {
+    enabled: boolean;
+    modes: AssistantChatMode[];
+    llm_configured: boolean;
+    build?: {
+      enabled: boolean;
+    };
+  };
+}
+
+export interface AssistantChangeSet {
+  id: number | string;
+  status: string;
+  page_url?: string | null;
+  summary?: string | null;
+  branch_name?: string | null;
+  pr_url?: string | null;
+  preview_url?: string | null;
+  feedback_id?: number | string | null;
+  patches?: Array<{ path: string; old_string: string; new_string: string }>;
+  not_on_main?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AssistantTurnRequestPayload {
+  mode: AssistantChatMode;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  page_url: string;
+  element_references?: ElementReferenceSnapshot[];
+  change_set_id?: number | string;
+}
+
+export interface AssistantTurnResponse {
+  reply: string;
+  mode: AssistantChatMode;
+  provider?: string;
+  model?: string;
+  tool_calls?: Array<{ name: string; summary: string; status: string }>;
+  change_set?: AssistantChangeSet;
+  approval_token?: string;
+  error?: string;
 }
 
 export interface FeedbackSubmissionPayload {

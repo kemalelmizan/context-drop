@@ -4,6 +4,9 @@ import type {
   AgentKeysUpdatePayload,
   AgentKeysUpdateResponse,
   AgentStatusResponse,
+  AssistantChangeSet,
+  AssistantTurnRequestPayload,
+  AssistantTurnResponse,
   ContextDropApiClientOptions,
   CrossEnvFeedbackListResponse,
   CreateCommentPayload,
@@ -628,5 +631,45 @@ export class ContextDropApiClient {
       });
 
     return this.executeWithCsrfRetry(makeRequest, "Failed to revert file edit");
+  }
+
+  public async sendAssistantTurn(payload: AssistantTurnRequestPayload): Promise<AssistantTurnResponse> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/assistant/turn`, {
+        method: "POST",
+        credentials: this.credentials,
+        headers: this.buildJsonHeaders(csrfToken),
+        body: JSON.stringify(payload)
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Assistant request failed");
+  }
+
+  public async fetchChangeSet(id: number | string): Promise<{ change_set: AssistantChangeSet }> {
+    const response = await fetch(`${this.baseUrl}/assistant/change_sets/${encodeURIComponent(String(id))}`, {
+      method: "GET",
+      credentials: this.credentials,
+      headers: this.mergeClientHeaders({ Accept: "application/json" })
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error((errBody as { error?: string }).error || `Failed to load change set (${response.status})`);
+    }
+    return (await response.json()) as { change_set: AssistantChangeSet };
+  }
+
+  public async approveChangeSet(
+    id: number | string,
+    approvalToken: string
+  ): Promise<{ change_set?: AssistantChangeSet; error?: string }> {
+    const makeRequest = async (csrfToken: string | null) =>
+      fetch(`${this.baseUrl}/assistant/change_sets/${encodeURIComponent(String(id))}/approve`, {
+        method: "POST",
+        credentials: this.credentials,
+        headers: this.buildJsonHeaders(csrfToken),
+        body: JSON.stringify({ approval_token: approvalToken })
+      });
+
+    return this.executeWithCsrfRetry(makeRequest, "Failed to approve change set");
   }
 }

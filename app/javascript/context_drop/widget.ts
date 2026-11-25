@@ -15,6 +15,8 @@ import type {
   SessionFeedbackAttachmentItem,
   SessionFeedbackCommentItem,
   SessionFeedbackEntry,
+  AssistantChangeSet,
+  AssistantChatMode,
   WidgetConfig,
   WidgetPosition,
   WidgetSurfaceMode
@@ -208,6 +210,14 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     elementDomNodes: Map<string, Element>;
     attachments: PendingAttachmentItem[];
   } | null = null;
+
+  private assistantChatMode: AssistantChatMode = "feedback";
+  private assistantMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  private activeChangeSet: AssistantChangeSet | null = null;
+  private changeSetApprovalToken: string | null = null;
+  private composerAssistantModeSwitchWrap: HTMLDivElement | null = null;
+  private assistantStreamEl: HTMLDivElement | null = null;
+  private changeSetCardEl: HTMLDivElement | null = null;
 
   // Local Agent state
   private agentStatusLoaded: boolean = false;
@@ -560,8 +570,21 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       agent: { ...(this.config.agent || { enabled: false }), ...(partial.agent || {}) },
       features: { ...this.config.features, ...(partial.features || {}) },
       limits: { ...this.config.limits, ...(partial.limits || {}) },
-      privacy: { ...this.config.privacy, ...(partial.privacy || {}) }
+      privacy: { ...this.config.privacy, ...(partial.privacy || {}) },
+      assistant: {
+        enabled: Boolean(this.config.assistant?.enabled),
+        modes: this.config.assistant?.modes || ["feedback"],
+        llm_configured: Boolean(this.config.assistant?.llm_configured),
+        build: {
+          enabled: Boolean(this.config.assistant?.build?.enabled),
+          ...(partial.assistant?.build || {})
+        },
+        ...(partial.assistant || {})
+      }
     };
+    if (this.composerAssistantModeSwitchWrap) {
+      this.composerAssistantModeSwitchWrap.hidden = !this.config.assistant?.enabled;
+    }
     if (partial.csrf_token) {
       this.apiClient.setCsrfToken(partial.csrf_token);
     }
@@ -2029,6 +2052,217 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     return compactBar;
   }
 
+  private buildComposerAssistantModeSwitch(active: AssistantChatMode): HTMLDivElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cd-mode-switch cd-assistant-mode-switch";
+    wrap.setAttribute("role", "tablist");
+    wrap.setAttribute("aria-label", "Assistant mode");
+
+    const modes = (this.config.assistant?.modes || ["feedback"]).filter((m) =>
+      ["ask", "build", "feedback"].includes(m)
+    );
+
+    const labels: Record<AssistantChatMode, string> = {
+      ask: "Ask",
+      build: "Build",
+      feedback: "Feedback"
+    };
+
+    for (const mode of modes) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `cd-mode-btn${active === mode ? " is-active" : ""}`;
+      btn.setAttribute("aria-selected", String(active === mode));
+      btn.textContent = labels[mode];
+      btn.addEventListener("click", () => this.setAssistantChatMode(mode));
+      wrap.appendChild(btn);
+    }
+
+    return wrap;
+  }
+
+  public setAssistantChatMode(mode: AssistantChatMode): void {
+    if (!this.config.assistant?.enabled) return;
+    if (!this.config.assistant.modes?.includes(mode)) return;
+
+    this.assistantChatMode = mode;
+    if (this.chatThreadEl) {
+      this.chatThreadEl.hidden = mode !== "feedback";
+    }
+    if (this.assistantStreamEl) {
+      this.assistantStreamEl.hidden = mode === "feedback";
+    }
+    if (this.composerAssistantModeSwitchWrap) {
+      this.composerAssistantModeSwitchWrap.innerHTML = "";
+      this.composerAssistantModeSwitchWrap.appendChild(
+        this.buildComposerAssistantModeSwitch(mode)
+      );
+    }
+    if (this.textareaEl) {
+      const placeholders: Record<AssistantChatMode, string> = {
+        ask: "Ask a product question...",
+        build: "Describe the change you want...",
+        feedback: this.config.placeholder
+      };
+      this.textareaEl.placeholder = placeholders[mode];
+    }
+    this.syncUiStates();
+  }
+
+  private renderAssistantStream(): void {
+    if (!this.assistantStreamEl) return;
+    this.assistantStreamEl.innerHTML = "";
+    for (const msg of this.assistantMessages) {
+      const bubble = document.createElement("div");
+      bubble.className = `cd-assistant-msg is-${msg.role}`;
+      bubble.textContent = msg.content;
+      this.assistantStreamEl.appendChild(bubble);
+    }
+  }
+
+  private renderChangeSetCard(): void {
+    if (!this.changeSetCardEl) return;
+    const cs = this.activeChangeSet;
+    this.changeSetCardEl.innerHTML = "";
+    if (!cs) {
+      this.changeSetCardEl.hidden = true;
+      return;
+    }
+    this.changeSetCardEl.hidden = false;
+
+    const title = document.createElement("div");
+    title.className = "cd-change-set-title";
+    title.textContent = cs.summary || `Change set #${cs.id}`;
+    this.changeSetCardEl.appendChild(title);
+
+    const badge = document.createElement("div");
+    badge.className = "cd-change-set-badge";
+    badge.textContent =
+      cs.not_on_main !== false
+        ? `Not on main · ${cs.status}`
+        : `Status: ${cs.status}`;
+    this.changeSetCardEl.appendChild(badge);
+
+    if (cs.branch_name) {
+      const branch = document.createElement("div");
+      branch.className = "cd-change-set-meta";
+      branch.textContent = `Branch: ${cs.branch_name}`;
+      this.changeSetCardEl.appendChild(branch);
+    }
+
+    if (cs.pr_url) {
+      const link = document.createElement("a");
+      link.className = "cd-change-set-link";
+      link.href = cs.pr_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open pull request";
+      this.changeSetCardEl.appendChild(link);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "cd-change-set-actions";
+
+    if (cs.status === "draft" && this.changeSetApprovalToken) {
+      const approveBtn = document.createElement("button");
+      approveBtn.type = "button";
+      approveBtn.className = "cd-btn cd-btn-primary";
+      approveBtn.textContent = "Create branch & open PR";
+      approveBtn.addEventListener("click", () => {
+        void this.approveActiveChangeSet();
+      });
+      actions.appendChild(approveBtn);
+    }
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "cd-btn cd-btn-xs";
+    refreshBtn.textContent = "Refresh status";
+    refreshBtn.addEventListener("click", () => {
+      void this.refreshActiveChangeSet();
+    });
+    actions.appendChild(refreshBtn);
+
+    this.changeSetCardEl.appendChild(actions);
+  }
+
+  private async handleAssistantTurn(message: string): Promise<void> {
+    if (!this.config.assistant?.enabled) return;
+    if (
+      (this.assistantChatMode === "ask" || this.assistantChatMode === "build") &&
+      !this.config.assistant.llm_configured
+    ) {
+      this.showStatus("Assistant LLM is not configured (org BYOK required).", "error");
+      return;
+    }
+
+    this.isSubmitting = true;
+    this.assistantMessages.push({ role: "user", content: message });
+    this.renderAssistantStream();
+    if (this.textareaEl) this.textareaEl.value = "";
+
+    try {
+      const res = await this.apiClient.sendAssistantTurn({
+        mode: this.assistantChatMode,
+        messages: this.assistantMessages,
+        page_url: typeof window !== "undefined" ? window.location.href : "",
+        element_references: this.elementReferences,
+        change_set_id: this.activeChangeSet?.id
+      });
+      if (res.reply) {
+        this.assistantMessages.push({ role: "assistant", content: res.reply });
+        this.renderAssistantStream();
+      }
+      if (res.change_set) {
+        this.activeChangeSet = res.change_set;
+        if (res.approval_token) this.changeSetApprovalToken = res.approval_token;
+        this.renderChangeSetCard();
+      }
+      this.showStatus("Assistant replied.", "success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Assistant request failed.";
+      this.showStatus(msg, "error");
+    } finally {
+      this.isSubmitting = false;
+      this.syncUiStates();
+    }
+  }
+
+  private async approveActiveChangeSet(): Promise<void> {
+    if (!this.activeChangeSet?.id || !this.changeSetApprovalToken) return;
+    this.isSubmitting = true;
+    try {
+      const res = await this.apiClient.approveChangeSet(
+        this.activeChangeSet.id,
+        this.changeSetApprovalToken
+      );
+      if (res.change_set) {
+        this.activeChangeSet = res.change_set;
+        this.changeSetApprovalToken = null;
+        this.renderChangeSetCard();
+        this.showStatus("Change set submitted for review (not on main yet).", "success");
+      } else {
+        this.showStatus(res.error || "Approval failed.", "error");
+      }
+    } catch (err) {
+      this.showStatus(err instanceof Error ? err.message : "Approval failed.", "error");
+    } finally {
+      this.isSubmitting = false;
+      this.syncUiStates();
+    }
+  }
+
+  private async refreshActiveChangeSet(): Promise<void> {
+    if (!this.activeChangeSet?.id) return;
+    try {
+      const res = await this.apiClient.fetchChangeSet(this.activeChangeSet.id);
+      this.activeChangeSet = res.change_set;
+      this.renderChangeSetCard();
+    } catch (err) {
+      this.showStatus(err instanceof Error ? err.message : "Refresh failed.", "error");
+    }
+  }
+
   private buildModeSwitchDom(activeMode: WidgetSurfaceMode): HTMLDivElement {
     const wrap = document.createElement("div");
     wrap.className = "cd-mode-switch";
@@ -2106,6 +2340,13 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     const headerActions = document.createElement("div");
     headerActions.className = "cd-header-actions";
 
+    const assistantSwitchHolder = document.createElement("div");
+    assistantSwitchHolder.className = "cd-composer-mode-switch-wrap";
+    assistantSwitchHolder.hidden = !this.config.assistant?.enabled;
+    assistantSwitchHolder.appendChild(this.buildComposerAssistantModeSwitch(this.assistantChatMode));
+    this.composerAssistantModeSwitchWrap = assistantSwitchHolder;
+    headerActions.appendChild(assistantSwitchHolder);
+
     const modeSwitchHolder = document.createElement("div");
     modeSwitchHolder.className = "cd-composer-mode-switch-wrap";
     modeSwitchHolder.hidden = !this.config.agent?.enabled;
@@ -2146,6 +2387,19 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     this.chatThreadEl = chatThread;
     composer.appendChild(chatThread);
     this.renderChatThread();
+
+    const assistantStream = document.createElement("div");
+    assistantStream.className = "cd-assistant-stream";
+    assistantStream.setAttribute("aria-live", "polite");
+    assistantStream.hidden = true;
+    this.assistantStreamEl = assistantStream;
+    composer.appendChild(assistantStream);
+
+    const changeSetCard = document.createElement("div");
+    changeSetCard.className = "cd-change-set-card";
+    changeSetCard.hidden = true;
+    this.changeSetCardEl = changeSetCard;
+    composer.appendChild(changeSetCard);
 
     const tray = document.createElement("div");
     tray.className = "cd-tray";
@@ -4459,6 +4713,20 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
     }
 
     const message = (this.textareaEl?.value || "").trim();
+
+    if (
+      this.assistantChatMode !== "feedback" &&
+      editingId === null &&
+      commentingId === null
+    ) {
+      if (message.length === 0) {
+        this.showStatus("Enter a message first.", "error");
+        return;
+      }
+      await this.handleAssistantTurn(message);
+      return;
+    }
+
     if (commentingId !== null) {
       if (message.length === 0 && this.attachments.length === 0) {
         this.showStatus("Write a comment or attach an image first.", "error");

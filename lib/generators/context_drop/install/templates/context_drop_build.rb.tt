@@ -1,0 +1,83 @@
+# frozen_string_literal: true
+
+# Host Build pack for ContextDrop Build mode (git + CI).
+# Register real implementations that call your git host and CI APIs.
+# See docs/assistant/host-build-pack.md
+
+ContextDrop.configure do |config|
+  config.build_target = {
+    environment: "staging",
+    repo: "your-org/your-repo",
+    default_base_branch: "main"
+  }
+
+  config.register_build_tool(
+    name: "build_context_resolve",
+    description: "Resolve page URL and pins to editable paths",
+    parameters: {
+      type: "object",
+      properties: {
+        page_url: { type: "string" },
+        element_references: { type: "array" }
+      }
+    },
+    write: false
+  ) do |args|
+  { screen: "unknown", allowed_globs: ["app/views/**", "app/components/**"] }
+  end
+
+  config.register_build_tool(
+    name: "repo_read_file",
+    description: "Read a file from the repository",
+    parameters: {
+      type: "object",
+      required: ["path"],
+      properties: { path: { type: "string" } }
+    },
+    write: false
+  ) do |args|
+    path = args["path"].to_s
+    full = Rails.root.join(path)
+    raise "Path not allowed" unless full.to_s.start_with?(Rails.root.to_s)
+
+    { path: path, content: File.read(full) }
+  end
+
+  config.register_build_tool(
+    name: "repo_search",
+    description: "Search repository source",
+    parameters: {
+      type: "object",
+      required: ["query"],
+      properties: { query: { type: "string" } }
+    },
+    write: false
+  ) do |args|
+    { matches: [] }
+  end
+
+  config.register_build_tool(
+    name: "build_status_get",
+    description: "Fetch CI status for a change set",
+    parameters: {
+      type: "object",
+      required: ["change_set_id"],
+      properties: { change_set_id: { type: "integer" } }
+    },
+    write: false
+  ) do |_args|
+    { status: "checks_running", preview_url: nil }
+  end
+
+  # Write tools (invoked only after user approves a ChangeSet in the widget)
+  %w[git_create_branch git_apply_patches git_push_branch pull_request_open change_set_abandon].each do |tool_name|
+    config.register_build_tool(
+      name: tool_name,
+      description: "Host git/CI integration (implement me)",
+      parameters: { type: "object", properties: {} },
+      write: true
+    ) do |_args|
+      { error: "Implement #{tool_name} in config/context_drop/build.rb" }
+    end
+  end
+end

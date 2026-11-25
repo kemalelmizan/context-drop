@@ -693,6 +693,60 @@ select:focus-visible {
   color: var(--cd-surface);
 }
 
+.cd-assistant-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.cd-assistant-msg {
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--cd-surface-elevated);
+  border: 1px solid var(--cd-border);
+}
+
+.cd-assistant-msg.is-user {
+  border-color: rgba(194, 65, 12, 0.25);
+}
+
+.cd-assistant-msg.is-assistant {
+  background: var(--cd-surface);
+}
+
+.cd-change-set-card {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--cd-border);
+  background: var(--cd-surface-elevated);
+  font-size: 12.5px;
+}
+
+.cd-change-set-badge {
+  margin-top: 6px;
+  font-weight: 600;
+  color: var(--cd-warning, #9a3412);
+}
+
+.cd-change-set-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.cd-change-set-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--cd-accent);
+}
+
 .cd-pin-dock-grip {
   display: inline-flex;
   align-items: center;

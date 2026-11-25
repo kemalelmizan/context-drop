@@ -417,6 +417,22 @@ Because user-submitted feedback messages from `staging` or `production` are untr
 
 ---
 
+## Widget Assistant: Ask · Build · Feedback
+
+Production-ready **Ask** (product Q&A) and **Feedback** (pins + tickets) ship in the widget; **Build** (PR-first vibe coding) defaults to staging/local. Enable with `config.assistant_enabled = true` and org BYOK (`ANTHROPIC_API_KEY`, etc.).
+
+| Mode | Default on production | LLM | Outcome |
+|------|----------------------|-----|---------|
+| **Ask** | On | Required | Plain-language answers via host Ask tools |
+| **Build** | Off | Required | `ChangeSet` → approve → branch/PR (not on `main`) |
+| **Feedback** | On | No | Existing `POST /feedback` flow |
+
+- HTTP: `POST /context_drop/assistant/turn`, `POST .../change_sets/:id/approve`, `GET .../change_sets/:id`
+- Host git/CI: implement tools in `config/context_drop/build.rb` (see `docs/assistant/host-build-pack.md`)
+- BYOK policy: `docs/assistant/byok-policy.md`
+
+---
+
 ## MCP
 
 ContextDrop ships with a built-in **Model Context Protocol (MCP)** server (`ContextDrop::MCP::Server`) so you or your AI coding agent can pull bug reports, inspect exact CSS selectors and DOM paths, view multimodal screenshots, and mark issues resolved without leaving your editor.
