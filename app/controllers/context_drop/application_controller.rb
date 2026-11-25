@@ -57,8 +57,8 @@ module ContextDrop
       render json: { error: "Forbidden" }, status: :forbidden
     end
 
-    def enforce_rate_limit!
-      limit_cfg = ContextDrop.config.rate_limit
+    def enforce_rate_limit!(limit_cfg: ContextDrop.config.rate_limit, namespace: "feedback")
+      return if limit_cfg == false
       return unless limit_cfg.is_a?(Hash)
 
       max_requests = (limit_cfg[:max_requests] || limit_cfg["max_requests"]).to_i
@@ -67,12 +67,19 @@ module ContextDrop
 
       client_identifier = request.remote_ip.presence || "unknown"
       bucket = (Time.now.to_i / period_seconds)
-      cache_key = "context_drop:rate_limit:#{client_identifier}:#{bucket}"
+      cache_key = "context_drop:rate_limit:#{namespace}:#{client_identifier}:#{bucket}"
 
       count = increment_rate_limit_counter(cache_key, period_seconds)
       return if count <= max_requests
 
       render json: { error: "Rate limit exceeded. Please try again later." }, status: :too_many_requests
+    end
+
+    def enforce_assistant_rate_limit!
+      enforce_rate_limit!(
+        limit_cfg: ContextDrop.config.effective_assistant_rate_limit,
+        namespace: "assistant"
+      )
     end
 
     def increment_rate_limit_counter(cache_key, period_seconds)
@@ -166,6 +173,8 @@ module ContextDrop
 
       response.set_header("Cache-Control", "private, max-age=3600")
       response.set_header("Content-Security-Policy", "default-src 'none'; sandbox")
+      response.set_header("X-Content-Type-Options", "nosniff")
+      response.set_header("Referrer-Policy", "no-referrer")
       send_data attachment.file.download,
                 type: attachment.file.content_type || "image/png",
                 disposition: "inline",

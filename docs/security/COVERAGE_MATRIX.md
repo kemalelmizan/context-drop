@@ -106,7 +106,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 | SEC-H035 | MCP disabled default | [`configuration.rb`](../../lib/context_drop/configuration.rb); [`mcp_controller.rb`](../../app/controllers/context_drop/mcp_controller.rb) | `mcp_spec.rb` | Implemented | Gem |
 | SEC-H036 | Constant-time Bearer | [`mcp_controller.rb`](../../app/controllers/context_drop/mcp_controller.rb); [`mcp_events_controller.rb`](../../app/controllers/context_drop/mcp_events_controller.rb) `secure_compare` | `mcp_spec.rb` | Implemented | Gem |
 | SEC-H037 | MCP data not executed | Tools return JSON only; [`lib/context_drop/mcp/dispatcher.rb`](../../lib/context_drop/mcp/dispatcher.rb) | Op / MCP client docs | Implemented | Gem+Op |
-| SEC-H038 | Remote HTTPS | [`lib/context_drop/mcp/remote_client.rb`](../../lib/context_drop/mcp/remote_client.rb); [`src/mcp/remote-client.ts`](../../src/mcp/remote-client.ts) | `mcp_spec.rb` | Implemented | Gem |
+| SEC-H038 | Remote HTTPS & SSRF/redirect defense | [`lib/context_drop/mcp/remote_client.rb`](../../lib/context_drop/mcp/remote_client.rb); [`src/mcp/remote-client.ts`](../../src/mcp/remote-client.ts) (`redirect: "error"`, private/metadata IP block) | `mcp_spec.rb`, `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 | SEC-H039 | MCP status auth | Same Bearer as HTTP MCP | `mcp_spec.rb` | Implemented | Gem |
 | SEC-H040 | SSE auth | `mcp_events_controller.rb` stream | events specs | Implemented | Gem |
 | SEC-H041 | Webhook signing | [`lib/context_drop/notifications/webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb); TS `webhook-client.ts` | notifications spec | Implemented | Gem |
@@ -135,7 +135,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 |----|-------------|----------------|-------|--------|-------|
 | SEC-H051 | Server-side keys only | [`key_store.rb`](../../lib/context_drop/agent/key_store.rb); encrypted vault | `agent_spec.rb` | Implemented | Gem |
 | SEC-H052 | Custom URL HTTPS policy | [`llm_client.rb`](../../lib/context_drop/agent/llm_client.rb) `validate_custom_base_url!` | `agent_spec.rb` | Implemented | Gem |
-| SEC-H053 | Separate assistant budget | Config `assistant_models`; shared `KeyStore` — **no separate vault yet** | — | Partial | Host |
+| SEC-H053 | Separate assistant budget | [`configuration.rb`](../../lib/context_drop/configuration.rb) `assistant_key_store`, `assistant_allowed_models`, `assistant_rate_limit`, `assistant_timeouts`; [`key_store.rb`](../../lib/context_drop/agent/key_store.rb) `scope: :assistant` | `assistant_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Host |
 
 ---
 
@@ -151,8 +151,8 @@ Maps normative requirements to implementation paths, automated tests, and owners
 | SEC-A006 | ChangeSet approval token | [`change_set.rb`](../../app/models/context_drop/change_set.rb); approve action | `assistant_spec.rb` | Implemented | Gem |
 | SEC-A007 | ChangeSet visibility | [`assistant_controller.rb`](../../app/controllers/context_drop/assistant_controller.rb) `change_set_visible?` (strict submitter match, hashed session ID, non-local submitter gate, `turn` `change_set_id` check) | `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-A008 | Smart DOM for LLM | `dom_context_formatter.rb` | `assistant_security_spec.rb` | Implemented | Gem |
-| SEC-A009 | Assistant rate limit | `before_action :enforce_rate_limit!` | — | Implemented | Gem |
-| SEC-A010 | Audit without prompts | [`assistant_turn.rb`](../../app/models/context_drop/assistant_turn.rb); orchestrator create | — | Implemented | Gem |
+| SEC-A009 | Assistant rate limit | `before_action :enforce_assistant_rate_limit!` (`assistant` namespace); Node `checkAssistantRateLimit` | `assistant_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-A010 | Audit without prompts | [`assistant_turn.rb`](../../app/models/context_drop/assistant_turn.rb); [`src/assistant/change-sets.ts`](../../src/assistant/change-sets.ts) | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 | SEC-A011 | Public config hygiene | `public_widget_config` `assistant` block | `configuration_spec.rb` | Implemented | Gem |
 | SEC-H054 | Fail-closed Ask/Build BYOK | `assistant_controller.rb` turn; Feedback exempt | `assistant_spec.rb` | Implemented | Gem |
 | SEC-H055 | Mode-separated registries | `tool_registry.rb` | `assistant_security_spec.rb` | Implemented | Gem |
@@ -187,9 +187,9 @@ Maps normative requirements to implementation paths, automated tests, and owners
 
 | ID | Requirement | Implementation | Tests | Status | Owner |
 |----|-------------|----------------|-------|--------|-------|
-| SEC-H066 | IDOR parity | [`src/server/handler.ts`](../../src/server/handler.ts) `matchesOwnFeedback`, ownership | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
-| SEC-H067 | Rate limits | `handler.ts` rate limit bucket | nextjs tests | Implemented | Gem |
-| SEC-H068 | Integrations API key | `handler.ts` integrations routes; env `CONTEXT_DROP_INTEGRATIONS_API_KEY` | nextjs tests | Implemented | Gem |
+| SEC-H066 | IDOR & assistant parity | [`src/server/handler.ts`](../../src/server/handler.ts) `matchesOwnFeedback`, `/assistant/*`, `src/assistant/*` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H067 | Rate limits | `handler.ts` `checkRateLimit` + `checkAssistantRateLimit` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H068 | Integrations API key | `handler.ts` integrations routes; env `CONTEXT_DROP_INTEGRATIONS_API_KEY` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 
 ---
 
@@ -197,7 +197,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 
 | ID | Requirement | Implementation | Tests | Status | Owner |
 |----|-------------|----------------|-------|--------|-------|
-| SEC-H069 | No secret logging | Controllers avoid logging tokens; **not centrally audited** | — | Partial | Op |
+| SEC-H069 | No secret logging | [`lib/context_drop/engine.rb`](../../lib/context_drop/engine.rb) `filter_parameters`; [`lib/context_drop/secret_redactor.rb`](../../lib/context_drop/secret_redactor.rb); [`src/notifications/secrets.ts`](../../src/notifications/secrets.ts) `redactSecretsFromText` | `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Op |
 | SEC-H070 | Soft delete scope | `Feedback` scopes; MCP `list_feedbacks` active filter | persistence specs | Implemented | Gem |
 | SEC-H071 | LLM retention DPA | — | — | Op | Host |
 | SEC-H072 | Confirmation legal accuracy | `assistant_feedback_confirmations` config | — | Host | Host |
@@ -206,10 +206,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 
 ## Known gaps & follow-ups
 
-| Gap | Recommendation | Target file |
-|-----|----------------|-------------|
-| Assistant vs agent LLM budget split | Separate vault keys / rate limits | `configuration.rb` |
-| Central secret-logging audit | RuboCop custom cop or logging filter | engine |
+All gem-owned gaps (`SEC-H014`, `SEC-H042`, `SEC-H053`, `SEC-H069`, `SEC-A007`) and `@context-drop` assistant parity (`SEC-H066`, `SEC-H067`) are implemented and covered by automated tests. Remaining `Host` / `Op` rows (`SEC-H061`, `SEC-H062`, `SEC-H071`, `SEC-H072`) depend on host git adapters, vendor DPAs, and legal copy review.
 
 ---
 

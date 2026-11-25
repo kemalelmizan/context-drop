@@ -42,9 +42,10 @@ module ContextDrop
     end
 
     def record_delivery!(status:, error: nil)
+      scrubbed_err = error ? ContextDrop::SecretRedactor.scrub(error, extra_secrets: secrets.values).truncate(2000) : nil
       update_columns(
         last_delivery_status: status.to_s,
-        last_delivery_error: error&.to_s&.truncate(2000),
+        last_delivery_error: scrubbed_err,
         last_delivered_at: Time.current,
         updated_at: Time.current
       )

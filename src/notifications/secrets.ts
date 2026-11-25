@@ -5,20 +5,40 @@ import path from "node:path";
 const CIPHER = "aes-256-gcm";
 
 function resolveMasterKey(secret?: string, storageDir?: string): Buffer {
-  const explicit = (secret ?? process.env.CONTEXT_DROP_OWNERSHIP_SECRET ?? "").trim();
-  if (explicit.length >= 16) {
-    return crypto.createHash("sha256").update(explicit, "utf8").digest();
+  const candidates = [
+    secret,
+    process.env.CONTEXT_DROP_OWNERSHIP_SECRET,
+    process.env.CONTEXT_DROP_SECRET_KEY,
+    process.env.CONTEXT_DROP_SECRET
+  ];
+  for (const cand of candidates) {
+    const explicit = (cand ?? "").trim();
+    if (explicit.length >= 16) {
+      return crypto.createHash("sha256").update(explicit, "utf8").digest();
+    }
   }
 
   const base = storageDir ?? path.join(process.cwd(), ".context-drop");
   const keyPath = path.join(base, "notification.key");
   if (fs.existsSync(keyPath)) {
     const raw = fs.readFileSync(keyPath);
+    try {
+      fs.chmodSync(keyPath, 0o600);
+    } catch {
+      // Non-fatal on filesystems without POSIX chmod
+    }
     if (raw.byteLength === 32) return raw;
   }
   fs.mkdirSync(base, { recursive: true });
   const fresh = crypto.randomBytes(32);
-  fs.writeFileSync(keyPath, fresh);
+  const tmpPath = `${keyPath}.tmp.${crypto.randomBytes(4).toString("hex")}`;
+  fs.writeFileSync(tmpPath, fresh, { mode: 0o600 });
+  try {
+    fs.chmodSync(tmpPath, 0o600);
+  } catch {
+    // Non-fatal
+  }
+  fs.renameSync(tmpPath, keyPath);
   return fresh;
 }
 
@@ -71,4 +91,47 @@ export function maskSecret(raw: string | undefined | null): string | null {
   if (!str) return null;
   if (str.length <= 6) return "••••••••";
   return `••••${str.slice(-4)}`;
+}
+
+export function redactSecretsFromText(
+  input: string | undefined | null,
+  extraSecrets: Array<string | undefined | null> = []
+): string {
+  let out = String(input ?? "");
+  if (!out) return out;
+
+  const envCandidates = [
+    process.env.CONTEXT_DROP_MCP_API_KEY,
+    process.env.CONTEXT_DROP_SECRET_KEY,
+    process.env.CONTEXT_DROP_OWNERSHIP_SECRET,
+    process.env.CONTEXT_DROP_SECRET,
+    process.env.CONTEXT_DROP_INTEGRATIONS_API_KEY,
+    process.env.CONTEXT_DROP_LLM_API_KEY,
+    process.env.CONTEXT_DROP_ASSISTANT_LLM_API_KEY,
+    process.env.CONTEXT_DROP_ASSISTANT_ANTHROPIC_API_KEY,
+    process.env.CONTEXT_DROP_ASSISTANT_OPENAI_API_KEY,
+    process.env.CONTEXT_DROP_ASSISTANT_GEMINI_API_KEY,
+    process.env.ANTHROPIC_API_KEY,
+    process.env.OPENAI_API_KEY,
+    process.env.GEMINI_API_KEY,
+    ...extraSecrets
+  ]
+    .map((s) => (s ?? "").trim())
+    .filter((s) => s.length >= 8)
+    .sort((a, b) => b.length - a.length);
+
+  for (const secret of envCandidates) {
+    out = out.replaceAll(secret, "[FILTERED]");
+  }
+
+  out = out.replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi, "$1[FILTERED]");
+  out = out.replace(
+    /\b(?:sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{16,}|whsec_[A-Za-z0-9_-]{8,})\b/g,
+    "[FILTERED]"
+  );
+  out = out.replace(
+    /\b(ownership_tokens?|approval_token|api[_-]?key|app_secret|signing_secret|mcp_api_key|x-goog-api-key|x-api-key)(\s*[=:]\s*["']?)([^&\s"',;]+)/gi,
+    "$1$2[FILTERED]"
+  );
+  return out;
 }

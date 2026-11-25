@@ -2,11 +2,35 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SelectionMode, WidgetConfig, WidgetPosition } from "../../app/javascript/context_drop/types.ts";
+import type {
+  AssistantChatMode,
+  SelectionMode,
+  WidgetConfig,
+  WidgetPosition
+} from "../../app/javascript/context_drop/types.ts";
+import {
+  AssistantStateStore,
+  isChangeSetVisible,
+  serializeChangeSetForWidget
+} from "../assistant/change-sets.ts";
+import {
+  renderConfirmationForFeedback,
+  renderFeedbackGuidance
+} from "../assistant/confirmations.ts";
+import {
+  isAssistantModelAllowed,
+  resolveAssistantCredentials
+} from "../assistant/llm-client.ts";
+import {
+  executeApprovedBuildChangeSet,
+  refreshBuildChangeSetStatus,
+  runAssistantOrchestratorTurn
+} from "../assistant/orchestrator.ts";
+import { AssistantToolRegistry } from "../assistant/tools.ts";
 import { LocalEventStore } from "../events/local-event-store.ts";
 import { mapLifecycleHook, publishFeedbackEvent } from "../events/publisher.ts";
 import { FEEDBACK_EVENT_NAMES, type FeedbackEventName } from "../events/types.ts";
-import { decryptSecrets, maskSecret } from "../notifications/secrets.ts";
+import { decryptSecrets, maskSecret, redactSecretsFromText } from "../notifications/secrets.ts";
 import { ContextDropMcpDispatcher } from "../mcp/dispatcher.ts";
 import { subscribeMcpEventStream } from "../mcp/event-stream-registry.ts";
 import { resolveHostEnvironment } from "../mcp/environment-router.ts";
@@ -64,6 +88,10 @@ type ParsedSubRoute =
   | { kind: "integrations_destinations" }
   | { kind: "integrations_destination_item"; destinationId: string }
   | { kind: "integrations_destination_test"; destinationId: string }
+  | { kind: "assistant_status" }
+  | { kind: "assistant_turn" }
+  | { kind: "assistant_change_set"; changeSetId: string }
+  | { kind: "assistant_change_set_approve"; changeSetId: string }
   | { kind: "unknown" };
 
 let sharedDefaultLocalStorage: StorageAdapter | null = null;
@@ -318,6 +346,27 @@ function parseSubRoute(pathname: string): ParsedSubRoute {
     return { kind: "integrations_destinations" };
   }
 
+  if (clean.endsWith("/assistant/status")) {
+    return { kind: "assistant_status" };
+  }
+  if (clean.endsWith("/assistant/turn")) {
+    return { kind: "assistant_turn" };
+  }
+  const csApproveMatch = /\/assistant\/change_sets\/([^/]+)\/approve$/.exec(clean);
+  if (csApproveMatch) {
+    return {
+      kind: "assistant_change_set_approve",
+      changeSetId: decodeURIComponent(csApproveMatch[1]!)
+    };
+  }
+  const csItemMatch = /\/assistant\/change_sets\/([^/]+)$/.exec(clean);
+  if (csItemMatch) {
+    return {
+      kind: "assistant_change_set",
+      changeSetId: decodeURIComponent(csItemMatch[1]!)
+    };
+  }
+
   return { kind: "unknown" };
 }
 
@@ -532,12 +581,22 @@ export interface ContextDropFetchHandler {
   (request: Request): Promise<Response>;
   resetRateLimits: () => void;
   getStorage: () => StorageAdapter;
+  getAssistantStateStore: () => AssistantStateStore;
 }
 
 export function createContextDropFetchHandler(
   config: ContextDropServerConfig = {}
 ): ContextDropFetchHandler {
   const rateLimitStore = new Map<string, RateLimitBucket>();
+  const assistantRateLimitStore = new Map<string, RateLimitBucket>();
+  const assistantRegistry = new AssistantToolRegistry({
+    askTools: config.assistant?.askTools,
+    buildTools: config.assistant?.buildTools,
+    allowCodeToolsInAsk: config.assistant?.allowCodeToolsInAsk
+  });
+  const assistantStateStore = new AssistantStateStore({
+    dir: config.storageDir ?? null
+  });
 
   const getStorage = (): StorageAdapter =>
     config.storage ?? getSharedDefaultStorage(config.storageDir);
@@ -687,6 +746,63 @@ export function createContextDropFetchHandler(
     maxImageDimensions: config.limits?.maxImageDimensions ?? [4096, 4096]
   });
 
+  const isAssistantEnabled = (): boolean => {
+    if (config.assistant?.enabled !== undefined) return Boolean(config.assistant.enabled);
+    return (process.env.CONTEXT_DROP_ASSISTANT_ENABLED ?? "").trim().toLowerCase() === "true";
+  };
+
+  const getResolvedAssistantModes = (envName: string): AssistantChatMode[] => {
+    const map = config.assistant?.modesByEnvironment;
+    if (map) {
+      const explicit = map[envName] ?? map[envName.toLowerCase()];
+      if (Array.isArray(explicit)) {
+        const valid: AssistantChatMode[] = [];
+        for (const m of explicit) {
+          const norm = String(m).trim().toLowerCase() as AssistantChatMode;
+          if ((norm === "ask" || norm === "build" || norm === "feedback") && !valid.includes(norm)) {
+            valid.push(norm);
+          }
+        }
+        return valid;
+      }
+    }
+    return envName === "production" ? ["ask", "feedback"] : ["ask", "build", "feedback"];
+  };
+
+  const isAssistantLlmConfigured = (envName: string): boolean => {
+    if (!isAssistantEnabled()) return false;
+    return (
+      resolveAssistantCredentials("ask", config.assistant?.llm, {
+        isProduction: envName === "production"
+      }) !== null
+    );
+  };
+
+  const isAnonymousChangeSetsAllowed = (envName: string): boolean => {
+    if (config.assistant?.allowAnonymousChangeSets !== undefined) {
+      return Boolean(config.assistant.allowAnonymousChangeSets);
+    }
+    if (envName === "production") return false;
+    return envName === "development" || envName === "test";
+  };
+
+  const checkAssistantModeAuthorized = async (
+    request: Request,
+    mode: AssistantChatMode,
+    submitter: SubmitterIdentity | null
+  ): Promise<boolean> => {
+    if (config.assistant?.authorizeMode) {
+      return Boolean(await config.assistant.authorizeMode(request, mode, submitter));
+    }
+    if (mode === "build") {
+      const envName = getEnvironment();
+      if (envName === "development") return true;
+      const roleType = (submitter?.type ?? "").trim().toLowerCase();
+      return roleType === "admin" || roleType === "staff";
+    }
+    return true;
+  };
+
   const buildPublicWidgetConfig = (): WidgetConfig => {
     const envName = getEnvironment();
     const pos =
@@ -728,6 +844,14 @@ export function createContextDropFetchHandler(
       privacy: {
         excluded_selectors: excluded,
         persist_ownership_tokens: config.privacy?.persistOwnershipTokens !== false
+      },
+      assistant: {
+        enabled: isAssistantEnabled(),
+        modes: getResolvedAssistantModes(envName),
+        llm_configured: isAssistantLlmConfigured(envName),
+        build: {
+          enabled: isAssistantEnabled() && getResolvedAssistantModes(envName).includes("build")
+        }
       }
     };
   };
@@ -762,26 +886,30 @@ export function createContextDropFetchHandler(
     };
   };
 
-  const checkRateLimit = (request: Request): boolean => {
-    if (config.rateLimit === false) return true;
-    const maxRequests = config.rateLimit?.maxRequests ?? 20;
-    const periodSeconds = config.rateLimit?.periodSeconds ?? 3600;
+  const checkRateLimitInStore = (
+    request: Request,
+    store: Map<string, RateLimitBucket>,
+    limitConfig: ContextDropServerConfig["rateLimit"]
+  ): boolean => {
+    if (limitConfig === false) return true;
+    const maxRequests = limitConfig?.maxRequests ?? 20;
+    const periodSeconds = limitConfig?.periodSeconds ?? 3600;
     if (maxRequests <= 0 || periodSeconds <= 0) return true;
 
     const nowMs = Date.now();
-    for (const [k, v] of rateLimitStore.entries()) {
+    for (const [k, v] of store.entries()) {
       if (v.expiresAtMs <= nowMs) {
-        rateLimitStore.delete(k);
+        store.delete(k);
       }
     }
 
     const ip = resolveClientIp(request);
     const windowBucket = Math.floor(nowMs / (periodSeconds * 1000));
     const key = `${ip}:${windowBucket}`;
-    const existing = rateLimitStore.get(key);
+    const existing = store.get(key);
 
     if (!existing) {
-      rateLimitStore.set(key, {
+      store.set(key, {
         count: 1,
         expiresAtMs: (windowBucket + 1) * periodSeconds * 1000
       });
@@ -791,6 +919,16 @@ export function createContextDropFetchHandler(
     existing.count += 1;
     return existing.count <= maxRequests;
   };
+
+  const checkRateLimit = (request: Request): boolean =>
+    checkRateLimitInStore(request, rateLimitStore, config.rateLimit);
+
+  const checkAssistantRateLimit = (request: Request): boolean =>
+    checkRateLimitInStore(
+      request,
+      assistantRateLimitStore,
+      config.assistant?.rateLimit !== undefined ? config.assistant.rateLimit : config.rateLimit
+    );
 
   const parseNewAttachmentSpec = async (
     attObj: Record<string, unknown>,
@@ -1405,12 +1543,22 @@ export function createContextDropFetchHandler(
           try {
             await config.onFeedbackCreated(created);
           } catch (cbErr) {
-            console.error("[context-drop] onFeedbackCreated callback error:", cbErr);
+            console.error(
+              "[context-drop] onFeedbackCreated callback error:",
+              redactSecretsFromText((cbErr as Error)?.message ?? String(cbErr), [
+                config.mcp?.apiKey,
+                config.ownershipSecret
+              ])
+            );
           }
         }
         await emitFeedbackLifecycleEvent("created", created);
 
         const ownershipToken = generateOwnershipToken(created.id, getOwnershipSecret());
+        const confirmation = renderConfirmationForFeedback(created, {
+          smart: getResolvedSelectionMode(hostEnv) === "smart",
+          customTemplates: config.assistant?.feedbackConfirmations
+        });
         const responseHeaders: Record<string, string> = { ...corsHeaders };
         if (!existingSessionToken) {
           responseHeaders["Set-Cookie"] = buildSessionSetCookieHeader(
@@ -1427,6 +1575,8 @@ export function createContextDropFetchHandler(
             attachments_count: created.attachments.length,
             element_references_count: created.element_references.length,
             ownership_token: ownershipToken,
+            confirmation_message: confirmation.message,
+            confirmation_metadata: confirmation.metadata,
             feedback: serializeOwnFeedback(created, ownershipToken),
             created_at: created.created_at,
             updated_at: created.updated_at
@@ -1657,7 +1807,13 @@ export function createContextDropFetchHandler(
           try {
             await config.onFeedbackUpdated(updated);
           } catch (cbErr) {
-            console.error("[context-drop] onFeedbackUpdated callback error:", cbErr);
+            console.error(
+              "[context-drop] onFeedbackUpdated callback error:",
+              redactSecretsFromText((cbErr as Error)?.message ?? String(cbErr), [
+                config.mcp?.apiKey,
+                config.ownershipSecret
+              ])
+            );
           }
         }
         await emitFeedbackLifecycleEvent("updated", updated, previousStatus);
@@ -1801,7 +1957,13 @@ export function createContextDropFetchHandler(
           try {
             await config.onFeedbackUpdated(result.feedback);
           } catch (cbErr) {
-            console.error("[context-drop] onFeedbackUpdated callback error:", cbErr);
+            console.error(
+              "[context-drop] onFeedbackUpdated callback error:",
+              redactSecretsFromText((cbErr as Error)?.message ?? String(cbErr), [
+                config.mcp?.apiKey,
+                config.ownershipSecret
+              ])
+            );
           }
         }
         await emitFeedbackLifecycleEvent("updated", result.feedback, commentPreviousStatus);
@@ -1892,7 +2054,13 @@ export function createContextDropFetchHandler(
         try {
           await config.onFeedbackDeleted(deleted);
         } catch (cbErr) {
-          console.error("[context-drop] onFeedbackDeleted callback error:", cbErr);
+          console.error(
+            "[context-drop] onFeedbackDeleted callback error:",
+            redactSecretsFromText((cbErr as Error)?.message ?? String(cbErr), [
+              config.mcp?.apiKey,
+              config.ownershipSecret
+            ])
+          );
         }
       }
       await emitFeedbackLifecycleEvent("deleted", deleted);
@@ -1959,17 +2127,440 @@ export function createContextDropFetchHandler(
           "Content-Type": attMeta.content_type || "image/png",
           "Cache-Control": "private, max-age=3600",
           "Content-Security-Policy": "default-src 'none'; sandbox",
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
           ...corsHeaders
         }
       });
+    }
+
+    if (
+      parsedRoute.kind === "assistant_status" ||
+      parsedRoute.kind === "assistant_turn" ||
+      parsedRoute.kind === "assistant_change_set" ||
+      parsedRoute.kind === "assistant_change_set_approve"
+    ) {
+      if (!isAssistantEnabled()) {
+        return jsonResponse({ error: "Assistant is disabled" }, 404, corsHeaders);
+      }
+
+      const envName = getEnvironment();
+      const modes = getResolvedAssistantModes(envName);
+      const buildEnabled = modes.includes("build");
+
+      if (parsedRoute.kind === "assistant_status" && method === "GET") {
+        return jsonResponse(
+          {
+            enabled: true,
+            modes,
+            llm_configured: isAssistantLlmConfigured(envName),
+            build_enabled: buildEnabled
+          },
+          200,
+          corsHeaders
+        );
+      }
+
+      if (parsedRoute.kind === "assistant_change_set" && method === "GET") {
+        const auth = await checkSubmissionAuth(request);
+        if (!auth.ok) {
+          return jsonResponse({ error: auth.error }, auth.status, corsHeaders);
+        }
+        const record = assistantStateStore.getChangeSet(parsedRoute.changeSetId);
+        if (!record) {
+          return jsonResponse({ error: "Change set not found" }, 404, corsHeaders);
+        }
+        if (
+          !isChangeSetVisible(record, {
+            submitter: auth.submitter,
+            sessionId: extractHashedSessionId(request),
+            allowAnonymousChangeSets: isAnonymousChangeSetsAllowed(envName)
+          })
+        ) {
+          return jsonResponse({ error: "Forbidden" }, 403, corsHeaders);
+        }
+        const refreshed = buildEnabled
+          ? await refreshBuildChangeSetStatus(record, assistantRegistry, assistantStateStore)
+          : record;
+        return jsonResponse(
+          { change_set: serializeChangeSetForWidget(refreshed) },
+          200,
+          corsHeaders
+        );
+      }
+
+      if (parsedRoute.kind === "assistant_change_set_approve" && method === "POST") {
+        const originCheck = verifyMutationOrigin(request, config.allowedOrigins);
+        if (!originCheck.ok) {
+          return jsonResponse({ error: originCheck.error }, 403, corsHeaders);
+        }
+        const auth = await checkSubmissionAuth(request);
+        if (!auth.ok) {
+          return jsonResponse({ error: auth.error }, auth.status, corsHeaders);
+        }
+        if (!checkAssistantRateLimit(request)) {
+          return jsonResponse(
+            { error: "Rate limit exceeded. Please try again later." },
+            429,
+            corsHeaders
+          );
+        }
+        if (!buildEnabled) {
+          return jsonResponse({ error: "Build mode is not enabled" }, 403, corsHeaders);
+        }
+        if (!(await checkAssistantModeAuthorized(request, "build", auth.submitter))) {
+          return jsonResponse({ error: "Forbidden" }, 403, corsHeaders);
+        }
+
+        const record = assistantStateStore.getChangeSet(parsedRoute.changeSetId);
+        if (!record) {
+          return jsonResponse({ error: "Change set not found" }, 404, corsHeaders);
+        }
+        if (
+          !isChangeSetVisible(record, {
+            submitter: auth.submitter,
+            sessionId: extractHashedSessionId(request),
+            allowAnonymousChangeSets: isAnonymousChangeSetsAllowed(envName)
+          })
+        ) {
+          return jsonResponse({ error: "Forbidden" }, 403, corsHeaders);
+        }
+        if (record.status !== "draft") {
+          return jsonResponse({ error: "Change set is not in draft status" }, 422, corsHeaders);
+        }
+
+        const rawBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const rawApproval = String(rawBody["approval_token"] ?? "").trim();
+        if (!rawApproval) {
+          return jsonResponse({ error: "approval_token is required" }, 422, corsHeaders);
+        }
+
+        try {
+          const approved = assistantStateStore.approveChangeSet(
+            record.id,
+            rawApproval,
+            getOwnershipSecret()
+          );
+          const execRes = await executeApprovedBuildChangeSet({
+            record: approved,
+            buildTarget: config.assistant?.buildTarget,
+            registry: assistantRegistry,
+            stateStore: assistantStateStore
+          });
+          if (execRes.is_error) {
+            return jsonResponse(
+              { error: execRes.error || "Build execution failed", details: execRes },
+              422,
+              corsHeaders
+            );
+          }
+          return jsonResponse(execRes, 200, corsHeaders);
+        } catch (err) {
+          return jsonResponse(
+            { error: (err as Error).message || "Approval failed" },
+            422,
+            corsHeaders
+          );
+        }
+      }
+
+      if (parsedRoute.kind === "assistant_turn" && method === "POST") {
+        const originCheck = verifyMutationOrigin(request, config.allowedOrigins);
+        if (!originCheck.ok) {
+          return jsonResponse({ error: originCheck.error }, 403, corsHeaders);
+        }
+        const auth = await checkSubmissionAuth(request);
+        if (!auth.ok) {
+          return jsonResponse({ error: auth.error }, auth.status, corsHeaders);
+        }
+        if (!checkAssistantRateLimit(request)) {
+          return jsonResponse(
+            { error: "Rate limit exceeded. Please try again later." },
+            429,
+            corsHeaders
+          );
+        }
+
+        const rawBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const mode = String(rawBody["mode"] ?? "")
+          .trim()
+          .toLowerCase() as AssistantChatMode;
+        if (!modes.includes(mode)) {
+          return jsonResponse(
+            { error: `Assistant mode '${mode}' is not enabled for this environment` },
+            403,
+            corsHeaders
+          );
+        }
+        if (!(await checkAssistantModeAuthorized(request, mode, auth.submitter))) {
+          return jsonResponse(
+            { error: `Forbidden for assistant mode '${mode}'` },
+            403,
+            corsHeaders
+          );
+        }
+
+        const existingSessionToken = extractRawSessionCookie(request);
+        const rawSessionToken = existingSessionToken ?? crypto.randomBytes(16).toString("hex");
+        const hashedSessionId = hashSessionCookieValue(rawSessionToken);
+        const responseHeaders: Record<string, string> = { ...corsHeaders };
+        if (!existingSessionToken) {
+          responseHeaders["Set-Cookie"] = buildSessionSetCookieHeader(
+            rawSessionToken,
+            url.protocol === "https:"
+          );
+        }
+
+        if (mode === "feedback") {
+          const fbIdRaw = rawBody["feedback_id"];
+          if (fbIdRaw !== undefined && fbIdRaw !== null && String(fbIdRaw).trim() !== "") {
+            const storage = getStorage();
+            const feedback = await storage.getFeedback(String(fbIdRaw).trim());
+            if (!feedback || feedback.deleted_at) {
+              return jsonResponse({ error: "Feedback not found" }, 422, responseHeaders);
+            }
+            const secret = getOwnershipSecret();
+            const rawTokens = combineRequestOwnershipTokens(
+              request,
+              url,
+              rawBody["ownership_token"]
+            );
+            const hasExplicitTokenOrSubmitter =
+              (auth.submitter.id !== undefined && auth.submitter.id !== null) ||
+              Boolean(auth.submitter.label) ||
+              Boolean(findOwnershipTokenFor(rawTokens, feedback.id, secret));
+            if (
+              !hasExplicitTokenOrSubmitter ||
+              !matchesOwnFeedback(feedback, {
+                submitter: auth.submitter,
+                session_id: null,
+                token_ids: extractVerifiedOwnershipIds(rawTokens, secret)
+              })
+            ) {
+              return jsonResponse({ error: "Forbidden" }, 403, responseHeaders);
+            }
+
+            const conf = renderConfirmationForFeedback(feedback, {
+              smart: getResolvedSelectionMode(envName) === "smart",
+              customTemplates: config.assistant?.feedbackConfirmations
+            });
+            assistantStateStore.appendTurnAudit({
+              mode: "feedback",
+              session_id: hashedSessionId,
+              submitter: auth.submitter,
+              tool_names: [],
+              duration_ms: 0
+            });
+            return jsonResponse(
+              {
+                reply: conf.message,
+                mode: "feedback",
+                tool_calls: [],
+                feedback_confirmation: conf
+              },
+              200,
+              responseHeaders
+            );
+          }
+
+          const guidance = renderFeedbackGuidance(config.assistant?.feedbackGuidance);
+          return jsonResponse(
+            {
+              reply: guidance.message,
+              mode: "feedback",
+              tool_calls: [],
+              feedback_confirmation: guidance
+            },
+            200,
+            responseHeaders
+          );
+        }
+
+        const llmCfg = config.assistant?.llm;
+        const allowClientOverride = Boolean(llmCfg?.allowClientModelOverride);
+        const requestedProvider = allowClientOverride
+          ? String(rawBody["provider"] ?? "").trim() || null
+          : null;
+        const requestedModel = allowClientOverride
+          ? String(rawBody["model"] ?? "").trim() || null
+          : null;
+        if (
+          requestedModel &&
+          !isAssistantModelAllowed(mode, requestedModel, llmCfg?.allowedModels)
+        ) {
+          return jsonResponse(
+            { error: `Model '${requestedModel}' is not permitted for assistant mode '${mode}'` },
+            422,
+            responseHeaders
+          );
+        }
+
+        const creds = resolveAssistantCredentials(mode, llmCfg, {
+          providerOverride: requestedProvider,
+          modelOverride: requestedModel,
+          isProduction: envName === "production"
+        });
+        if (!creds) {
+          return jsonResponse(
+            { error: "Assistant LLM is not configured (org BYOK required for Ask and Build)" },
+            422,
+            responseHeaders
+          );
+        }
+        if (!isAssistantModelAllowed(mode, creds.model, llmCfg?.allowedModels)) {
+          return jsonResponse(
+            { error: `Model '${creds.model}' is not permitted for assistant mode '${mode}'` },
+            422,
+            responseHeaders
+          );
+        }
+
+        const rawElements = Array.isArray(rawBody["element_references"])
+          ? rawBody["element_references"]
+          : [];
+        const rawAttachments = Array.isArray(rawBody["attachments"])
+          ? rawBody["attachments"]
+          : [];
+        const maxAttachments = config.limits?.maxAttachments ?? 10;
+        const maxElements = config.limits?.maxElementReferences ?? 10;
+
+        if (rawAttachments.length > maxAttachments) {
+          return jsonResponse(
+            {
+              error: `Attachments count (${rawAttachments.length}) exceeds maximum allowed (${maxAttachments})`
+            },
+            422,
+            responseHeaders
+          );
+        }
+        if (rawElements.length > maxElements) {
+          return jsonResponse(
+            {
+              error: `Element references count (${rawElements.length}) exceeds maximum allowed (${maxElements})`
+            },
+            422,
+            responseHeaders
+          );
+        }
+
+        let activeChangeSet = null;
+        const changeSetIdRaw = rawBody["change_set_id"];
+        if (
+          changeSetIdRaw !== undefined &&
+          changeSetIdRaw !== null &&
+          String(changeSetIdRaw).trim() !== ""
+        ) {
+          activeChangeSet = assistantStateStore.getChangeSet(String(changeSetIdRaw).trim());
+          if (!activeChangeSet) {
+            return jsonResponse({ error: "Change set not found" }, 404, responseHeaders);
+          }
+          if (
+            !isChangeSetVisible(activeChangeSet, {
+              submitter: auth.submitter,
+              sessionId: hashedSessionId,
+              allowAnonymousChangeSets: isAnonymousChangeSetsAllowed(envName)
+            })
+          ) {
+            return jsonResponse({ error: "Forbidden" }, 403, responseHeaders);
+          }
+        }
+
+        try {
+          const sanitizedElements = rawElements.map((el) => sanitizeElementReference(el));
+          const uploadOpts = getUploadValidationOptions();
+          const storage = getStorage();
+          const images: Array<{ mime_type: string; data: string }> = [];
+          const maxInlineBytes = 4 * 1024 * 1024;
+
+          for (const rawAtt of rawAttachments) {
+            const parsedAtt = await parseNewAttachmentSpec(asRecord(rawAtt), storage, uploadOpts);
+            if (parsedAtt.data && parsedAtt.data.byteLength > maxInlineBytes) {
+              throw new UploadValidationError("Inline attachment exceeds 4 MB vision limit");
+            }
+            if (parsedAtt.data && parsedAtt.content_type) {
+              images.push({
+                mime_type: parsedAtt.content_type,
+                data: Buffer.from(parsedAtt.data).toString("base64")
+              });
+            }
+          }
+
+          const rawMessages = Array.isArray(rawBody["messages"]) ? rawBody["messages"] : [];
+          const messages = rawMessages.map((m) => {
+            const rec = asRecord(m);
+            return {
+              role: String(rec["role"] ?? ""),
+              content: String(rec["content"] ?? "")
+            };
+          });
+          const pageUrl =
+            String(rawBody["page_url"] ?? "").trim() ||
+            request.headers.get("referer")?.trim() ||
+            "/";
+
+          const readTimeoutMs =
+            mode === "ask"
+              ? (llmCfg?.timeoutsMs?.ask ?? 45_000)
+              : (llmCfg?.timeoutsMs?.build ?? 90_000);
+          const maxIterations = Math.max(
+            1,
+            Math.min(
+              25,
+              mode === "ask"
+                ? (llmCfg?.maxIterations?.ask ?? 4)
+                : (llmCfg?.maxIterations?.build ?? 8)
+            )
+          );
+
+          const turnResult = await runAssistantOrchestratorTurn({
+            mode,
+            environment: envName,
+            smartSelectionMode: getResolvedSelectionMode(envName) === "smart",
+            messages,
+            pageUrl,
+            elements: sanitizedElements,
+            images,
+            activeChangeSet,
+            submitter: auth.submitter,
+            sessionId: hashedSessionId,
+            allowAnonymousChangeSets: isAnonymousChangeSetsAllowed(envName),
+            ownershipSecret: getOwnershipSecret(),
+            credentials: creds,
+            readTimeoutMs,
+            maxIterations,
+            buildTarget: config.assistant?.buildTarget,
+            registry: assistantRegistry,
+            stateStore: assistantStateStore,
+            transport: llmCfg?.transport
+          });
+
+          return jsonResponse(turnResult, 200, responseHeaders);
+        } catch (err) {
+          if (err instanceof SensitiveElementError || err instanceof UploadValidationError) {
+            return jsonResponse({ error: err.message }, err.status, responseHeaders);
+          }
+          const maybeStatus = (err as Error & { status?: number }).status;
+          return jsonResponse(
+            { error: (err as Error).message || "Assistant request failed" },
+            maybeStatus === 403 ? 403 : 422,
+            responseHeaders
+          );
+        }
+      }
+
+      return jsonResponse({ error: "Method not allowed" }, 405, corsHeaders);
     }
 
     return jsonResponse({ error: "Not Found" }, 404, corsHeaders);
   };
 
   return Object.assign(handler, {
-    resetRateLimits: () => rateLimitStore.clear(),
-    getStorage
+    resetRateLimits: () => {
+      rateLimitStore.clear();
+      assistantRateLimitStore.clear();
+    },
+    getStorage,
+    getAssistantStateStore: () => assistantStateStore
   });
 }
 

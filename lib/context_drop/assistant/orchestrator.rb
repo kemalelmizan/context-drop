@@ -8,7 +8,7 @@ module ContextDrop
       MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024 # 4 MB
 
       def initialize(key_store: nil, registry: nil)
-        @key_store = key_store || Agent::KeyStore.new
+        @key_store = key_store || ContextDrop.config.assistant_key_store
         @registry = registry || ToolRegistry.new
       end
 
@@ -35,6 +35,9 @@ module ContextDrop
         end
 
         creds = @key_store.resolve_credentials!(provider: provider, model_override: model_for_mode(mode_s, model))
+        unless ContextDrop.config.assistant_model_allowed?(mode_s, creds[:model])
+          raise ContextDrop::Error, "Model '#{creds[:model]}' is not permitted for assistant mode '#{mode_s}'"
+        end
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
         tools = @registry.tools_for_mode(mode_s, allow_write: false).map { |d| llm_tool_schema(d) }
@@ -44,7 +47,8 @@ module ContextDrop
         approval_token = nil
         final_text = ""
 
-        iterations = mode_s == "ask" ? MAX_ASK_ITERATIONS : MAX_BUILD_ITERATIONS
+        iterations = ContextDrop.config.resolved_assistant_max_iterations(mode_s)
+        read_timeout = ContextDrop.config.resolved_assistant_timeout(mode_s)
         active_change_set = change_set
 
         iterations.times do
@@ -52,7 +56,8 @@ module ContextDrop
             credentials: creds,
             system_prompt: build_system_prompt(mode_s, page_url),
             conversation: conversation,
-            tools: tools
+            tools: tools,
+            read_timeout: read_timeout
           )
 
           final_text = step[:text].to_s unless step[:text].to_s.empty?

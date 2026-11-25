@@ -740,7 +740,9 @@ module ContextDrop
       callback.call(feedback) if callback.respond_to?(:call)
       ContextDrop::FeedbackEvents::Publisher.map_lifecycle_callback(hook_name, feedback, **context)
     rescue StandardError => e
-      Rails.logger.error("[ContextDrop] #{hook_name} callback error: #{e.class}: #{e.message}") if defined?(Rails.logger) && Rails.logger
+      if defined?(Rails.logger) && Rails.logger
+        Rails.logger.error("[ContextDrop] #{hook_name} callback error: #{e.class}: #{ContextDrop::SecretRedactor.scrub(e.message)}")
+      end
     end
 
     def feedback_dashboard_url(feedback)

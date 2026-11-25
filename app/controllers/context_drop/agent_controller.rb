@@ -77,6 +77,20 @@ module ContextDrop
       raw_elements = params[:element_references].is_a?(Array) ? params[:element_references].map { |e| to_plain_hash(e) } : []
       raw_attachments = params[:attachments].is_a?(Array) ? params[:attachments].map { |a| to_plain_hash(a) } : []
 
+      if raw_attachments.size > ContextDrop.config.max_attachments.to_i
+        render json: {
+          error: "Attachments count (#{raw_attachments.size}) exceeds maximum allowed (#{ContextDrop.config.max_attachments})"
+        }, status: :unprocessable_entity
+        return
+      end
+
+      if raw_elements.size > ContextDrop.config.max_element_references.to_i
+        render json: {
+          error: "Element references count (#{raw_elements.size}) exceeds maximum allowed (#{ContextDrop.config.max_element_references})"
+        }, status: :unprocessable_entity
+        return
+      end
+
       orchestrator = ContextDrop::Agent::Orchestrator.new
       result = orchestrator.run_turn(
         messages: raw_messages,

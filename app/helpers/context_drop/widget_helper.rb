@@ -28,7 +28,11 @@ module ContextDrop
                        end
       widget_config = cfg.public_widget_config(merged_options)
       mount_path = resolve_context_drop_mount_path(options[:endpoint])
-      custom_metadata = options[:metadata].is_a?(Hash) ? options[:metadata] : {}
+      custom_metadata = if options[:metadata].is_a?(Hash)
+                          ContextDrop::MetadataSanitizer.sanitize_feedback_metadata(options[:metadata])
+                        else
+                          {}
+                        end
 
       attrs = {
         "data-endpoint" => mount_path,

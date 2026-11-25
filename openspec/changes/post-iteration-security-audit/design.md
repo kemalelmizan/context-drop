@@ -1,0 +1,6 @@
+# Design: Post-Iteration Security Audit & Hardening Fixes
+
+1. **Vault Key Permissions & Env Fallback:** Both `ContextDrop::NotificationSecrets` and `src/notifications/secrets.ts` check `ownership_secret` → `CONTEXT_DROP_OWNERSHIP_SECRET` → `CONTEXT_DROP_SECRET_KEY` (>= 16 chars hashed via SHA-256) before touching disk, and create fallback key files with strict `0o600` mode.
+2. **Helper Metadata Sanitization:** `WidgetHelper` pipes `options[:metadata]` through `ContextDrop::MetadataSanitizer.sanitize_feedback_metadata` before JSON-encoding `data-metadata` so forbidden keys (`token`, `secret`, `password`, `authorization`, `cookie`, `value`) never enter page HTML.
+3. **MCP Federation Redirect & SSRF Guard:** `RemoteMcpClient` sets `redirect: "error"` on `fetch`. Both Ruby and TS remote MCP validators forbid `allow_insecure_http` in production and reject RFC1918 private, loopback (when HTTPS/non-local), link-local (`169.254.0.0/16`, `fe80::/10`), and `metadata.google.internal` hosts unless explicitly targeting local loopback in non-production.
+4. **Agent Payload Caps & Attachment Headers:** `AgentController#chat` enforces `config.max_attachments` and `config.max_element_references` (`422`), and attachment byte streams set `Referrer-Policy: no-referrer` + `X-Content-Type-Options: nosniff`.

@@ -1,7 +1,7 @@
 import type { LocalEventStore } from "../events/local-event-store.ts";
 import type { StoredEventOccurrence } from "../events/types.ts";
 import { deliverLarkMessage } from "./lark-client.ts";
-import { decryptSecrets } from "./secrets.ts";
+import { decryptSecrets, redactSecretsFromText } from "./secrets.ts";
 import {
   postSignedJson,
   signedWebhookHeaders,
@@ -47,9 +47,11 @@ export async function deliverOccurrenceToDestinations(
       }
       await store.recordDestinationDelivery(dest.id, "delivered", null);
     } catch (err) {
-      await store.recordDestinationDelivery(dest.id, "failed", (err as Error).message);
+      const secrets = decryptSecrets(dest.secrets_ciphertext, store.cryptoOptions);
+      const safeErr = redactSecretsFromText((err as Error).message, Object.values(secrets));
+      await store.recordDestinationDelivery(dest.id, "failed", safeErr);
       console.warn(
-        `[context-drop] notification destination #${dest.id} (${dest.name}): ${(err as Error).message}`
+        `[context-drop] notification destination #${dest.id} (${dest.name}): ${safeErr}`
       );
     }
   }
@@ -77,8 +79,9 @@ export async function deliverOccurrenceToMcpSubscriptions(
       await postSignedJson(sub.callback_url, body, headers);
       await store.updateSubscriptionCursor(sub.subscription_id, store.cursorFor(occurrence));
     } catch (err) {
+      const safeErr = redactSecretsFromText((err as Error).message, [sub.signing_secret]);
       console.warn(
-        `[context-drop] MCP event subscription ${sub.subscription_id}: ${(err as Error).message}`
+        `[context-drop] MCP event subscription ${sub.subscription_id}: ${safeErr}`
       );
     }
   }

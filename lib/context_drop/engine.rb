@@ -4,6 +4,16 @@ module ContextDrop
   class Engine < ::Rails::Engine
     isolate_namespace ContextDrop
 
+    initializer "context_drop.filter_parameters" do |app|
+      if app.config.respond_to?(:filter_parameters) && app.config.filter_parameters.is_a?(Array)
+        ContextDrop::SecretRedactor::FILTERED_PARAMETER_KEYS.each do |param_key|
+          unless app.config.filter_parameters.include?(param_key) || app.config.filter_parameters.include?(param_key.to_s)
+            app.config.filter_parameters << param_key
+          end
+        end
+      end
+    end
+
     initializer "context_drop.assets" do |app|
       if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
         app.config.assets.paths << root.join("app/assets/javascripts").to_s

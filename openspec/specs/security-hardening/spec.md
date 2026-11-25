@@ -166,7 +166,7 @@ Session cookies for anonymous ownership correlation SHALL use hashed session ids
 - **THEN** only owned active feedbacks returned
 
 ### Requirement: Attachment Download Scoping
-Attachment bytes SHALL only be served for feedback the caller owns (submitter, token, or session match).
+Attachment bytes SHALL only be served for feedback the caller owns (submitter, token, or session match), with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer` headers.
 
 #### Scenario: Cross-user attachment URL
 - **WHEN** user B requests user A's attachment id
@@ -248,10 +248,14 @@ MCP returns feedback messages, URLs, and stack-adjacent strings; IDE agents SHAL
 - **THEN** server returns JSON only; no server-side execution occurs
 
 ### Requirement: Remote Federation HTTPS
-`RemoteClient` SHALL require HTTPS for non-loopback MCP URLs with redirect limits to prevent token leakage.
+`RemoteClient` (Ruby and TypeScript) SHALL require HTTPS for non-loopback MCP URLs, block private/link-local/metadata hosts, ignore `allow_insecure_http` in production, and refuse HTTP redirects (`redirect: "error"`) to prevent Bearer token leakage.
 
 #### Scenario: http:// remote URL
-- **THEN** connection refused or error at configuration/ call time
+- **THEN** connection refused or error at configuration/call time
+
+#### Scenario: Metadata IP remote URL
+- **WHEN** a remote MCP environment is configured with `https://169.254.169.254/mcp`
+- **THEN** `RemoteClient` refuses the connection before sending `Authorization` headers
 
 ### Requirement: MCP Status Change Authorization
 `update_feedback_status` over MCP SHALL only be callable by authenticated MCP clients, not by anonymous widget users.
@@ -335,8 +339,18 @@ HTTP base URLs for custom provider SHALL require HTTPS except loopback hosts (se
 #### Scenario: http://external.api
 - **THEN** configuration rejected
 
-### Requirement: Separate Assistant vs Agent Budget (Recommended)
-Hosts SHOULD configure distinct model allowlists and rate limits for assistant vs local agent to contain cost abuse.
+### Requirement: Separate Assistant vs Agent Budget
+The engine SHALL isolate assistant LLM execution from the local loopback agent via dedicated `CONTEXT_DROP_ASSISTANT_*` environment keys and `assistant_key_store_path` vault resolution (with optional `assistant_allow_shared_key_store` fallback), separate rate-limit buckets (`assistant_rate_limit`), per-mode read timeouts (`assistant_timeouts`), and server-enforced model selection (`assistant_allow_client_model_override = false` by default and optional `assistant_allowed_models`).
+
+#### Scenario: Untrusted client model override ignored by default
+- **GIVEN** `assistant_models` sets `{ ask: "claude-3-5-haiku-latest" }` and `assistant_allow_client_model_override` is `false`
+- **WHEN** a browser client posts `mode: "ask"` with `model: "claude-opus-4"`
+- **THEN** the orchestrator executes with `"claude-3-5-haiku-latest"`
+
+#### Scenario: Strict assistant vault isolation
+- **GIVEN** `assistant_allow_shared_key_store` is `false` and only `ANTHROPIC_API_KEY` (not `CONTEXT_DROP_ASSISTANT_ANTHROPIC_API_KEY` or assistant vault) is set
+- **WHEN** a client posts an Ask turn
+- **THEN** `assistant_llm_configured?` is `false` and the server responds with `422 Unprocessable Entity`
 
 ---
 
@@ -404,10 +418,15 @@ Destinations subscribe only to configured `event_types`; test delivery does not 
 ## Requirements: Node / Standalone Handler Parity
 
 ### Requirement: Equivalent IDOR and Rate Limits
-`@context-drop` HTTP handler SHALL implement own-feedback ownership checks and rate limiting consistent with Rails engine behavior.
+`@context-drop` HTTP handler SHALL implement own-feedback ownership checks, feedback confirmations, rate limiting, and `/assistant/*` security controls (mode allowlists, Ask tool denylist, Build write gating, HMAC ChangeSet `approval_token`, strict ChangeSet submitter/session ACL, and isolated assistant rate limits) consistent with Rails engine behavior.
 
 #### Scenario: PATCH another user's feedback on Next.js route
 - **THEN** `403 Forbidden`
+
+#### Scenario: Build rejected on Next.js production default
+- **GIVEN** `@context-drop` handler runs with `environment: "production"` and default assistant modes
+- **WHEN** a client posts `mode: "build"` to `POST /assistant/turn`
+- **THEN** the response status is `403 Forbidden`
 
 ### Requirement: Integration API Key for Destinations
 `/integrations/destinations` SHALL require `CONTEXT_DROP_INTEGRATIONS_API_KEY` or `config.integrations.authorize` when configured.
@@ -417,10 +436,14 @@ Destinations subscribe only to configured `event_types`; test delivery does not 
 ## Requirements: Logging & Operations
 
 ### Requirement: No Production Secret Logging
-Rails/logger output from ContextDrop MUST NOT print MCP API keys, ownership secrets, webhook signing secrets, or LLM API keys.
+Rails/logger and Node console output from ContextDrop — as well as persisted delivery error columns (`last_delivery_error`) — MUST NOT print raw MCP API keys, ownership secrets or tokens, ChangeSet approval tokens, webhook signing secrets, Lark app secrets, or LLM API keys. `ContextDrop::Engine` SHALL register ContextDrop secret keys in `Rails.application.config.filter_parameters` and scrub runtime error strings via `ContextDrop::SecretRedactor`.
 
 #### Scenario: MCP auth failure
 - **THEN** logs reason without echoing provided Bearer token
+
+#### Scenario: Webhook delivery error echoes secret in upstream body
+- **WHEN** an upstream webhook receiver returns an HTTP error body echoing a Bearer token or signing secret
+- **THEN** `last_delivery_error` and logger output replace the secret with `[FILTERED]`
 
 ### Requirement: Soft Delete for Feedback
 Deleted feedback excluded from MCP list by default; restores require dashboard/tool with auth.

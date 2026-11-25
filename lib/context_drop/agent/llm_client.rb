@@ -22,24 +22,25 @@ module ContextDrop
 
         # Executes a single conversational step and returns normalized `{ text:, tool_calls:, raw_assistant: }`:
         # `tool_calls` is an Array of `{ id:, name:, arguments: Hash }`.
-        def complete_step(credentials:, system_prompt:, conversation:, tools:, extra_state: {})
+        def complete_step(credentials:, system_prompt:, conversation:, tools:, extra_state: {}, read_timeout: nil)
           if transport.respond_to?(:call)
             return transport.call(
               credentials: credentials,
               system_prompt: system_prompt,
               conversation: conversation,
               tools: tools,
-              extra_state: extra_state
+              extra_state: extra_state,
+              read_timeout: read_timeout
             )
           end
 
           case credentials[:provider]
           when "anthropic"
-            call_anthropic(credentials, system_prompt, conversation, tools)
+            call_anthropic(credentials, system_prompt, conversation, tools, read_timeout: read_timeout)
           when "gemini"
-            call_gemini(credentials, system_prompt, conversation, tools)
+            call_gemini(credentials, system_prompt, conversation, tools, read_timeout: read_timeout)
           when "openai", "custom"
-            call_openai_compatible(credentials, system_prompt, conversation, tools)
+            call_openai_compatible(credentials, system_prompt, conversation, tools, read_timeout: read_timeout)
           else
             raise LlmError, "Unsupported provider: #{credentials[:provider]}"
           end
@@ -94,7 +95,7 @@ module ContextDrop
           end
         end
 
-        def call_anthropic(creds, system_prompt, conversation, tools)
+        def call_anthropic(creds, system_prompt, conversation, tools, read_timeout: nil)
           uri = URI.parse("https://api.anthropic.com/v1/messages")
           anthropic_tools = tools.map do |t|
             {
@@ -119,7 +120,7 @@ module ContextDrop
             "anthropic-version" => "2023-06-01"
           }
 
-          parsed = post_json!(uri, headers, body, "Anthropic")
+          parsed = post_json!(uri, headers, body, "Anthropic", read_timeout: read_timeout)
           content_blocks = Array(parsed["content"])
 
           text_parts = []
@@ -183,7 +184,7 @@ module ContextDrop
           end.compact
         end
 
-        def call_gemini(creds, system_prompt, conversation, tools)
+        def call_gemini(creds, system_prompt, conversation, tools, read_timeout: nil)
           encoded_model = URI.encode_www_form_component(creds[:model].to_s.sub(%r{\Amodels/}, ""))
           uri = URI.parse("https://generativelanguage.googleapis.com/v1beta/models/#{encoded_model}:generateContent")
 
@@ -207,7 +208,7 @@ module ContextDrop
             "x-goog-api-key" => creds[:api_key]
           }
 
-          parsed = post_json!(uri, headers, body, "Gemini")
+          parsed = post_json!(uri, headers, body, "Gemini", read_timeout: read_timeout)
           parts = Array(parsed.dig("candidates", 0, "content", "parts"))
 
           text_parts = []
@@ -287,7 +288,7 @@ module ContextDrop
           out
         end
 
-        def call_openai_compatible(creds, system_prompt, conversation, tools)
+        def call_openai_compatible(creds, system_prompt, conversation, tools, read_timeout: nil)
           base = creds[:provider] == "openai" ? "https://api.openai.com/v1" : creds[:base_url].to_s.sub(%r{/+\z}, "")
           uri = validate_custom_base_url!("#{base}/chat/completions")
 
@@ -312,7 +313,7 @@ module ContextDrop
           headers = { "Content-Type" => "application/json" }
           headers["Authorization"] = "Bearer #{creds[:api_key]}" unless creds[:api_key].to_s.strip.empty?
 
-          parsed = post_json!(uri, headers, body, creds[:provider] == "openai" ? "OpenAI" : "LLM")
+          parsed = post_json!(uri, headers, body, creds[:provider] == "openai" ? "OpenAI" : "LLM", read_timeout: read_timeout)
           msg = parsed.dig("choices", 0, "message") || {}
 
           raw_calls = Array(msg["tool_calls"])
@@ -374,11 +375,12 @@ module ContextDrop
           out
         end
 
-        def post_json!(uri, headers, body_hash, provider_label)
+        def post_json!(uri, headers, body_hash, provider_label, read_timeout: nil)
           http = Net::HTTP.new(uri.host, uri.port)
           http.use_ssl = (uri.scheme == "https")
           http.open_timeout = OPEN_TIMEOUT
-          http.read_timeout = READ_TIMEOUT
+          resolved_read_timeout = read_timeout.to_i
+          http.read_timeout = resolved_read_timeout.positive? ? resolved_read_timeout : READ_TIMEOUT
 
           req = Net::HTTP::Post.new(uri.request_uri)
           headers.each { |k, v| req[k] = v }
@@ -398,14 +400,22 @@ module ContextDrop
                          else
                            raw_body[0, 240]
                          end
-            raise LlmError, "#{provider_label} API error (HTTP #{res.code}): #{err_detail}"
+            safe_detail = ContextDrop::SecretRedactor.scrub(
+              err_detail,
+              extra_secrets: [headers["x-api-key"], headers["x-goog-api-key"]]
+            )
+            raise LlmError, "#{provider_label} API error (HTTP #{res.code}): #{safe_detail}"
           end
 
           raise LlmError, "Invalid JSON response from #{provider_label}" unless parsed.is_a?(Hash)
 
           parsed
         rescue Timeout::Error, SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
-          raise LlmError, "#{provider_label} network error: #{e.class}: #{e.message}"
+          safe_net = ContextDrop::SecretRedactor.scrub(
+            e.message,
+            extra_secrets: [headers["x-api-key"], headers["x-goog-api-key"]]
+          )
+          raise LlmError, "#{provider_label} network error: #{e.class}: #{safe_net}"
         end
       end
     end

@@ -3,7 +3,7 @@
 module ContextDrop
   class AssistantController < ApplicationController
     before_action :enforce_assistant_enabled!
-    before_action :enforce_rate_limit!, only: %i[turn approve_change_set]
+    before_action :enforce_assistant_rate_limit!, only: %i[turn approve_change_set]
 
     def turn
       mode = params[:mode].to_s.strip.downcase
@@ -34,6 +34,22 @@ module ContextDrop
         return
       end
 
+      if raw_elements.size > ContextDrop.config.max_element_references.to_i
+        render json: {
+          error: "Element references count (#{raw_elements.size}) exceeds maximum allowed (#{ContextDrop.config.max_element_references})"
+        }, status: :unprocessable_entity
+        return
+      end
+
+      allow_override = !!ContextDrop.config.assistant_allow_client_model_override
+      requested_provider = allow_override ? params[:provider].to_s.strip.presence : nil
+      requested_model = allow_override ? params[:model].to_s.strip.presence : nil
+      if requested_model && !ContextDrop.config.assistant_model_allowed?(mode, requested_model)
+        render json: { error: "Model '#{requested_model}' is not permitted for assistant mode '#{mode}'" },
+               status: :unprocessable_entity
+        return
+      end
+
       change_set = nil
       if params[:change_set_id].present?
         change_set = ChangeSet.find_by(id: params[:change_set_id])
@@ -58,8 +74,8 @@ module ContextDrop
         change_set: change_set,
         submitter: current_context_drop_submitter,
         session_id: assistant_session_id(initialize_if_missing: true),
-        provider: params[:provider].to_s.strip.presence,
-        model: params[:model].to_s.strip.presence,
+        provider: requested_provider,
+        model: requested_model,
         feedback_id: params[:feedback_id],
         ownership_token: combined_ownership_token
       )

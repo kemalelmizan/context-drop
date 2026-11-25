@@ -1,9 +1,13 @@
 import type {
+  AssistantChatMode,
   BoundingRectSnapshot,
   SelectionMode,
   ViewportSnapshot,
   WidgetPosition
 } from "../../app/javascript/context_drop/types.ts";
+import type { AssistantLlmConfig } from "../assistant/llm-client.ts";
+import type { BuildTargetConfig } from "../assistant/orchestrator.ts";
+import type { RegisteredAssistantTool } from "../assistant/tools.ts";
 
 export const VERSION = "0.3.5";
 
@@ -299,5 +303,28 @@ export interface ContextDropServerConfig {
     apiKey?: string;
     authorize?: (request: Request) => Promise<boolean> | boolean;
     environments?: Record<string, RemoteMcpEnvironmentConfig>;
+  };
+  assistant?: {
+    enabled?: boolean;
+    modesByEnvironment?: Record<string, AssistantChatMode[]>;
+    allowCodeToolsInAsk?: boolean;
+    allowAnonymousChangeSets?: boolean;
+    buildTarget?: BuildTargetConfig;
+    feedbackConfirmations?: string[];
+    feedbackGuidance?: string[];
+    askTools?: RegisteredAssistantTool[];
+    buildTools?: RegisteredAssistantTool[];
+    llm?: AssistantLlmConfig;
+    rateLimit?:
+      | {
+          maxRequests: number;
+          periodSeconds: number;
+        }
+      | false;
+    authorizeMode?: (
+      request: Request,
+      mode: AssistantChatMode,
+      submitter: SubmitterIdentity | null
+    ) => Promise<boolean> | boolean;
   };
 }

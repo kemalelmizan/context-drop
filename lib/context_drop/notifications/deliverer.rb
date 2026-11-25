@@ -39,8 +39,9 @@ module ContextDrop
         def log_error(destination, err)
           return unless defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
 
+          safe_msg = ContextDrop::SecretRedactor.scrub(err.message, extra_secrets: destination.secrets.values)
           Rails.logger.warn(
-            "[ContextDrop::Notifications] destination ##{destination.id} #{destination.name}: #{err.class}: #{err.message}"
+            "[ContextDrop::Notifications] destination ##{destination.id} #{destination.name}: #{err.class}: #{safe_msg}"
           )
         end
       end

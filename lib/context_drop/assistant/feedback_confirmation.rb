@@ -30,7 +30,7 @@ module ContextDrop
         def render_guidance
           templates = Array(ContextDrop.config.assistant_feedback_guidance)
           templates = DEFAULT_GUIDANCE if templates.empty?
-          pick = templates.sample(random: deterministic_rng)
+          pick = templates.sample(random: Random.new)
           { message: pick, metadata: {} }
         end
 

@@ -61,6 +61,13 @@ module ContextDrop
                   :assistant_enabled,
                   :assistant_modes_by_environment,
                   :assistant_models,
+                  :assistant_allowed_models,
+                  :assistant_allow_client_model_override,
+                  :assistant_key_store_path,
+                  :assistant_allow_shared_key_store,
+                  :assistant_rate_limit,
+                  :assistant_timeouts,
+                  :assistant_max_iterations,
                   :assistant_allow_code_tools_in_ask,
                   :assistant_allow_anonymous_change_sets,
                   :authorize_assistant_mode,
@@ -127,6 +134,13 @@ module ContextDrop
       @assistant_enabled = ENV.fetch("CONTEXT_DROP_ASSISTANT_ENABLED", "false") == "true"
       @assistant_modes_by_environment = nil
       @assistant_models = {}
+      @assistant_allowed_models = nil
+      @assistant_allow_client_model_override = false
+      @assistant_key_store_path = nil
+      @assistant_allow_shared_key_store = true
+      @assistant_rate_limit = nil
+      @assistant_timeouts = { ask: 45, build: 90 }
+      @assistant_max_iterations = { ask: 4, build: 8 }
       @assistant_allow_code_tools_in_ask = false
       @assistant_allow_anonymous_change_sets = nil
       @build_target = {}
@@ -253,6 +267,63 @@ module ContextDrop
       return explicit unless explicit.empty?
 
       File.join(resolved_workspace_root, "tmp", "context_drop_byok.enc")
+    end
+
+    def resolved_assistant_key_store_path
+      explicit = @assistant_key_store_path.to_s.strip
+      return explicit unless explicit.empty?
+
+      File.join(resolved_workspace_root, "tmp", "context_drop_assistant_byok.enc")
+    end
+
+    def assistant_key_store(env_vars: ENV)
+      Agent::KeyStore.new(
+        store_path: resolved_assistant_key_store_path,
+        env_vars: env_vars,
+        scope: :assistant,
+        allow_shared_fallback: Boolean(@assistant_allow_shared_key_store),
+        fallback_store_path: resolved_key_store_path
+      )
+    end
+
+    def effective_assistant_rate_limit
+      @assistant_rate_limit.nil? ? @rate_limit : @assistant_rate_limit
+    end
+
+    def resolved_assistant_timeout(mode)
+      default = mode.to_s == "ask" ? 45 : 90
+      return default unless @assistant_timeouts.is_a?(Hash)
+
+      raw = @assistant_timeouts[mode.to_sym] || @assistant_timeouts[mode.to_s]
+      val = raw.to_i
+      val.positive? ? val : default
+    end
+
+    def resolved_assistant_max_iterations(mode)
+      default = mode.to_s == "ask" ? 4 : 8
+      return default unless @assistant_max_iterations.is_a?(Hash)
+
+      raw = @assistant_max_iterations[mode.to_sym] || @assistant_max_iterations[mode.to_s]
+      val = raw.to_i
+      val.positive? ? val.clamp(1, 25) : default
+    end
+
+    def assistant_model_allowed?(mode, model_name)
+      rules = @assistant_allowed_models
+      return true if rules.nil?
+
+      candidate = model_name.to_s.strip
+      return false if candidate.empty?
+
+      allowed_list = case rules
+                     when Array
+                       rules
+                     when Hash
+                       rules[mode.to_sym] || rules[mode.to_s] || rules[:all] || rules["all"]
+                     end
+      return true if allowed_list.nil?
+
+      Array(allowed_list).map { |m| m.to_s.strip }.reject(&:empty?).include?(candidate)
     end
 
     # Verifies that an HTTP request originates from strict local loopback without external proxy forwarding
@@ -463,7 +534,7 @@ module ContextDrop
     def assistant_llm_configured?
       return false unless assistant_enabled?
 
-      store = Agent::KeyStore.new
+      store = assistant_key_store
       store.providers_status[:providers].any? { |p| p[:configured] }
     rescue StandardError
       false

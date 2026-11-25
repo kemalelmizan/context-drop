@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "ipaddr"
 require "json"
 require "net/http"
 require "uri"
@@ -23,6 +24,7 @@ module ContextDrop
           end
 
           url_str = env_config[:url].to_s.strip
+          api_key = env_config[:api_key].to_s.strip
           uri = validate_endpoint_uri!(env_name, url_str, allow_insecure_http: !!env_config[:allow_insecure_http])
 
           payload = {
@@ -48,7 +50,6 @@ module ContextDrop
             end
           end
 
-          api_key = env_config[:api_key].to_s.strip
           req["Authorization"] = "Bearer #{api_key}" unless api_key.empty?
           req.body = JSON.generate(payload)
 
@@ -59,14 +60,15 @@ module ContextDrop
 
           parsed = JSON.parse(response.body.to_s)
           if parsed.is_a?(Hash) && parsed["error"].is_a?(Hash)
-            raise RemoteError, "Remote environment '#{env_name}' error: #{parsed['error']['message']}"
+            safe_err = ContextDrop::SecretRedactor.scrub(parsed["error"]["message"], extra_secrets: [api_key])
+            raise RemoteError, "Remote environment '#{env_name}' error: #{safe_err}"
           end
 
           parsed.is_a?(Hash) ? (parsed["result"] || parsed[:result]) : nil
         rescue JSON::ParserError => e
-          raise RemoteError, "Invalid JSON from remote environment '#{env_name}': #{e.message}"
+          raise RemoteError, "Invalid JSON from remote environment '#{env_name}': #{ContextDrop::SecretRedactor.scrub(e.message, extra_secrets: [api_key])}"
         rescue Timeout::Error, SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
-          raise RemoteError, "Failed to reach remote environment '#{env_name}': #{e.class}: #{e.message}"
+          raise RemoteError, "Failed to reach remote environment '#{env_name}': #{e.class}: #{ContextDrop::SecretRedactor.scrub(e.message, extra_secrets: [api_key])}"
         end
 
         def call_tool(env_name, env_config, tool_name, arguments = {})
@@ -89,20 +91,37 @@ module ContextDrop
         def validate_endpoint_uri!(env_name, url_str, allow_insecure_http: false)
           uri = URI.parse(url_str)
           unless %w[http https].include?(uri.scheme) && uri.host && !uri.host.empty?
-            raise RemoteError, "Invalid MCP URL for environment '#{env_name}': #{url_str.inspect}"
+            raise RemoteError, "Invalid MCP URL for environment '#{env_name}': #{ContextDrop::SecretRedactor.scrub(url_str.inspect)}"
           end
 
-          is_loopback = LOOPBACK_HOSTS.include?(uri.host.downcase)
-          if uri.scheme == "http" && !is_loopback && !allow_insecure_http
-            raise RemoteError, "Insecure HTTP MCP URL refused for remote environment '#{env_name}' (use https:// or set allow_insecure_http: true)"
+          prod = defined?(ContextDrop) && ContextDrop.respond_to?(:config) && ContextDrop.config.rails_production?
+          effective_insecure = !prod && !!allow_insecure_http
+          clean_host = uri.host.downcase.delete_prefix("[").delete_suffix("]")
+          is_loopback = LOOPBACK_HOSTS.include?(uri.host.downcase) || LOOPBACK_HOSTS.include?(clean_host)
+
+          if uri.scheme == "http" && (!is_loopback || prod) && !effective_insecure
+            raise RemoteError, "Insecure HTTP MCP URL refused for remote environment '#{env_name}' (use https://)"
+          end
+
+          if !is_loopback && !effective_insecure && disallowed_private_host?(clean_host)
+            raise RemoteError, "Blocked disallowed private/metadata MCP URL host for environment '#{env_name}'"
           end
 
           uri
         rescue URI::InvalidURIError => e
-          raise RemoteError, "Malformed MCP URL for environment '#{env_name}': #{e.message}"
+          raise RemoteError, "Malformed MCP URL for environment '#{env_name}': #{ContextDrop::SecretRedactor.scrub(e.message)}"
         end
 
         private
+
+        def disallowed_private_host?(clean_host)
+          return true if clean_host == "metadata.google.internal" || clean_host.end_with?(".localhost")
+
+          ip = IPAddr.new(clean_host)
+          ip.loopback? || ip.private? || ip.link_local? || ip.to_s == "0.0.0.0" || ip.to_s == "::"
+        rescue IPAddr::InvalidAddressError
+          false
+        end
 
         def normalize_tool_result(raw)
           str_hash = raw.transform_keys(&:to_s)

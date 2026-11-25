@@ -248,4 +248,119 @@ RSpec.describe "ContextDrop Assistant Security" do
       expect(shared_sess.response.status).to eq(403)
     end
   end
+
+  describe "Secret-logging guard & post-iteration security audit fixes (SEC-H069, SEC-H033, SEC-H013, SEC-H038, SEC-H027)" do
+    let(:app) { Rails.application }
+
+    it "registers ContextDrop secret keys in Rails filter_parameters and scrubs secrets from error strings" do
+      param_filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+      filtered_hash = param_filter.filter(
+        "api_key" => "sk-ant-123",
+        "signing_secret" => "whsec_123",
+        "ownership_token" => "42.nonce.sig",
+        "approval_token" => "raw_approve_tok",
+        "message" => "visible text"
+      )
+      expect(filtered_hash["api_key"]).to eq("[FILTERED]")
+      expect(filtered_hash["signing_secret"]).to eq("[FILTERED]")
+      expect(filtered_hash["ownership_token"]).to eq("[FILTERED]")
+      expect(filtered_hash["approval_token"]).to eq("[FILTERED]")
+      expect(filtered_hash["message"]).to eq("visible text")
+
+      ContextDrop.configure { |c| c.mcp_api_key = "mcp_live_secret_token_9999" }
+      raw_err = "Upstream failed: Authorization: Bearer eyJhbGciOiJIUzI1NiJ9 key=sk-ant-api03-1234567890abcdef whsec_9876543210 url=https://a.example/x?ownership_token=42.ab.cd mcp=mcp_live_secret_token_9999"
+      scrubbed = ContextDrop::SecretRedactor.scrub(raw_err)
+      expect(scrubbed).not_to include("eyJhbGciOiJIUzI1NiJ9")
+      expect(scrubbed).not_to include("sk-ant-api03-1234567890abcdef")
+      expect(scrubbed).not_to include("whsec_9876543210")
+      expect(scrubbed).not_to include("42.ab.cd")
+      expect(scrubbed).not_to include("mcp_live_secret_token_9999")
+      expect(scrubbed).to include("[FILTERED]")
+
+      if ContextDrop::NotificationDestination.connection.data_source_exists?("context_drop_notification_destinations")
+        dest = ContextDrop::NotificationDestination.create!(
+          name: "Scrubbed Hook",
+          destination_type: "webhook",
+          enabled: true,
+          event_types: ["feedback.created"],
+          settings: { "url" => "https://hooks.example.com/cd" },
+          secrets: { "signing_secret" => "whsec_custom_signing_secret_123" }
+        )
+        dest.record_delivery!(status: "failed", error: "Echoed whsec_custom_signing_secret_123 and Bearer secret_bearer_tok_123")
+        expect(dest.reload.last_delivery_error).not_to include("whsec_custom_signing_secret_123")
+        expect(dest.last_delivery_error).not_to include("secret_bearer_tok_123")
+      end
+    end
+
+    it "enforces 0600 permissions on fallback notification.key, sanitizes WidgetHelper metadata, blocks metadata-IP MCP URLs, and sets Referrer-Policy on attachments" do
+      # 1. NotificationSecrets fallback file mode 0600
+      key_path = ContextDrop::NotificationSecrets.send(:resolved_master_key_path)
+      File.delete(key_path) if File.exist?(key_path)
+      ContextDrop.configure { |c| c.ownership_secret = nil }
+      encrypted = ContextDrop::NotificationSecrets.encrypt({ "signing_secret" => "s1" })
+      expect(ContextDrop::NotificationSecrets.decrypt(encrypted)["signing_secret"]).to eq("s1")
+      expect(File.stat(key_path).mode & 0o777).to eq(0o600)
+
+      # 2. WidgetHelper strips forbidden secret keys from data-metadata HTML attribute
+      view_cls = Class.new do
+        include ContextDrop::WidgetHelper
+      end
+      html = view_cls.new.context_drop_widget(
+        metadata: { "plan" => "enterprise", "token" => "leak_tok_123", "password" => "hunter2" }
+      )
+      expect(html).to include("enterprise")
+      expect(html).not_to include("leak_tok_123")
+      expect(html).not_to include("hunter2")
+
+      # 3. MCP::RemoteClient blocks private/metadata IPs and ignores allow_insecure_http in production
+      expect do
+        ContextDrop::MCP::RemoteClient.validate_endpoint_uri!("aws_meta", "https://169.254.169.254/mcp")
+      end.to raise_error(ContextDrop::MCP::RemoteClient::RemoteError)
+
+      ContextDrop.configure { |c| c.environment = "production" }
+      expect do
+        ContextDrop::MCP::RemoteClient.validate_endpoint_uri!(
+          "staging",
+          "http://staging.example.com/mcp",
+          allow_insecure_http: true
+        )
+      end.to raise_error(ContextDrop::MCP::RemoteClient::RemoteError)
+
+      # 4. Attachment download response includes Referrer-Policy: no-referrer & X-Content-Type-Options: nosniff
+      ContextDrop.configure do |c|
+        c.environment = "development"
+        c.ownership_secret = "test-attachment-headers-secret-key-012345"
+      end
+      png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      sess = ActionDispatch::Integration::Session.new(app)
+      sess.default_url_options[:host] = "localhost"
+      sess.get "/context_drop/config", headers: { "HTTP_HOST" => "localhost", "HTTP_ACCEPT" => "application/json" }
+      csrf = JSON.parse(sess.response.body)["csrf_token"]
+
+      sess.post "/context_drop/feedback",
+                params: {
+                  feedback: {
+                    message: "Header check",
+                    page_url: "http://localhost/app",
+                    attachments: [{ attachment_type: "screenshot", filename: "a.png", data_url: "data:image/png;base64,#{png_b64}" }]
+                  }
+                }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(201)
+      created = JSON.parse(sess.response.body)
+      att_id = created.dig("feedback", "attachments", 0, "id")
+      tok = created["ownership_token"]
+
+      sess.get "/context_drop/feedback/#{created['id']}/attachments/#{att_id}?ownership_token=#{CGI.escape(tok)}",
+               headers: { "HTTP_HOST" => "localhost" }
+      expect(sess.response.status).to eq(200)
+      expect(sess.response.headers["Referrer-Policy"]).to eq("no-referrer")
+      expect(sess.response.headers["X-Content-Type-Options"]).to eq("nosniff")
+    end
+  end
 end

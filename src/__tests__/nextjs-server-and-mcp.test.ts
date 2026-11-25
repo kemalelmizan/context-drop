@@ -1536,6 +1536,332 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("provides full Next.js Ask / Build / Feedback assistant parity, ChangeSet ACL, secret scrubbing, and 0600 key permissions", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-node-assistant-"));
+    try {
+      const { AssistantToolConfigError } = await import("../assistant/tools.ts");
+      const { encryptSecrets, redactSecretsFromText } = await import("../notifications/secrets.ts");
+      const { validateRemoteMcpUrl, RemoteMcpError } = await import("../mcp/remote-client.ts");
+
+      // 1. Secret redaction, 0600 notification.key mode, and metadata-IP MCP block
+      const scrubbed = redactSecretsFromText(
+        "Err: Bearer secret_jwt_token_123456 key=sk-ant-api03-abcdef123456 ?ownership_token=9.nonce.sig whsec_abcdef1234"
+      );
+      assert.ok(!scrubbed.includes("secret_jwt_token_123456"));
+      assert.ok(!scrubbed.includes("sk-ant-api03-abcdef123456"));
+      assert.ok(!scrubbed.includes("9.nonce.sig"));
+      assert.ok(!scrubbed.includes("whsec_abcdef1234"));
+
+      encryptSecrets({ signing_secret: "whsec_test_perm" }, { storageDir: tmpDir });
+      const keyMode = fs.statSync(path.join(tmpDir, "notification.key")).mode & 0o777;
+      assert.equal(keyMode, 0o600);
+
+      assert.throws(
+        () => validateRemoteMcpUrl("meta", "https://169.254.169.254/mcp"),
+        RemoteMcpError
+      );
+
+      // 2. Ask tool denylist rejects git_* at boot
+      assert.throws(
+        () =>
+          createContextDropNextHandler({
+            assistant: {
+              enabled: true,
+              askTools: [
+                {
+                  name: "git_push_branch",
+                  description: "forbidden",
+                  execute: () => ({})
+                }
+              ]
+            }
+          }),
+        AssistantToolConfigError
+      );
+
+      // 3. Production default blocks Build mode and returns smart confirmation_message without raw selectors
+      const prodApp = createContextDropNextHandler({
+        environment: "production",
+        storage: createMemoryStorageAdapter(),
+        ownershipSecret: "prod-node-ownership-secret-key-0123456789",
+        assistant: {
+          enabled: true
+        }
+      });
+
+      const createFbRes = await prodApp.POST(
+        new Request("https://acme.com/api/context-drop/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://acme.com" },
+          body: JSON.stringify({
+            feedback: {
+              message: "Checkout button stuck",
+              page_url: "https://acme.com/checkout",
+              element_references: [
+                {
+                  client_ref: "c1",
+                  tag_name: "button",
+                  selector: "#internal-pay-btn",
+                  dom_path: "body > button",
+                  text_content: "Pay",
+                  metadata: { friendly_label: "Complete Order button" }
+                }
+              ],
+              attachments: [
+                {
+                  attachment_type: "screenshot",
+                  filename: "shot.png",
+                  data_url: `data:image/png;base64,${VALID_1X1_PNG_BASE64}`
+                }
+              ]
+            }
+          })
+        })
+      );
+      assert.equal(createFbRes.status, 201);
+      const createdFb = (await createFbRes.json()) as {
+        id: number;
+        ownership_token: string;
+        confirmation_message: string;
+        confirmation_metadata: { pins_summary: string };
+        feedback: { attachments: Array<{ id: number }> };
+      };
+      assert.ok(createdFb.confirmation_message.includes(`#${createdFb.id}`));
+      assert.ok(!createdFb.confirmation_message.includes("#internal-pay-btn"));
+      assert.equal(createdFb.confirmation_metadata.pins_summary, "Complete Order button");
+
+      // Attachment download sets Referrer-Policy: no-referrer & X-Content-Type-Options: nosniff
+      const attRes = await prodApp.GET(
+        new Request(
+          `https://acme.com/api/context-drop/feedback/${createdFb.id}/attachments/${createdFb.feedback.attachments[0]!.id}?ownership_token=${encodeURIComponent(createdFb.ownership_token)}`
+        )
+      );
+      assert.equal(attRes.status, 200);
+      assert.equal(attRes.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(attRes.headers.get("x-content-type-options"), "nosniff");
+
+      // Feedback mode works without BYOK; IDOR lookup without token returns 403
+      const guidanceRes = await prodApp.POST(
+        new Request("https://acme.com/api/context-drop/assistant/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://acme.com" },
+          body: JSON.stringify({
+            mode: "feedback",
+            page_url: "https://acme.com/checkout",
+            messages: [{ role: "user", content: "Help" }]
+          })
+        })
+      );
+      assert.equal(guidanceRes.status, 200);
+
+      const idorConfirmRes = await prodApp.POST(
+        new Request("https://acme.com/api/context-drop/assistant/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://acme.com" },
+          body: JSON.stringify({
+            mode: "feedback",
+            feedback_id: createdFb.id,
+            page_url: "https://acme.com/checkout",
+            messages: [{ role: "user", content: "status?" }]
+          })
+        })
+      );
+      assert.equal(idorConfirmRes.status, 403);
+
+      const validConfirmRes = await prodApp.POST(
+        new Request("https://acme.com/api/context-drop/assistant/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://acme.com" },
+          body: JSON.stringify({
+            mode: "feedback",
+            feedback_id: createdFb.id,
+            ownership_token: createdFb.ownership_token,
+            page_url: "https://acme.com/checkout",
+            messages: [{ role: "user", content: "status?" }]
+          })
+        })
+      );
+      assert.equal(validConfirmRes.status, 200);
+
+      // Build rejected on production default (403)
+      const prodBuildRes = await prodApp.POST(
+        new Request("https://acme.com/api/context-drop/assistant/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://acme.com" },
+          body: JSON.stringify({
+            mode: "build",
+            page_url: "https://acme.com/checkout",
+            messages: [{ role: "user", content: "Change copy" }]
+          })
+        })
+      );
+      assert.equal(prodBuildRes.status, 403);
+
+      // 4. Staging Build flow: write tools gated until approval, strict submitter ACL, prompt-free audit
+      let currentActor: { type: string; id: number; label: string } | null = {
+        type: "Staff",
+        id: 10,
+        label: "staff10@acme.com"
+      };
+      const writeLog: string[] = [];
+      let buildStep = 0;
+
+      const stagingApp = createContextDropNextHandler({
+        environment: "staging",
+        storageDir: tmpDir,
+        ownershipSecret: "staging-node-secret-key-0123456789",
+        resolveSubmitter: () => currentActor,
+        assistant: {
+          enabled: true,
+          buildTarget: { repo: "acme/web", defaultBaseBranch: "main" },
+          llm: {
+            provider: "anthropic",
+            apiKey: "sk-ant-node-staging-key",
+            models: { ask: "claude-3-5-haiku-latest", build: "claude-sonnet-4-20250514" },
+            transport: async ({ tools, conversation, credentials }) => {
+              // Build write tools MUST NOT appear in LLM tool schema list
+              assert.ok(!tools.some((t) => t.name === "git_push_branch"));
+              assert.equal(credentials.model, "claude-sonnet-4-20250514");
+              assert.equal(conversation[0]?.images?.length, 1);
+              buildStep += 1;
+              if (buildStep === 1) {
+                return {
+                  text: "",
+                  tool_calls: [
+                    {
+                      id: "tc_1",
+                      name: "propose_change_set",
+                      arguments: {
+                        summary: "Fix CTA label",
+                        patches: [{ path: "app/page.tsx", old_string: "Buy", new_string: "Pay Now" }]
+                      }
+                    }
+                  ]
+                };
+              }
+              return { text: "Draft ChangeSet ready for approval.", tool_calls: [] };
+            }
+          },
+          buildTools: [
+            {
+              name: "build_status_get",
+              description: "CI status",
+              write: false,
+              execute: () => ({ status: "preview_ready", preview_url: "https://pr-1.preview.acme.com" })
+            },
+            {
+              name: "git_create_branch",
+              description: "branch",
+              write: true,
+              execute: (args) => {
+                writeLog.push(`branch:${String(args["branch_name"])}`);
+                return { ok: true };
+              }
+            },
+            {
+              name: "git_apply_patches",
+              description: "patch",
+              write: true,
+              execute: () => {
+                writeLog.push("patch");
+                return { ok: true };
+              }
+            },
+            {
+              name: "git_push_branch",
+              description: "push",
+              write: true,
+              execute: () => {
+                writeLog.push("push");
+                return { ok: true };
+              }
+            },
+            {
+              name: "pull_request_open",
+              description: "pr",
+              write: true,
+              execute: () => {
+                writeLog.push("pr");
+                return { pr_url: "https://github.com/acme/web/pull/77" };
+              }
+            }
+          ]
+        }
+      });
+
+      const buildTurnRes = await stagingApp.POST(
+        new Request("https://staging.acme.com/api/context-drop/assistant/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Origin: "https://staging.acme.com" },
+          body: JSON.stringify({
+            mode: "build",
+            model: "claude-opus-4-ignored",
+            page_url: "https://staging.acme.com/checkout",
+            messages: [{ role: "user", content: "Secret prompt text that must not be audited" }],
+            attachments: [
+              {
+                attachment_type: "screenshot",
+                filename: "ui.png",
+                data_url: `data:image/png;base64,${VALID_1X1_PNG_BASE64}`
+              }
+            ]
+          })
+        })
+      );
+      assert.equal(buildTurnRes.status, 200);
+      const setCookie = buildTurnRes.headers.get("set-cookie") ?? "";
+      const sessionCookie = setCookie.split(";")[0] ?? "";
+      const buildTurnJson = (await buildTurnRes.json()) as {
+        change_set: { id: number; status: string };
+        approval_token: string;
+      };
+      assert.equal(buildTurnJson.change_set.status, "draft");
+      assert.equal(writeLog.length, 0);
+
+      // Audit log stores mode + tool_names without prompt text
+      const turns = stagingApp.handler.getAssistantStateStore().listTurns();
+      assert.equal(turns.length, 1);
+      assert.ok(!JSON.stringify(turns).includes("Secret prompt text"));
+
+      // Staff #2 on the exact same session cookie is denied (403)
+      currentActor = { type: "Staff", id: 99, label: "staff99@acme.com" };
+      const crossStaffGet = await stagingApp.GET(
+        new Request(
+          `https://staging.acme.com/api/context-drop/assistant/change_sets/${buildTurnJson.change_set.id}`,
+          { headers: { Cookie: sessionCookie } }
+        )
+      );
+      assert.equal(crossStaffGet.status, 403);
+
+      // Owner Staff #10 approves with valid HMAC approval_token -> executes write tools & opens PR
+      currentActor = { type: "Staff", id: 10, label: "staff10@acme.com" };
+      const approveRes = await stagingApp.POST(
+        new Request(
+          `https://staging.acme.com/api/context-drop/assistant/change_sets/${buildTurnJson.change_set.id}/approve`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Origin: "https://staging.acme.com",
+              Cookie: sessionCookie
+            },
+            body: JSON.stringify({ approval_token: buildTurnJson.approval_token })
+          }
+        )
+      );
+      assert.equal(approveRes.status, 200);
+      const approvedJson = (await approveRes.json()) as {
+        change_set: { status: string; pr_url: string; preview_url: string };
+      };
+      assert.equal(approvedJson.change_set.status, "preview_ready");
+      assert.equal(approvedJson.change_set.pr_url, "https://github.com/acme/web/pull/77");
+      assert.equal(approvedJson.change_set.preview_url, "https://pr-1.preview.acme.com");
+      assert.deepEqual(writeLog.slice(1), ["patch", "push", "pr"]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 

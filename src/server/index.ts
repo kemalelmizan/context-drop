@@ -5,6 +5,7 @@ export * from "./storage/memory.ts";
 export * from "./storage/local.ts";
 export * from "./storage/postgres.ts";
 export * from "./handler.ts";
+export * from "../assistant/index.ts";
 export {
   ContextDropMcpDispatcher,
   EnvironmentRouter,

@@ -6,6 +6,7 @@ end
 
 require_relative "context_drop/version"
 require_relative "context_drop/base64_util"
+require_relative "context_drop/secret_redactor"
 require_relative "context_drop/configuration"
 require_relative "context_drop/notification_secrets"
 require_relative "context_drop/feedback_events/publisher"

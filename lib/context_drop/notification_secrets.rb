@@ -57,18 +57,31 @@ module ContextDrop
       private
 
       def master_key
-        explicit = ContextDrop.config.ownership_secret.to_s.strip
-        return Digest::SHA256.digest(explicit) if explicit.bytesize >= 16
+        [
+          ContextDrop.config.ownership_secret,
+          ENV["CONTEXT_DROP_OWNERSHIP_SECRET"],
+          ENV["CONTEXT_DROP_SECRET_KEY"]
+        ].each do |candidate|
+          explicit = candidate.to_s.strip
+          return Digest::SHA256.digest(explicit) if explicit.bytesize >= 16
+        end
 
         path = resolved_master_key_path
         if File.exist?(path)
           raw = File.binread(path)
+          File.chmod(0o600, path) rescue nil
           return raw if raw.bytesize == 32
         end
 
         FileUtils.mkdir_p(File.dirname(path))
         raw = SecureRandom.random_bytes(32)
-        File.binwrite(path, raw)
+        tmp_path = "#{path}.tmp.#{SecureRandom.hex(4)}"
+        File.open(tmp_path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |f|
+          f.binmode
+          f.write(raw)
+        end
+        File.chmod(0o600, tmp_path) rescue nil
+        File.rename(tmp_path, path)
         raw
       end
 

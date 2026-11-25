@@ -6,6 +6,8 @@ require_relative "../dummy/config/environment"
 RSpec.describe "ContextDrop Assistant" do
   before do
     ContextDrop.reset_configuration!
+    ContextDrop::ApplicationController.reset_rate_limits!
+    Rails.cache.clear if Rails.respond_to?(:cache) && Rails.cache
     ContextDrop.configure do |c|
       c.enabled = true
       c.assistant_enabled = true
@@ -165,6 +167,118 @@ RSpec.describe "ContextDrop Assistant" do
 
       expect(sess.response.status).to eq(422)
       expect(captured_conversations.size).to eq(1)
+    end
+
+    it "serves feedback guidance without BYOK and enforces assistant LLM isolation, timeouts, and model allowlists (SEC-H053)" do
+      sess = ActionDispatch::Integration::Session.new(app)
+      sess.default_url_options[:host] = "localhost"
+      sess.get "/context_drop/config", headers: { "HTTP_HOST" => "localhost", "HTTP_ACCEPT" => "application/json" }
+      csrf = JSON.parse(sess.response.body)["csrf_token"]
+
+      # 1. Feedback mode guidance works without any LLM key configured
+      sess.post "/context_drop/assistant/turn",
+                params: {
+                  mode: "feedback",
+                  page_url: "http://localhost/checkout",
+                  messages: [{ role: "user", content: "How do I send feedback?" }]
+                }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(200)
+      fb_body = JSON.parse(sess.response.body)
+      expect(fb_body["mode"]).to eq("feedback")
+      expect(fb_body["reply"].length.positive?).to eq(true)
+
+      # 2. Strict assistant vault/env isolation: shared ANTHROPIC_API_KEY is ignored when assistant_allow_shared_key_store = false
+      ENV["ANTHROPIC_API_KEY"] = "sk-ant-shared-agent-only"
+      ContextDrop.configure do |c|
+        c.assistant_allow_shared_key_store = false
+        c.assistant_models = { ask: "claude-3-5-haiku-latest", build: "claude-sonnet-4-20250514" }
+        c.rate_limit = { max_requests: 100, period: 3600 }
+        c.assistant_rate_limit = { max_requests: 3, period: 3600 }
+      end
+      expect(ContextDrop.config.assistant_llm_configured?).to eq(false)
+
+      ENV["CONTEXT_DROP_ASSISTANT_ANTHROPIC_API_KEY"] = "sk-ant-dedicated-assistant"
+      expect(ContextDrop.config.assistant_llm_configured?).to eq(true)
+
+      observed_steps = []
+      ContextDrop::Agent::LlmClient.transport = lambda do |credentials:, read_timeout:, **|
+        observed_steps << { credentials: credentials, read_timeout: read_timeout }
+        { text: "Haiku answer", tool_calls: [], raw_assistant: [] }
+      end
+
+      # 3. Untrusted client model override is ignored by default and Ask uses 45s timeout + dedicated key
+      sess.post "/context_drop/assistant/turn",
+                params: {
+                  mode: "ask",
+                  model: "claude-opus-4-expensive",
+                  page_url: "http://localhost/checkout",
+                  messages: [{ role: "user", content: "Explain shipping" }]
+                }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(200)
+      expect(observed_steps.last[:credentials][:api_key]).to eq("sk-ant-dedicated-assistant")
+      expect(observed_steps.last[:credentials][:model]).to eq("claude-3-5-haiku-latest")
+      expect(observed_steps.last[:read_timeout]).to eq(45)
+
+      # 4. When client override is enabled with assistant_allowed_models, disallowed models return 422
+      ContextDrop.configure do |c|
+        c.assistant_allow_client_model_override = true
+        c.assistant_allowed_models = { ask: ["claude-3-5-haiku-latest"] }
+      end
+      sess.post "/context_drop/assistant/turn",
+                params: {
+                  mode: "ask",
+                  model: "claude-opus-4-expensive",
+                  page_url: "http://localhost/checkout",
+                  messages: [{ role: "user", content: "Try disallowed model" }]
+                }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(422)
+
+      # 5. Assistant rate-limit bucket (max_requests: 2) throttles 3rd assistant request with 429 without blocking POST /feedback
+      sess.post "/context_drop/assistant/turn",
+                params: {
+                  mode: "feedback",
+                  page_url: "http://localhost/checkout",
+                  messages: [{ role: "user", content: "Third assistant call" }]
+                }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(429)
+
+      sess.post "/context_drop/feedback",
+                params: { feedback: { message: "Feedback bucket still open", page_url: "http://localhost/checkout" } }.to_json,
+                headers: {
+                  "HTTP_HOST" => "localhost",
+                  "CONTENT_TYPE" => "application/json",
+                  "HTTP_ACCEPT" => "application/json",
+                  "HTTP_X_CSRF_TOKEN" => csrf
+                }
+      expect(sess.response.status).to eq(201)
+    ensure
+      ENV.delete("CONTEXT_DROP_ASSISTANT_ANTHROPIC_API_KEY")
+      ContextDrop::ApplicationController.reset_rate_limits!
+      Rails.cache.clear if Rails.respond_to?(:cache) && Rails.cache
     end
   end
 end

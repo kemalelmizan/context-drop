@@ -1,0 +1,8 @@
+# Design: Standalone Node / Next.js Assistant Parity
+
+## Architecture
+- `src/assistant/confirmations.ts`: Pure TypeScript implementation of `renderConfirmationForFeedback`, `renderFeedbackGuidance`, and `formatDomContextForAssistant` (`friendly` vs `full` disclosure).
+- `src/assistant/tools.ts`: Mode-isolated Ask and Build tool registries, `validateAskToolName` denylist (`git_`, `change_set_`, `pull_request_`, `repo_`, `deploy_`, `run_shell`), `propose_change_set` built-in read-phase tool, and `NullBuild` stub fallback when no host Build tools are registered.
+- `src/assistant/change-sets.ts`: Persists ChangeSets and prompt-free `assistant_turns` audit entries (in `<storageDir>/assistant-state.json` when `storageDir` is configured, or in-memory per handler when ephemeral storage is injected). Computes `cd_change_set:v1:<rawToken>` HMAC-SHA256 digests verified via `crypto.timingSafeEqual`.
+- `src/assistant/llm-client.ts`: Resolves server-side credentials from `config.assistant.llm` or `CONTEXT_DROP_ASSISTANT_*` / shared provider env vars (`allowSharedEnv` default `true`), validates custom OpenAI-compatible URLs (`https:` required except non-production loopback; private/link-local/metadata IPs blocked; `redirect: "error"`), and supports an injectable `transport` seam for deterministic tests.
+- `src/assistant/orchestrator.ts`: Coordinates Feedback (LLM-free guidance & ownership-verified `feedback_id` lookup), Ask, and Build turns, plus `BuildExecutor` (`git_create_branch` → `git_apply_patches` → `git_push_branch` → `pull_request_open` → `build_status_get`) strictly after approval.
