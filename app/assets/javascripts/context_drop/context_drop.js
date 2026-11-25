@@ -8008,7 +8008,26 @@
         };
         this.textareaEl.placeholder = placeholders[mode];
       }
+      if (mode === "feedback" && this.config.assistant?.enabled) {
+        void this.loadFeedbackGuidance();
+      }
       this.syncUiStates();
+    }
+  
+            async loadFeedbackGuidance()                {
+      try {
+        const res = await this.apiClient.sendAssistantTurn({
+          mode: "feedback",
+          messages: [{ role: "user", content: "How do I send feedback?" }],
+          page_url: typeof window !== "undefined" ? window.location.href : "/"
+        });
+        if (res.reply) {
+          this.assistantMessages = [{ role: "assistant", content: res.reply }];
+          this.renderAssistantStream();
+        }
+      } catch {
+        // Non-fatal
+      }
     }
   
             renderAssistantStream()       {
@@ -10864,10 +10883,26 @@
         this.renderTray();
         this.renderChatThread();
         this.syncUiStates();
-        this.showStatus(
-          smartMode ? "Thanks! Your feedback was sent." : "Context drop saved.",
-          "success"
-        );
+  
+        const confirmation =
+          typeof res?.confirmation_message === "string" ? res.confirmation_message.trim() : "";
+        if (confirmation) {
+          if (this.config.assistant?.enabled) {
+            this.assistantChatMode = "feedback";
+            this.setAssistantChatMode("feedback");
+          }
+          this.assistantMessages.push({ role: "assistant", content: confirmation });
+          if (this.assistantStreamEl) {
+            this.assistantStreamEl.hidden = false;
+          }
+          this.renderAssistantStream();
+          this.showStatus(confirmation, "success");
+        } else {
+          this.showStatus(
+            smartMode ? "Thanks! Your feedback was sent." : "Context drop saved.",
+            "success"
+          );
+        }
         this.emitWidgetEvent("context-drop:submit", {
           response: res,
           payload

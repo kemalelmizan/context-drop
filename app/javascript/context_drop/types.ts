@@ -178,6 +178,7 @@ export interface AssistantTurnResponse {
   tool_calls?: Array<{ name: string; summary: string; status: string }>;
   change_set?: AssistantChangeSet;
   approval_token?: string;
+  feedback_confirmation?: { message: string; metadata: Record<string, unknown> };
   error?: string;
 }
 
@@ -307,6 +308,8 @@ export interface FeedbackSubmissionResponse {
   created_at: string;
   updated_at?: string;
   ownership_token?: string;
+  confirmation_message?: string;
+  confirmation_metadata?: Record<string, string | number>;
   feedback?: OwnFeedbackRecord;
 }
 

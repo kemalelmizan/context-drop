@@ -41,12 +41,15 @@ module ContextDrop
         submitter: ContextDrop.config.resolve_submitter(self),
         session_id: assistant_session_id,
         provider: params[:provider].to_s.strip.presence,
-        model: params[:model].to_s.strip.presence
+        model: params[:model].to_s.strip.presence,
+        feedback_id: params[:feedback_id],
+        ownership_token: combined_ownership_token
       )
 
       render json: result, status: :ok
     rescue ContextDrop::Error => e
-      render json: { error: e.message }, status: :unprocessable_entity
+      status = forbidden_assistant_error?(e) ? :forbidden : :unprocessable_entity
+      render json: { error: e.message }, status: status
     end
 
     def show_change_set
@@ -93,7 +96,13 @@ module ContextDrop
         return
       end
 
-      record.approve!(raw_token: params[:approval_token].to_s)
+      raw_approval = params[:approval_token].to_s.strip
+      if raw_approval.empty?
+        render json: { error: "approval_token is required" }, status: :unprocessable_entity
+        return
+      end
+
+      record.approve!(raw_token: raw_approval)
 
       result = Assistant::BuildExecutor.new(change_set: record).execute_after_approval!
       if result[:is_error]
@@ -131,6 +140,18 @@ module ContextDrop
       return true if submitter && record.submitter == submitter
 
       record.session_id.present? && record.session_id == assistant_session_id
+    end
+
+    def combined_ownership_token
+      [
+        params[:ownership_token],
+        request.headers["X-Context-Drop-Ownership-Token"]
+      ].map { |t| t.to_s.strip }.reject(&:empty?).first
+    end
+
+    def forbidden_assistant_error?(err)
+      msg = err.message.to_s
+      msg == "Forbidden" || msg.start_with?("Forbidden ")
     end
 
     def to_plain_hash(obj)

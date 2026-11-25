@@ -22,6 +22,7 @@ require_relative "context_drop/assistant/ask_pack"
 require_relative "context_drop/assistant/build_pack"
 require_relative "context_drop/assistant/adapters/null_build"
 require_relative "context_drop/assistant/dom_context_formatter"
+require_relative "context_drop/assistant/feedback_confirmation"
 require_relative "context_drop/assistant/build_executor"
 require_relative "context_drop/assistant/orchestrator"
 require_relative "context_drop/engine" if defined?(Rails::Engine)

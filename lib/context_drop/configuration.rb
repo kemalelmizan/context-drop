@@ -61,7 +61,9 @@ module ContextDrop
                   :assistant_models,
                   :assistant_allow_code_tools_in_ask,
                   :authorize_assistant_mode,
-                  :build_target
+                  :build_target,
+                  :assistant_feedback_confirmations,
+                  :assistant_feedback_guidance
 
     attr_reader :position, :selection_mode
 
@@ -125,6 +127,8 @@ module ContextDrop
       @assistant_ask_entries = []
       @assistant_build_entries = []
       @assistant_null_build_registered = false
+      @assistant_feedback_confirmations = []
+      @assistant_feedback_guidance = []
 
       @authorize_assistant_mode = lambda do |controller, mode|
         mode_s = mode.to_s

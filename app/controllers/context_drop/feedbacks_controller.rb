@@ -133,6 +133,8 @@ module ContextDrop
         dashboard_url: feedback_dashboard_url(feedback)
       )
       ownership_token = ContextDrop::OwnershipToken.generate(feedback.id)
+      smart = ContextDrop.config.resolved_selection_mode == "smart"
+      confirmation = ContextDrop::Assistant::FeedbackConfirmation.render_for_feedback(feedback, smart: smart)
 
       render json: {
         id: feedback.id,
@@ -141,6 +143,8 @@ module ContextDrop
         attachments_count: feedback.attachments.size,
         element_references_count: feedback.element_references.size,
         ownership_token: ownership_token,
+        confirmation_message: confirmation[:message],
+        confirmation_metadata: confirmation[:metadata],
         feedback: serialize_own_feedback(feedback, ownership_token: ownership_token),
         created_at: feedback.created_at.iso8601,
         updated_at: feedback.updated_at.iso8601

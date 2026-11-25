@@ -12,16 +12,19 @@ module ContextDrop
       end
 
       def run_turn(mode:, messages:, page_url: nil, element_references: [], attachments: [], change_set: nil,
-                   provider: nil, model: nil, submitter: nil, session_id: nil)
+                   provider: nil, model: nil, submitter: nil, session_id: nil, feedback_id: nil, ownership_token: nil)
         mode_s = mode.to_s.strip.downcase
         raise ContextDrop::Error, "Invalid assistant mode: #{mode}" unless AssistantTurn::MODES.include?(mode_s)
 
         if mode_s == "feedback"
-          return {
-            reply: "Use Feedback mode to pin context and send a report, or switch to Ask for product help.",
-            mode: mode_s,
-            tool_calls: []
-          }
+          return handle_feedback_turn(
+            messages: messages,
+            page_url: page_url,
+            feedback_id: feedback_id,
+            ownership_token: ownership_token,
+            submitter: submitter,
+            session_id: session_id
+          )
         end
 
         creds = @key_store.resolve_credentials!(provider: provider, model_override: model_for_mode(mode_s, model))
@@ -158,7 +161,8 @@ module ContextDrop
 
         last_user = turns.rindex { |t| t[:role] == "user" }
         if last_user && element_references.any?
-          appendix = DomContextFormatter.format(page_url, element_references)
+          disclosure = ContextDrop.config.resolved_selection_mode == "smart" ? :friendly : :full
+          appendix = DomContextFormatter.format(page_url, element_references, disclosure: disclosure)
           turns[last_user][:content] = "#{turns[last_user][:content]}\n\n#{appendix}" unless appendix.empty?
         end
 
@@ -193,6 +197,51 @@ module ContextDrop
           is_error: res[:is_error],
           summary: summary
         }
+      end
+
+      def handle_feedback_turn(messages:, page_url:, feedback_id:, ownership_token:, submitter:, session_id:)
+        smart = ContextDrop.config.resolved_selection_mode == "smart"
+
+        if feedback_id.present?
+          feedback = ContextDrop::Feedback.includes(:element_references, :attachments).find_by(id: feedback_id)
+          if !feedback || (feedback.respond_to?(:deleted?) && feedback.deleted?)
+            raise ContextDrop::Error, "Feedback not found"
+          end
+
+          unless feedback_visible?(feedback, ownership_token: ownership_token, submitter: submitter, session_id: session_id)
+            raise ContextDrop::Error, "Forbidden"
+          end
+
+          confirmation = FeedbackConfirmation.render_for_feedback(feedback, smart: smart)
+          ContextDrop::AssistantTurn.create!(
+            mode: "feedback",
+            session_id: session_id,
+            submitter: submitter,
+            tool_names: [],
+            duration_ms: 0
+          )
+          return {
+            reply: confirmation[:message],
+            mode: "feedback",
+            tool_calls: [],
+            feedback_confirmation: confirmation
+          }
+        end
+
+        guidance = FeedbackConfirmation.render_guidance
+        {
+          reply: guidance[:message],
+          mode: "feedback",
+          tool_calls: [],
+          feedback_confirmation: guidance
+        }
+      end
+
+      def feedback_visible?(feedback, ownership_token:, submitter:, session_id:)
+        return true if submitter && feedback.submitter == submitter
+        return false if ownership_token.to_s.strip.empty?
+
+        ContextDrop::OwnershipToken.valid?(ownership_token, feedback.id)
       end
 
       def handle_propose_change_set(args, page_url:, submitter:, session_id:, active_change_set:)

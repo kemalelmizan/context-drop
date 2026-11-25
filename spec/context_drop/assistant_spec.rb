@@ -26,13 +26,13 @@ RSpec.describe "ContextDrop Assistant" do
     end
 
     it "rejects forbidden Ask tool names" do
-      expect do
-        ContextDrop.config.register_ask_tool(
-          name: "git_push_branch",
-          description: "bad",
-          parameters: { type: "object", properties: {} }
-        ) { {} }
-      end.to raise_error(ContextDrop::Error)
+    expect do
+      ContextDrop.config.register_ask_tool(
+        name: "git_push_branch",
+        description: "bad",
+        parameters: { type: "object", properties: {} }
+      ) { {} }
+    end.to_raise_error(ContextDrop::Error)
     end
   end
 
@@ -46,6 +46,20 @@ RSpec.describe "ContextDrop Assistant" do
       expect(record.id).to be_truthy
       record.approve!(raw_token: raw)
       expect(record.reload.status).to eq("approved")
+    end
+  end
+
+  describe ContextDrop::Assistant::FeedbackConfirmation do
+    it "renders confirmation with metadata placeholders" do
+      fb = ContextDrop::Feedback.create!(
+        message: "Help",
+        page_url: "https://example.com/checkout",
+        status: "new"
+      )
+      conf = ContextDrop::Assistant::FeedbackConfirmation.render_for_feedback(fb, smart: true)
+      expect(conf[:message]).to include("##{fb.id}")
+      expect(conf[:metadata][:status]).to eq("new")
+      expect(conf[:metadata][:page_url]).to include("checkout")
     end
   end
 

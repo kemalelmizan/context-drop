@@ -26,6 +26,8 @@ module MiniRSpec
         else
           false
         end
+      when :include_all
+        Array(@expected).all? { |item| actual.respond_to?(:include?) && actual.include?(item) }
       when :be_a then actual.is_a?(@expected)
       end
     end
@@ -210,8 +212,16 @@ module MiniRSpec
     def be_nil = Matcher.new(:be_nil)
     def be_truthy = Matcher.new(:be_truthy)
     def be_falsy = Matcher.new(:be_falsy)
-    def include(expected) = Matcher.new(:include, expected)
+    def include(*expected)
+      expected.size <= 1 ? Matcher.new(:include, expected.first) : Matcher.new(:include_all, expected)
+    end
+
     def be_a(expected) = Matcher.new(:be_a, expected)
+
+    def be(expected = :__truthy__)
+      expected == :__truthy__ ? Matcher.new(:be_truthy) : Matcher.new(:eq, expected)
+    end
+
     def raise_error(expected_class = StandardError, msg_matcher = nil) = RaiseErrorMatcher.new(expected_class, msg_matcher)
   end
 
