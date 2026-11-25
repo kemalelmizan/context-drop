@@ -26,7 +26,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 | SEC-H011 | Shadow DOM isolation | [`app/javascript/context_drop/widget.ts`](../../app/javascript/context_drop/widget.ts) `attachShadow`; bundle `context_drop.js` | `widget.test.ts` | Implemented | Gem |
 | SEC-H012 | Capture-phase pin suppression | [`app/javascript/context_drop/element-picker.ts`](../../app/javascript/context_drop/element-picker.ts) capture listeners | `widget.test.ts` | Implemented | Gem |
 | SEC-H013 | No secrets in DOM (keys) | [`lib/context_drop/agent/key_store.rb`](../../lib/context_drop/agent/key_store.rb) `providers_status` masking; [`app/controllers/context_drop/agent_controller.rb`](../../app/controllers/context_drop/agent_controller.rb) status JSON | `agent_spec.rb` | Implemented | Gem |
-| SEC-H014 | No raw MCP/BYOK in storage | Keys not in `localStorage`; **Partial:** `ownership_token` map in [`app/javascript/context_drop/api-client.ts`](../../app/javascript/context_drop/api-client.ts) `OWNERSHIP_STORAGE_KEY` | `api-client.test.ts` | Partial | Gem |
+| SEC-H014 | No raw MCP/BYOK in storage; configurable ownership token persistence | Keys/approval tokens never in `localStorage`; [`app/javascript/context_drop/api-client.ts`](../../app/javascript/context_drop/api-client.ts) bounded scoped map + `persist_ownership_tokens` memory-only mode | `api-client.test.ts`, `configuration_spec.rb` | Implemented | Gem+Host |
 
 ---
 
@@ -110,7 +110,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 | SEC-H039 | MCP status auth | Same Bearer as HTTP MCP | `mcp_spec.rb` | Implemented | Gem |
 | SEC-H040 | SSE auth | `mcp_events_controller.rb` stream | events specs | Implemented | Gem |
 | SEC-H041 | Webhook signing | [`lib/context_drop/notifications/webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb); TS `webhook-client.ts` | notifications spec | Implemented | Gem |
-| SEC-H042 | Webhook URL policy | Dashboard validation / host settings | **Gap** explicit HTTPS-only validator | Partial | Gem+Host |
+| SEC-H042 | Webhook URL policy | [`notification_destination.rb`](../../app/models/context_drop/notification_destination.rb) `validate_settings_shape`; [`webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb) `validate_https_uri!`; [`src/server/handler.ts`](../../src/server/handler.ts) | `events_and_notifications_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Host |
 | SEC-H043 | Event payload minimization | [`lib/context_drop/feedback_events/publisher.rb`](../../lib/context_drop/feedback_events/publisher.rb) | events specs | Implemented | Gem |
 | SEC-H044 | Stdio MCP | [`lib/context_drop/mcp/stdio_runner.rb`](../../lib/context_drop/mcp/stdio_runner.rb); `bin/rails context_drop:mcp` | `mcp_spec.rb` | Implemented | Gem |
 
@@ -149,7 +149,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 | SEC-A004 | Ask tool denylist | [`tool_registry.rb`](../../lib/context_drop/assistant/tool_registry.rb) `validate_ask_registration!` | `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-A005 | Build write gating | `tools_for_mode(allow_write:)`; [`build_executor.rb`](../../lib/context_drop/assistant/build_executor.rb) | `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-A006 | ChangeSet approval token | [`change_set.rb`](../../app/models/context_drop/change_set.rb); approve action | `assistant_spec.rb` | Implemented | Gem |
-| SEC-A007 | ChangeSet visibility | `assistant_controller.rb` `change_set_visible?` | — | Partial | Gem |
+| SEC-A007 | ChangeSet visibility | [`assistant_controller.rb`](../../app/controllers/context_drop/assistant_controller.rb) `change_set_visible?` (strict submitter match, hashed session ID, non-local submitter gate, `turn` `change_set_id` check) | `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-A008 | Smart DOM for LLM | `dom_context_formatter.rb` | `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-A009 | Assistant rate limit | `before_action :enforce_rate_limit!` | — | Implemented | Gem |
 | SEC-A010 | Audit without prompts | [`assistant_turn.rb`](../../app/models/context_drop/assistant_turn.rb); orchestrator create | — | Implemented | Gem |
@@ -208,9 +208,6 @@ Maps normative requirements to implementation paths, automated tests, and owners
 
 | Gap | Recommendation | Target file |
 |-----|----------------|-------------|
-| Ownership tokens in `localStorage` | Document risk; optional host flag to memory-only | `api-client.ts` |
-| ChangeSet visibility by `session_id` alone | Require submitter on shared staging | `assistant_controller.rb` |
-| Webhook URL HTTPS enforcement | `NotificationDestination` checks non-empty URL only; add HTTPS parse in production | `notification_destination.rb` |
 | Assistant vs agent LLM budget split | Separate vault keys / rate limits | `configuration.rb` |
 | Central secret-logging audit | RuboCop custom cop or logging filter | engine |
 

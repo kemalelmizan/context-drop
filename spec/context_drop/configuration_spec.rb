@@ -107,4 +107,34 @@ RSpec.describe "ContextDrop::Configuration" do
     expect(ContextDrop.config.local_agent_enabled).to eq(false)
     expect(ContextDrop.config.local_agent_allowed?).to eq(false)
   end
+
+  it "exposes persist_ownership_tokens, development-only insecure webhooks, and staging ChangeSet defaults" do
+    cfg = ContextDrop.config
+    expect(cfg.persist_ownership_tokens?).to eq(true)
+    expect(cfg.public_widget_config.dig(:privacy, :persist_ownership_tokens)).to eq(true)
+    expect(cfg.insecure_webhooks_allowed?).to eq(false)
+
+    ContextDrop.configure do |c|
+      c.persist_ownership_tokens = false
+      c.environment = "production"
+      c.allow_insecure_webhooks = true
+    end
+    expect(ContextDrop.config.persist_ownership_tokens?).to eq(false)
+    expect(ContextDrop.config.public_widget_config.dig(:privacy, :persist_ownership_tokens)).to eq(false)
+    expect(ContextDrop.config.insecure_webhooks_allowed?).to eq(false)
+    expect(ContextDrop.config.anonymous_change_sets_allowed?).to eq(false)
+
+    ContextDrop.configure do |c|
+      c.environment = "staging"
+    end
+    expect(ContextDrop.config.insecure_webhooks_allowed?).to eq(false)
+    expect(ContextDrop.config.anonymous_change_sets_allowed?).to eq(false)
+
+    ContextDrop.configure do |c|
+      c.environment = "development"
+      c.allow_insecure_webhooks = true
+    end
+    expect(ContextDrop.config.insecure_webhooks_allowed?).to eq(true)
+    expect(ContextDrop.config.anonymous_change_sets_allowed?).to eq(true)
+  end
 end

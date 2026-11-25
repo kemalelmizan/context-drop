@@ -24,7 +24,7 @@ Use this checklist before enabling **production** feedback, **HTTP MCP**, **assi
 - [ ] **SEC-H011** Widget uses Shadow DOM (`widget.ts` `attachShadow`)
 - [ ] **SEC-H012** Pin mode uses capture-phase suppression (`element-picker.ts`)
 - [ ] **SEC-H013** No LLM/MCP secrets in DOM; agent status shows masked keys only
-- [ ] **SEC-H014** Ownership tokens: conscious acceptance of `localStorage` for own-feedback IDOR UX (`api-client.ts`) — scope tokens per feedback id only
+- [ ] **SEC-H014** Ownership tokens: conscious acceptance of bounded `localStorage` for anonymous own-feedback UX, or set `config.persist_ownership_tokens = false` (`privacy.persistOwnershipTokens: false`) for memory-only mode on shared terminals
 - [ ] **SEC-H015** Smart mode does not show raw selectors to end users in confirmations
 
 ## 3. DOM, screenshots & privacy

@@ -26,7 +26,7 @@
 
 - **Weak `authorize_assistant_mode`** — default Build requires staff/admin/dev; tighten for your org.
 - **Null Build adapter** — Approve still calls stubs until `config/context_drop/build.rb` is implemented.
-- **Session-bound ChangeSets** — Same `session_id` can view draft; prefer authenticated submitter in multi-user staging.
+- **Anonymous ChangeSets opt-in** — Staging/production require an authenticated `current_submitter` for ChangeSets by default; keep `assistant_allow_anonymous_change_sets` disabled on multi-user staging.
 - **Ask RAG tools** — Host must not return secrets or internal URLs in tool JSON echoed to the model.
 
 ## Recommendations

@@ -128,7 +128,8 @@ module ContextDrop
       is_a?(ContextDrop::ConfigsController) ||
         is_a?(ContextDrop::AttachmentsController) ||
         is_a?(ContextDrop::FeedbacksController) ||
-        is_a?(ContextDrop::HealthController)
+        is_a?(ContextDrop::HealthController) ||
+        is_a?(ContextDrop::AssistantController)
     end
 
     def apply_widget_cors_headers!

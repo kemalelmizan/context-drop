@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "ipaddr"
 require "json"
 require "net/http"
 require "openssl"
@@ -40,8 +41,18 @@ module ContextDrop
           subscription.update_columns(last_cursor: occurrence.cursor, updated_at: Time.current)
         end
 
-        def validate_https_uri!(url)
-          uri = URI.parse(url)
+        def validate_https_uri!(url, allow_local_http: nil)
+          allow_dev_http = if allow_local_http.nil?
+                             defined?(ContextDrop) && ContextDrop.respond_to?(:config) && ContextDrop.config.insecure_webhooks_allowed?
+                           else
+                             !!allow_local_http
+                           end
+
+          uri = URI.parse(url.to_s.strip)
+          if allow_dev_http && uri.is_a?(URI::HTTP) && !uri.host.to_s.strip.empty? && loopback_host?(uri.host)
+            return uri
+          end
+
           raise DeliveryError, "Webhook URL must use HTTPS" unless uri.is_a?(URI::HTTPS)
           raise DeliveryError, "Webhook URL host missing" if uri.host.to_s.strip.empty?
           raise DeliveryError, "Webhook URL blocked (private network)" if private_or_local_host?(uri.host)
@@ -81,20 +92,22 @@ module ContextDrop
           raise DeliveryError, "HTTP #{res.code}: #{res.body.to_s.truncate(300)}"
         end
 
+        def loopback_host?(host)
+          clean = host.to_s.strip.downcase.delete_prefix("[").delete_suffix("]")
+          return true if %w[localhost 127.0.0.1 ::1].include?(clean) || clean.end_with?(".localhost")
+
+          IPAddr.new(clean).loopback?
+        rescue IPAddr::InvalidAddressError
+          false
+        end
+
         def private_or_local_host?(host)
-          down = host.to_s.strip.downcase
-          return true if %w[localhost metadata.google.internal].include?(down)
+          clean = host.to_s.strip.downcase.delete_prefix("[").delete_suffix("]")
+          return true if %w[localhost metadata.google.internal].include?(clean) || clean.end_with?(".localhost")
 
-          if down.match?(/\A\d{1,3}(\.\d{1,3}){3}\z/)
-            octets = down.split(".").map(&:to_i)
-            return true if octets[0] == 10
-            return true if octets[0] == 127
-            return true if octets[0] == 0
-            return true if octets[0] == 169 && octets[1] == 254
-            return true if octets[0] == 192 && octets[1] == 168
-            return true if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31
-          end
-
+          ip = IPAddr.new(clean)
+          ip.loopback? || ip.private? || ip.link_local? || ip.to_s == "0.0.0.0" || ip.to_s == "::"
+        rescue IPAddr::InvalidAddressError
           false
         end
       end

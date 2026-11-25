@@ -10,7 +10,8 @@ import {
 
 export async function deliverOccurrenceToDestinations(
   store: LocalEventStore,
-  occurrence: StoredEventOccurrence
+  occurrence: StoredEventOccurrence,
+  options?: { allowLocalHttp?: boolean }
 ): Promise<void> {
   const payload = store.toMcpPayload(occurrence);
   const destinations = await store.listDestinations();
@@ -34,7 +35,7 @@ export async function deliverOccurrenceToDestinations(
         });
       } else {
         const url = String(dest.settings["url"] ?? "").trim();
-        validateHttpsCallbackUrl(url);
+        validateHttpsCallbackUrl(url, { allowLocalHttp: options?.allowLocalHttp });
         const body = JSON.stringify(payload);
         const secrets = decryptSecrets(dest.secrets_ciphertext, store.cryptoOptions);
         const headers = signedWebhookHeaders(

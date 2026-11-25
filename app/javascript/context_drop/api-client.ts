@@ -46,15 +46,29 @@ export class ContextDropApiClient {
   private configFetched: boolean = false;
   private inFlightConfigPromise: Promise<WidgetConfig> | null = null;
   private memoryOwnershipTokens: Map<string, string> = new Map();
+  private persistOwnershipTokens: boolean = true;
 
   constructor(baseUrl: string = "/context_drop", options: ContextDropApiClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
     this.credentials = options.credentials || "same-origin";
     this.customHeaders = options.headers ? { ...options.headers } : {};
+    this.persistOwnershipTokens = options.persistOwnershipTokens !== false;
   }
 
   public getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  public getPersistOwnershipTokens(): boolean {
+    return this.persistOwnershipTokens;
+  }
+
+  public setPersistOwnershipTokens(persist: boolean): void {
+    const next = Boolean(persist);
+    this.persistOwnershipTokens = next;
+    if (!next) {
+      this.purgeScopedLocalStorageTokens();
+    }
   }
 
   public setCredentials(credentials: RequestCredentials): void {
@@ -266,7 +280,44 @@ export class ContextDropApiClient {
     return `${this.baseUrl}::${String(id)}`;
   }
 
+  private purgeScopedLocalStorageTokens(): void {
+    const store = getBrowserLocalStorage();
+    if (!store) return;
+    try {
+      const raw = store.getItem(OWNERSHIP_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      const prefix = `${this.baseUrl}::`;
+      const remaining: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && !k.startsWith(prefix) && k.includes("::")) {
+          remaining[k] = v;
+        }
+      }
+      if (Object.keys(remaining).length === 0) {
+        if (typeof store.removeItem === "function") {
+          store.removeItem(OWNERSHIP_STORAGE_KEY);
+        } else {
+          store.setItem(OWNERSHIP_STORAGE_KEY, "{}");
+        }
+      } else {
+        store.setItem(OWNERSHIP_STORAGE_KEY, JSON.stringify(remaining));
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
   private readStoredTokenMap(): Record<string, string> {
+    if (!this.persistOwnershipTokens) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of this.memoryOwnershipTokens.entries()) {
+        out[k] = v;
+      }
+      return out;
+    }
+
     const store = getBrowserLocalStorage();
     if (!store) {
       const out: Record<string, string> = {};
@@ -307,6 +358,10 @@ export class ContextDropApiClient {
     for (const [k, v] of trimmedEntries) {
       bounded[k] = v;
       this.memoryOwnershipTokens.set(k, v);
+    }
+
+    if (!this.persistOwnershipTokens) {
+      return;
     }
 
     const store = getBrowserLocalStorage();

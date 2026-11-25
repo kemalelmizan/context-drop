@@ -109,6 +109,7 @@ export interface SessionFeedbackEntry {
 export interface ContextDropApiClientOptions {
   credentials?: RequestCredentials;
   headers?: Record<string, string>;
+  persistOwnershipTokens?: boolean;
 }
 
 export interface WidgetConfig {
@@ -136,6 +137,7 @@ export interface WidgetConfig {
   };
   privacy: {
     excluded_selectors: string[];
+    persist_ownership_tokens?: boolean;
   };
   assistant?: {
     enabled: boolean;
@@ -167,6 +169,12 @@ export interface AssistantTurnRequestPayload {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   page_url: string;
   element_references?: ElementReferenceSnapshot[];
+  attachments?: Array<{
+    attachment_type: "image" | "screenshot";
+    filename: string;
+    signed_blob_id?: string;
+    data_url?: string;
+  }>;
   change_set_id?: number | string;
 }
 

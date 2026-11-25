@@ -64,5 +64,53 @@ RSpec.describe "ContextDrop MCP Events & Notifications" do
       )
       expect(dest.subscribed_to?("feedback.created")).to be(true)
     end
+
+    it "rejects non-HTTPS and private/metadata webhook URLs in production and honors development loopback opt-in" do
+      skip "Notification tables not migrated" unless ContextDrop::NotificationDestination.connection.data_source_exists?("context_drop_notification_destinations")
+
+      ContextDrop.configure do |c|
+        c.environment = "production"
+        c.allow_insecure_webhooks = true
+      end
+
+      [
+        "http://example.com/hooks",
+        "http://localhost:4000/hooks",
+        "https://169.254.169.254/latest/meta-data",
+        "https://10.0.0.8/internal"
+      ].each do |bad_url|
+        dest = ContextDrop::NotificationDestination.new(
+          name: "Bad Hook",
+          destination_type: "webhook",
+          enabled: true,
+          event_types: ["feedback.created"],
+          settings: { "url" => bad_url }
+        )
+        expect(dest.valid?).to eq(false)
+      end
+
+      ContextDrop.configure do |c|
+        c.environment = "development"
+        c.allow_insecure_webhooks = true
+      end
+
+      local_dev_dest = ContextDrop::NotificationDestination.new(
+        name: "Local Hook",
+        destination_type: "webhook",
+        enabled: true,
+        event_types: ["feedback.created"],
+        settings: { "url" => "http://localhost:4000/hooks" }
+      )
+      expect(local_dev_dest.valid?).to eq(true)
+
+      external_http_dest = ContextDrop::NotificationDestination.new(
+        name: "External HTTP Hook",
+        destination_type: "webhook",
+        enabled: true,
+        event_types: ["feedback.created"],
+        settings: { "url" => "http://example.com/hooks" }
+      )
+      expect(external_http_dest.valid?).to eq(false)
+    end
   end
 end

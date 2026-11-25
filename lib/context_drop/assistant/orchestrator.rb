@@ -5,6 +5,7 @@ module ContextDrop
     class Orchestrator
       MAX_ASK_ITERATIONS = 4
       MAX_BUILD_ITERATIONS = 8
+      MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024 # 4 MB
 
       def initialize(key_store: nil, registry: nil)
         @key_store = key_store || Agent::KeyStore.new
@@ -27,11 +28,17 @@ module ContextDrop
           )
         end
 
+        raw_attachments = Array(attachments)
+        if raw_attachments.size > ContextDrop.config.max_attachments.to_i
+          raise ContextDrop::Error,
+                "Attachments count (#{raw_attachments.size}) exceeds maximum allowed (#{ContextDrop.config.max_attachments})"
+        end
+
         creds = @key_store.resolve_credentials!(provider: provider, model_override: model_for_mode(mode_s, model))
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
         tools = @registry.tools_for_mode(mode_s, allow_write: false).map { |d| llm_tool_schema(d) }
-        conversation = build_conversation(messages, page_url, element_references)
+        conversation = build_conversation(messages, page_url, element_references, raw_attachments)
         tool_traces = []
         change_set_payload = nil
         approval_token = nil
@@ -77,28 +84,16 @@ module ContextDrop
 
         duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
 
-        if active_change_set.is_a?(ChangeSet)
-          ContextDrop::AssistantTurn.create!(
-            mode: mode_s,
-            session_id: session_id,
-            submitter: submitter,
-            provider: creds[:provider],
-            model: creds[:model],
-            tool_names: tool_traces.map { |t| t[:name] },
-            change_set: active_change_set,
-            duration_ms: duration_ms
-          )
-        else
-          ContextDrop::AssistantTurn.create!(
-            mode: mode_s,
-            session_id: session_id,
-            submitter: submitter,
-            provider: creds[:provider],
-            model: creds[:model],
-            tool_names: tool_traces.map { |t| t[:name] },
-            duration_ms: duration_ms
-          )
-        end
+        turn_attrs = {
+          mode: mode_s,
+          session_id: session_id,
+          provider: creds[:provider],
+          model: creds[:model],
+          tool_names: tool_traces.map { |t| t[:name] },
+          duration_ms: duration_ms
+        }.merge(submitter_attributes(submitter))
+        turn_attrs[:change_set] = active_change_set if active_change_set.is_a?(ChangeSet)
+        ContextDrop::AssistantTurn.create!(turn_attrs)
 
         {
           reply: final_text,
@@ -143,7 +138,7 @@ module ContextDrop
         end
       end
 
-      def build_conversation(messages, page_url, element_references)
+      def build_conversation(messages, page_url, element_references, attachments = [])
         turns = Array(messages).filter_map do |m|
           next unless m.is_a?(Hash)
 
@@ -160,13 +155,87 @@ module ContextDrop
         raise ContextDrop::Error, "Message history cannot be empty" if turns.empty?
 
         last_user = turns.rindex { |t| t[:role] == "user" }
-        if last_user && element_references.any?
-          disclosure = ContextDrop.config.resolved_selection_mode == "smart" ? :friendly : :full
-          appendix = DomContextFormatter.format(page_url, element_references, disclosure: disclosure)
-          turns[last_user][:content] = "#{turns[last_user][:content]}\n\n#{appendix}" unless appendix.empty?
+        if last_user
+          if element_references.any?
+            disclosure = ContextDrop.config.resolved_selection_mode == "smart" ? :friendly : :full
+            appendix = DomContextFormatter.format(page_url, element_references, disclosure: disclosure)
+            turns[last_user][:content] = "#{turns[last_user][:content]}\n\n#{appendix}" unless appendix.empty?
+          end
+
+          if attachments.any?
+            images = resolve_turn_images(attachments)
+            turns[last_user][:images] = images if images.any?
+          end
         end
 
         turns
+      end
+
+      def resolve_turn_images(attachments)
+        Array(attachments).filter_map do |raw_att|
+          att = raw_att.is_a?(Hash) ? raw_att.transform_keys(&:to_s) : {}
+          signed_blob_id = att["signed_blob_id"].to_s.strip
+          if signed_blob_id.present?
+            resolve_signed_blob_image!(signed_blob_id)
+          else
+            raw_data = (att["data_url"] || att["data"]).to_s.strip
+            next if raw_data.empty?
+
+            resolve_inline_base64_image!(raw_data, att["filename"])
+          end
+        end
+      end
+
+      def resolve_signed_blob_image!(signed_blob_id)
+        unless defined?(ActiveStorage::Blob)
+          raise ContextDrop::UploadValidator::ValidationError, "ActiveStorage is unavailable for signed_blob_id"
+        end
+
+        blob = ActiveStorage::Blob.find_signed!(signed_blob_id)
+        max_size = ContextDrop.config.max_attachment_size.to_i
+        if (max_size.positive? && blob.byte_size > max_size) || blob.byte_size > MAX_INLINE_IMAGE_BYTES
+          raise ContextDrop::UploadValidator::ValidationError, "Attached blob exceeds maximum allowed size"
+        end
+
+        allowed_types = Array(ContextDrop.config.allowed_content_types)
+        unless allowed_types.include?(blob.content_type)
+          raise ContextDrop::UploadValidator::ValidationError, "Attached blob has disallowed content type"
+        end
+
+        bytes = blob.download
+        validated = ContextDrop::UploadValidator.validate!(
+          io: StringIO.new(bytes),
+          filename: blob.filename.to_s
+        )
+        {
+          mime_type: validated[:content_type],
+          data: ContextDrop::Base64Util.strict_encode64(bytes)
+        }
+      rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+        raise ContextDrop::UploadValidator::ValidationError, "Invalid or expired signed_blob_id"
+      end
+
+      def resolve_inline_base64_image!(raw_data, custom_filename = nil)
+        b64_payload = if raw_data.include?(";base64,")
+                        raw_data.split(";base64,", 2).last
+                      else
+                        raw_data
+                      end
+        bytes = ContextDrop::Base64Util.strict_decode64(b64_payload.strip)
+        if bytes.bytesize > MAX_INLINE_IMAGE_BYTES
+          raise ContextDrop::UploadValidator::ValidationError, "Inline attachment exceeds 4 MB vision limit"
+        end
+
+        validated = ContextDrop::UploadValidator.validate!(
+          io: StringIO.new(bytes),
+          filename: custom_filename.to_s.strip.presence || "screenshot.png"
+        )
+        {
+          mime_type: validated[:content_type],
+          data: ContextDrop::Base64Util.strict_encode64(bytes)
+        }
+      rescue ArgumentError
+        raise ContextDrop::UploadValidator::ValidationError, "Invalid base64 attachment data"
       end
 
       def llm_tool_schema(definition)
@@ -214,11 +283,12 @@ module ContextDrop
 
           confirmation = FeedbackConfirmation.render_for_feedback(feedback, smart: smart)
           ContextDrop::AssistantTurn.create!(
-            mode: "feedback",
-            session_id: session_id,
-            submitter: submitter,
-            tool_names: [],
-            duration_ms: 0
+            {
+              mode: "feedback",
+              session_id: session_id,
+              tool_names: [],
+              duration_ms: 0
+            }.merge(submitter_attributes(submitter))
           )
           return {
             reply: confirmation[:message],
@@ -244,10 +314,24 @@ module ContextDrop
         ContextDrop::OwnershipToken.valid?(ownership_token, feedback.id)
       end
 
+      def submitter_attributes(submitter)
+        return {} if submitter.nil?
+        return { submitter: submitter } if defined?(ActiveRecord::Base) && submitter.is_a?(ActiveRecord::Base)
+        if submitter.respond_to?(:id) && !submitter.id.nil?
+          return { submitter_type: submitter.class.name, submitter_id: submitter.id }
+        end
+
+        {}
+      end
+
       def handle_propose_change_set(args, page_url:, submitter:, session_id:, active_change_set:)
         summary = args["summary"].to_s.strip
         patches = Array(args["patches"])
         raise ContextDrop::Error, "propose_change_set requires summary" if summary.empty?
+
+        if active_change_set.nil? && submitter.nil? && !ContextDrop.config.anonymous_change_sets_allowed?
+          raise ContextDrop::Error, "Forbidden: authenticated submitter required for Build change sets"
+        end
 
         raw_token = nil
         record = if active_change_set.is_a?(ChangeSet)
@@ -256,12 +340,13 @@ module ContextDrop
                    active_change_set
                  else
                    created, raw_token = ChangeSet.create_with_approval_token!(
-                     status: "draft",
-                     page_url: page_url,
-                     summary: summary,
-                     session_id: session_id,
-                     submitter: submitter,
-                     metadata: { "patches" => patches }
+                     {
+                       status: "draft",
+                       page_url: page_url,
+                       summary: summary,
+                       session_id: session_id,
+                       metadata: { "patches" => patches }
+                     }.merge(submitter_attributes(submitter))
                    )
                    created
                  end

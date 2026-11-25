@@ -25,10 +25,27 @@ module ContextDrop
 
       raw_messages = params[:messages].is_a?(Array) ? params[:messages].map { |m| to_plain_hash(m) } : []
       raw_elements = params[:element_references].is_a?(Array) ? params[:element_references].map { |e| to_plain_hash(e) } : []
+      raw_attachments = params[:attachments].is_a?(Array) ? params[:attachments].map { |a| to_plain_hash(a) } : []
+
+      if raw_attachments.size > ContextDrop.config.max_attachments.to_i
+        render json: {
+          error: "Attachments count (#{raw_attachments.size}) exceeds maximum allowed (#{ContextDrop.config.max_attachments})"
+        }, status: :unprocessable_entity
+        return
+      end
 
       change_set = nil
       if params[:change_set_id].present?
         change_set = ChangeSet.find_by(id: params[:change_set_id])
+        unless change_set
+          render json: { error: "Change set not found" }, status: :not_found
+          return
+        end
+
+        unless change_set_visible?(change_set)
+          render json: { error: "Forbidden" }, status: :forbidden
+          return
+        end
       end
 
       orchestrator = Assistant::Orchestrator.new
@@ -37,9 +54,10 @@ module ContextDrop
         messages: raw_messages,
         page_url: params[:page_url].to_s.strip.presence || request.referer,
         element_references: raw_elements,
+        attachments: raw_attachments,
         change_set: change_set,
-        submitter: ContextDrop.config.resolve_submitter(self),
-        session_id: assistant_session_id,
+        submitter: current_context_drop_submitter,
+        session_id: assistant_session_id(initialize_if_missing: true),
         provider: params[:provider].to_s.strip.presence,
         model: params[:model].to_s.strip.presence,
         feedback_id: params[:feedback_id],
@@ -131,15 +149,26 @@ module ContextDrop
       render json: { error: "Assistant is disabled" }, status: :not_found
     end
 
-    def assistant_session_id
-      session.id.to_s.presence || request.remote_ip.to_s
+    def assistant_session_id(initialize_if_missing: false)
+      hashed_session_identifier(initialize_if_missing: initialize_if_missing)
     end
 
     def change_set_visible?(record)
-      submitter = ContextDrop.config.resolve_submitter(self)
-      return true if submitter && record.submitter == submitter
+      submitter = current_context_drop_submitter
 
-      record.session_id.present? && record.session_id == assistant_session_id
+      if record.submitter_id.present? || record.submitter_type.present?
+        return false unless submitter && submitter.respond_to?(:id) && !submitter.id.nil?
+
+        return record.submitter_type.to_s == submitter.class.name.to_s &&
+               record.submitter_id.to_s == submitter.id.to_s
+      end
+
+      return false unless ContextDrop.config.anonymous_change_sets_allowed?
+
+      sid = assistant_session_id(initialize_if_missing: false)
+      return false if sid.blank? || record.session_id.blank?
+
+      ActiveSupport::SecurityUtils.secure_compare(record.session_id.to_s, sid.to_s)
     end
 
     def combined_ownership_token
@@ -151,7 +180,7 @@ module ContextDrop
 
     def forbidden_assistant_error?(err)
       msg = err.message.to_s
-      msg == "Forbidden" || msg.start_with?("Forbidden ")
+      msg == "Forbidden" || msg.start_with?("Forbidden ") || msg.start_with?("Forbidden:")
     end
 
     def to_plain_hash(obj)

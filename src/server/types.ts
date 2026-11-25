@@ -265,6 +265,7 @@ export interface ContextDropServerConfig {
   };
   privacy?: {
     excludedSelectors?: string[];
+    persistOwnershipTokens?: boolean;
   };
   rateLimit?:
     | {
@@ -283,6 +284,8 @@ export interface ContextDropServerConfig {
   /** When false, skips MCP Events persistence and outbound notification delivery. Default: true. */
   notifications?: {
     enabled?: boolean;
+    /** Development-only opt-in allowing http://localhost webhook callbacks. Ignored in production. */
+    allowInsecureWebhooks?: boolean;
   };
   /**
    * Optional authorization for `GET/POST /integrations/*` notification destination API

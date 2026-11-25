@@ -70,15 +70,22 @@ module ContextDrop
     end
 
     def validate_settings_shape
-      return unless enabled
-
       case destination_type
       when "lark"
-        errors.add(:settings, "require receive_id for Lark") if settings.is_a?(Hash) && settings["receive_id"].to_s.strip.empty?
+        return unless enabled
+
+        errors.add(:settings, "require receive_id for Lark") if !settings.is_a?(Hash) || settings["receive_id"].to_s.strip.empty?
       when "webhook"
         url = settings.is_a?(Hash) ? settings["url"].to_s.strip : ""
-        errors.add(:settings, "require HTTPS url for webhook") if url.empty?
+        if url.empty?
+          errors.add(:settings, "require HTTPS url for webhook") if enabled
+          return
+        end
+
+        ContextDrop::Notifications::WebhookClient.validate_https_uri!(url)
       end
+    rescue ContextDrop::Notifications::WebhookClient::DeliveryError => e
+      errors.add(:settings, e.message)
     end
   end
 end

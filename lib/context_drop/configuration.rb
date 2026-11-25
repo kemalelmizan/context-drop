@@ -29,6 +29,8 @@ module ContextDrop
                   :storage,
                   :active_storage_service,
                   :allow_anonymous,
+                  :persist_ownership_tokens,
+                  :allow_insecure_webhooks,
                   :max_attachments,
                   :max_element_references,
                   :max_attachment_size,
@@ -60,6 +62,7 @@ module ContextDrop
                   :assistant_modes_by_environment,
                   :assistant_models,
                   :assistant_allow_code_tools_in_ask,
+                  :assistant_allow_anonymous_change_sets,
                   :authorize_assistant_mode,
                   :build_target,
                   :assistant_feedback_confirmations,
@@ -75,6 +78,8 @@ module ContextDrop
       @storage = :active_storage
       @active_storage_service = nil
       @allow_anonymous = true
+      @persist_ownership_tokens = true
+      @allow_insecure_webhooks = false
 
       @max_attachments = 10
       @max_element_references = 10
@@ -123,6 +128,7 @@ module ContextDrop
       @assistant_modes_by_environment = nil
       @assistant_models = {}
       @assistant_allow_code_tools_in_ask = false
+      @assistant_allow_anonymous_change_sets = nil
       @build_target = {}
       @assistant_ask_entries = []
       @assistant_build_entries = []
@@ -205,6 +211,23 @@ module ContextDrop
       return false if rails_production?
 
       resolved_environment == "development"
+    end
+
+    def persist_ownership_tokens?
+      Boolean(@persist_ownership_tokens)
+    end
+
+    def insecure_webhooks_allowed?
+      return false if rails_production?
+
+      local_environment? && Boolean(@allow_insecure_webhooks)
+    end
+
+    def anonymous_change_sets_allowed?
+      return Boolean(@assistant_allow_anonymous_change_sets) unless @assistant_allow_anonymous_change_sets.nil?
+      return false if rails_production?
+
+      %w[development test].include?(resolved_environment)
     end
 
     # Local agentic coding sidebar is strictly restricted to non-production `development` environments.
@@ -489,7 +512,8 @@ module ContextDrop
           max_image_dimensions: Array(@max_image_dimensions)
         },
         privacy: {
-          excluded_selectors: effective_excluded_selectors
+          excluded_selectors: effective_excluded_selectors,
+          persist_ownership_tokens: persist_ownership_tokens?
         },
         assistant: {
           enabled: assistant_enabled?,

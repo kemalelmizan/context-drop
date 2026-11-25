@@ -3455,15 +3455,29 @@
             configFetched          = false;
             inFlightConfigPromise                               = null;
             memoryOwnershipTokens                      = new Map();
+            persistOwnershipTokens          = true;
   
     constructor(baseUrl         = "/context_drop", options                              = {}) {
       this.baseUrl = baseUrl.replace(/\/+$/, "") || "/context_drop";
       this.credentials = options.credentials || "same-origin";
       this.customHeaders = options.headers ? { ...options.headers } : {};
+      this.persistOwnershipTokens = options.persistOwnershipTokens !== false;
     }
   
            getBaseUrl()         {
       return this.baseUrl;
+    }
+  
+           getPersistOwnershipTokens()          {
+      return this.persistOwnershipTokens;
+    }
+  
+           setPersistOwnershipTokens(persist         )       {
+      const next = Boolean(persist);
+      this.persistOwnershipTokens = next;
+      if (!next) {
+        this.purgeScopedLocalStorageTokens();
+      }
     }
   
            setCredentials(credentials                    )       {
@@ -3675,7 +3689,44 @@
       return `${this.baseUrl}::${String(id)}`;
     }
   
+            purgeScopedLocalStorageTokens()       {
+      const store = getBrowserLocalStorage();
+      if (!store) return;
+      try {
+        const raw = store.getItem(OWNERSHIP_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw)           ;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+        const prefix = `${this.baseUrl}::`;
+        const remaining                         = {};
+        for (const [k, v] of Object.entries(parsed                           )) {
+          if (typeof v === "string" && !k.startsWith(prefix) && k.includes("::")) {
+            remaining[k] = v;
+          }
+        }
+        if (Object.keys(remaining).length === 0) {
+          if (typeof store.removeItem === "function") {
+            store.removeItem(OWNERSHIP_STORAGE_KEY);
+          } else {
+            store.setItem(OWNERSHIP_STORAGE_KEY, "{}");
+          }
+        } else {
+          store.setItem(OWNERSHIP_STORAGE_KEY, JSON.stringify(remaining));
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+  
             readStoredTokenMap()                         {
+      if (!this.persistOwnershipTokens) {
+        const out                         = {};
+        for (const [k, v] of this.memoryOwnershipTokens.entries()) {
+          out[k] = v;
+        }
+        return out;
+      }
+  
       const store = getBrowserLocalStorage();
       if (!store) {
         const out                         = {};
@@ -3716,6 +3767,10 @@
       for (const [k, v] of trimmedEntries) {
         bounded[k] = v;
         this.memoryOwnershipTokens.set(k, v);
+      }
+  
+      if (!this.persistOwnershipTokens) {
+        return;
       }
   
       const store = getBrowserLocalStorage();
@@ -6048,7 +6103,8 @@
       max_image_dimensions: [4096, 4096]
     },
     privacy: {
-      excluded_selectors: Array.from(MANDATORY_EXCLUDED_SELECTORS)
+      excluded_selectors: Array.from(MANDATORY_EXCLUDED_SELECTORS),
+      persist_ownership_tokens: true
     }
   };
   
@@ -6067,6 +6123,7 @@
         "data-credentials",
         "data-selection-mode",
         "data-environment",
+        "data-persist-ownership-tokens",
         "data-theme",
         "data-cd-theme"
       ];
@@ -6232,6 +6289,11 @@
         }
       } else if (name === "data-environment" && newValue && this.shadow) {
         this.setWidgetConfig({ environment: newValue });
+      } else if (name === "data-persist-ownership-tokens" && newValue !== null && this.shadow) {
+        const persist = newValue.trim().toLowerCase() !== "false" && newValue.trim() !== "0";
+        this.setWidgetConfig({
+          privacy: { ...this.config.privacy, persist_ownership_tokens: persist }
+        });
       } else if (name === "data-config" && newValue && this.shadow) {
         try {
           const parsed = JSON.parse(newValue)                         ;
@@ -6421,9 +6483,14 @@
       this.customHeaders = { ...resolvedHeaders };
       this.ownFeedbacksLoaded = false;
       this.inFlightOwnFeedbacksPromise = null;
+      const resolvedPersistTokens =
+        options.persistOwnershipTokens !== undefined
+          ? options.persistOwnershipTokens
+          : this.config.privacy.persist_ownership_tokens !== false;
       this.apiClient = new ContextDropApiClient(endpoint || "/context_drop", {
         credentials: resolvedCredentials,
-        headers: this.customHeaders
+        headers: this.customHeaders,
+        persistOwnershipTokens: resolvedPersistTokens
       });
     }
   
@@ -6490,6 +6557,7 @@
       if (partial.csrf_token) {
         this.apiClient.setCsrfToken(partial.csrf_token);
       }
+      this.apiClient.setPersistOwnershipTokens(this.config.privacy.persist_ownership_tokens !== false);
       if (partial.position) {
         this.setCornerPosition(partial.position);
       }
@@ -7353,6 +7421,13 @@
       if (envOverride && envOverride.trim().length > 0) {
         this.config.environment = envOverride.trim();
       }
+  
+      const persistTokensAttr = this.getAttribute("data-persist-ownership-tokens");
+      if (persistTokensAttr !== null) {
+        const norm = persistTokensAttr.trim().toLowerCase();
+        this.config.privacy.persist_ownership_tokens = norm !== "false" && norm !== "0";
+      }
+      this.apiClient.setPersistOwnershipTokens(this.config.privacy.persist_ownership_tokens !== false);
     }
   
             detectViewportSnapCorner(
@@ -8123,11 +8198,22 @@
       if (this.textareaEl) this.textareaEl.value = "";
   
       try {
+        const turnAttachments =
+          this.attachments.length > 0
+            ? this.attachments.map((att) => ({
+                attachment_type: att.attachment_type,
+                filename: att.filename,
+                signed_blob_id: att.signed_blob_id,
+                data_url: att.signed_blob_id ? undefined : att.data_url
+              }))
+            : undefined;
+  
         const res = await this.apiClient.sendAssistantTurn({
           mode: this.assistantChatMode,
           messages: this.assistantMessages,
           page_url: typeof window !== "undefined" ? window.location.href : "",
           element_references: this.elementReferences,
+          ...(turnAttachments ? { attachments: turnAttachments } : {}),
           change_set_id: this.activeChangeSet?.id
         });
         if (res.reply) {

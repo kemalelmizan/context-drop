@@ -11,6 +11,7 @@ import { ContextDropMcpDispatcher } from "../mcp/dispatcher.ts";
 import { subscribeMcpEventStream } from "../mcp/event-stream-registry.ts";
 import { resolveHostEnvironment } from "../mcp/environment-router.ts";
 import { deliverOccurrenceToDestinations } from "../notifications/deliverer.ts";
+import { WebhookDeliveryError, validateHttpsCallbackUrl } from "../notifications/webhook-client.ts";
 import {
   MANDATORY_SERVER_EXCLUDED_SELECTORS,
   SensitiveElementError,
@@ -563,6 +564,33 @@ export function createContextDropFetchHandler(
 
   const getEnvironment = (): string => resolveHostEnvironment(config.environment);
 
+  const isLocalWebhookHttpAllowed = (): boolean => {
+    const env = getEnvironment();
+    if (env === "production") return false;
+    return env === "development" && config.notifications?.allowInsecureWebhooks === true;
+  };
+
+  const validateWebhookDestinationSettings = (
+    destinationType: string,
+    enabled: boolean,
+    settings: Record<string, string>
+  ): string | null => {
+    if (destinationType !== "webhook") return null;
+    const url = (settings["url"] ?? "").trim();
+    if (!url) {
+      return enabled ? "Webhook destination requires an HTTPS url" : null;
+    }
+    try {
+      validateHttpsCallbackUrl(url, { allowLocalHttp: isLocalWebhookHttpAllowed() });
+      return null;
+    } catch (err) {
+      if (err instanceof WebhookDeliveryError) {
+        return err.message;
+      }
+      return "Invalid webhook URL";
+    }
+  };
+
   let sharedEventStore: LocalEventStore | null = null;
   const notificationsEnabled = (): boolean => config.notifications?.enabled !== false;
 
@@ -698,7 +726,8 @@ export function createContextDropFetchHandler(
         max_image_dimensions: config.limits?.maxImageDimensions ?? [4096, 4096]
       },
       privacy: {
-        excluded_selectors: excluded
+        excluded_selectors: excluded,
+        persist_ownership_tokens: config.privacy?.persistOwnershipTokens !== false
       }
     };
   };
@@ -989,16 +1018,22 @@ export function createContextDropFetchHandler(
 
       if (parsedRoute.kind === "integrations_destinations" && method === "POST") {
         const body = JSON.parse(await request.text()) as Record<string, unknown>;
+        const destinationType = String(body["destination_type"] ?? "webhook") as "lark" | "webhook";
+        const enabled = body["enabled"] !== false;
         const settings = Object.fromEntries(
           Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
         );
+        const validationErr = validateWebhookDestinationSettings(destinationType, enabled, settings);
+        if (validationErr) {
+          return jsonResponse({ error: validationErr }, 422);
+        }
         const secrets = Object.fromEntries(
           Object.entries(asRecord(body["secrets"])).map(([k, v]) => [k, String(v)])
         );
         const dest = store.createDestination({
           name: String(body["name"] ?? "").trim(),
-          enabled: body["enabled"] !== false,
-          destination_type: String(body["destination_type"] ?? "webhook") as "lark" | "webhook",
+          enabled,
+          destination_type: destinationType,
           event_types: (Array.isArray(body["event_types"])
             ? body["event_types"]
             : ["feedback.created"]
@@ -1019,7 +1054,28 @@ export function createContextDropFetchHandler(
           return jsonResponse({ destination: serializeDestinationPublic(dest) });
         }
         if (method === "PATCH" || method === "PUT") {
+          const existingDest = await store.getDestination(id);
+          if (!existingDest) return jsonResponse({ error: "Not found" }, 404);
           const body = JSON.parse(await request.text()) as Record<string, unknown>;
+          const nextType =
+            body["destination_type"] !== undefined
+              ? (String(body["destination_type"]) as "lark" | "webhook")
+              : existingDest.destination_type;
+          const nextEnabled =
+            body["enabled"] !== undefined ? Boolean(body["enabled"]) : existingDest.enabled;
+          const nextSettings = body["settings"]
+            ? Object.fromEntries(
+                Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
+              )
+            : existingDest.settings;
+          const validationErr = validateWebhookDestinationSettings(
+            nextType,
+            nextEnabled,
+            nextSettings
+          );
+          if (validationErr) {
+            return jsonResponse({ error: validationErr }, 422);
+          }
           const patchSecrets = asRecord(body["secrets"]) as Record<string, string>;
           const updated = store.updateDestination(id, {
             ...(body["name"] !== undefined ? { name: String(body["name"]) } : {}),
@@ -1032,9 +1088,7 @@ export function createContextDropFetchHandler(
               : {}),
             ...(body["settings"]
               ? {
-                  settings: Object.fromEntries(
-                    Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
-                  )
+                  settings: nextSettings
                 }
               : {}),
             ...(Object.keys(patchSecrets).length > 0 ? { secrets: patchSecrets } : {})
@@ -1065,7 +1119,9 @@ export function createContextDropFetchHandler(
             page_url: "/"
           }
         });
-        await deliverOccurrenceToDestinations(store, occurrence);
+        await deliverOccurrenceToDestinations(store, occurrence, {
+          allowLocalHttp: isLocalWebhookHttpAllowed()
+        });
         const fresh = (await store.getDestination(id))!;
         return jsonResponse({
           status: fresh.last_delivery_status,

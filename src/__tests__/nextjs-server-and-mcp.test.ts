@@ -1421,8 +1421,9 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
       id: 2,
       method: "events/list"
     });
+    assert.ok(list && !Array.isArray(list));
     const eventNames = (
-      (list!.result as { events: Array<{ name: string }> }).events ?? []
+      (list.result as { events: Array<{ name: string }> }).events ?? []
     ).map((e) => e.name);
     assert.ok(eventNames.includes("feedback.created"));
 
@@ -1445,10 +1446,95 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
       method: "events/poll",
       params: { name: "feedback.created", cursor: null }
     });
-    const events = (polled!.result as { events: Array<{ data: { feedback_id: number } }> }).events;
+    assert.ok(polled && !Array.isArray(polled));
+    const events = (polled.result as { events: Array<{ data: { feedback_id: number } }> }).events;
     assert.equal(events.length, 1);
     assert.equal(events[0]!.data.feedback_id, created.id);
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("enforces HTTPS webhook URLs on /integrations/destinations and exposes privacy.persist_ownership_tokens", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cd-webhooks-"));
+    try {
+      const prodNext = createContextDropNextHandler({
+        environment: "production",
+        storageDir: tmpDir,
+        privacy: { persistOwnershipTokens: false },
+        notifications: { enabled: true, allowInsecureWebhooks: true },
+        mcp: { apiKey: "int-secret-key" }
+      });
+
+      const cfgRes = await prodNext.GET(new Request("https://acme.com/api/context-drop/config"));
+      assert.equal(cfgRes.status, 200);
+      const cfgJson = (await cfgRes.json()) as { privacy: { persist_ownership_tokens?: boolean } };
+      assert.equal(cfgJson.privacy.persist_ownership_tokens, false);
+
+      // Production rejects http:// and private IP webhooks even when allowInsecureWebhooks is true
+      for (const badUrl of [
+        "http://acme.com/hook",
+        "http://localhost:4000/hook",
+        "https://169.254.169.254/latest"
+      ]) {
+        const badRes = await prodNext.POST(
+          new Request("https://acme.com/api/context-drop/integrations/destinations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer int-secret-key"
+            },
+            body: JSON.stringify({
+              name: "Bad",
+              destination_type: "webhook",
+              settings: { url: badUrl }
+            })
+          })
+        );
+        assert.equal(badRes.status, 422);
+      }
+
+      // Valid HTTPS webhook succeeds
+      const okRes = await prodNext.POST(
+        new Request("https://acme.com/api/context-drop/integrations/destinations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer int-secret-key"
+          },
+          body: JSON.stringify({
+            name: "Prod Hook",
+            destination_type: "webhook",
+            settings: { url: "https://hooks.acme.com/context-drop" },
+            secrets: { signing_secret: "whsec_123" }
+          })
+        })
+      );
+      assert.equal(okRes.status, 201);
+
+      // Development handler honors allowInsecureWebhooks strictly for loopback http://
+      const devNext = createContextDropNextHandler({
+        environment: "development",
+        storageDir: tmpDir,
+        notifications: { enabled: true, allowInsecureWebhooks: true },
+        mcp: { apiKey: "int-secret-key" }
+      });
+      const devLocalRes = await devNext.POST(
+        new Request("http://localhost:3000/api/context-drop/integrations/destinations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer int-secret-key"
+          },
+          body: JSON.stringify({
+            name: "Local Dev Hook",
+            destination_type: "webhook",
+            settings: { url: "http://localhost:4000/hook" }
+          })
+        })
+      );
+      assert.equal(devLocalRes.status, 201);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

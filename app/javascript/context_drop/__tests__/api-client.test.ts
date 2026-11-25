@@ -562,4 +562,98 @@ describe("ContextDropApiClient own feedback sync, update, soft-delete & ownershi
     assert.equal(deleteHeaders["X-Context-Drop-Ownership-Token"], "12.n1.rotated");
     assert.equal(client.getOwnershipToken(12), null);
   });
+
+  it("supports memory-only ownership token mode (persistOwnershipTokens: false) and forwards assistant turn attachments", async () => {
+    const storeData = new Map<string, string>();
+    storeData.set(
+      "context_drop_ownership_tokens",
+      JSON.stringify({
+        "/context_drop::5": "5.old.sig",
+        "https://other.acme.com/context_drop::9": "9.keep.sig"
+      })
+    );
+    (globalThis as Record<string, unknown>).window = {
+      location: { origin: "http://localhost:3000" },
+      localStorage: {
+        getItem: (k: string) => storeData.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          storeData.set(k, v);
+        },
+        removeItem: (k: string) => {
+          storeData.delete(k);
+        }
+      }
+    };
+
+    mockFetchHandler = async (url: string, _options: RequestInit) => {
+      if (url.endsWith("/feedback")) {
+        return new Response(
+          JSON.stringify({
+            id: 55,
+            status: "new",
+            ownership_token: "55.mem.sig",
+            created_at: "2026-11-25T00:00:00Z"
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.endsWith("/assistant/turn")) {
+        return new Response(
+          JSON.stringify({
+            reply: "Looks like the Pay button is disabled.",
+            mode: "ask",
+            tool_calls: []
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const client = new ContextDropApiClient("/context_drop");
+    client.setPersistOwnershipTokens(false);
+    assert.equal(client.getPersistOwnershipTokens(), false);
+
+    // Scoped entry for /context_drop was purged, while other endpoint entry remained intact
+    const remainingRaw = storeData.get("context_drop_ownership_tokens");
+    assert.ok(remainingRaw && !remainingRaw.includes("5.old.sig"));
+    assert.ok(remainingRaw && remainingRaw.includes("9.keep.sig"));
+
+    await client.submitFeedback({
+      message: "Kiosk feedback",
+      page_url: "http://localhost:3000/kiosk",
+      user_agent: "node-test",
+      metadata: {},
+      element_references: [],
+      attachments: []
+    });
+
+    assert.equal(client.getOwnershipToken(55), "55.mem.sig");
+    assert.ok(!storeData.get("context_drop_ownership_tokens")?.includes("55.mem.sig"));
+
+    // Fresh client after simulated reload cannot read memory-only token from localStorage
+    const afterReload = new ContextDropApiClient("/context_drop", {
+      persistOwnershipTokens: false
+    });
+    assert.equal(afterReload.getOwnershipToken(55), null);
+
+    // Assistant turn forwards screenshot attachments
+    const turnRes = await client.sendAssistantTurn({
+      mode: "ask",
+      messages: [{ role: "user", content: "Why is this disabled?" }],
+      page_url: "http://localhost:3000/checkout",
+      attachments: [
+        {
+          attachment_type: "screenshot",
+          filename: "shot.png",
+          data_url: "data:image/png;base64,iVBORw0KGgo="
+        }
+      ]
+    });
+    assert.equal(turnRes.reply, "Looks like the Pay button is disabled.");
+    const turnBody = JSON.parse(String(fetchCalls[fetchCalls.length - 1]!.options.body)) as {
+      attachments?: Array<{ filename: string }>;
+    };
+    assert.equal(turnBody.attachments?.[0]?.filename, "shot.png");
+  });
 });

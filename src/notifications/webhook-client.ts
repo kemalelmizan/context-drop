@@ -2,9 +2,29 @@ import crypto from "node:crypto";
 
 export class WebhookDeliveryError extends Error {}
 
+function isLoopbackHost(host: string): boolean {
+  const clean = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (clean === "localhost" || clean.endsWith(".localhost")) return true;
+  if (clean === "127.0.0.1" || clean === "::1") return true;
+  const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(clean);
+  if (match && Number(match[1]) === 127) return true;
+  return false;
+}
+
 function isPrivateHost(host: string): boolean {
-  const down = host.trim().toLowerCase();
-  if (down === "localhost" || down.endsWith(".localhost")) return true;
+  const down = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    down === "localhost" ||
+    down.endsWith(".localhost") ||
+    down === "metadata.google.internal" ||
+    down === "::1" ||
+    down === "::" ||
+    down.startsWith("fe80:") ||
+    down.startsWith("fc") ||
+    down.startsWith("fd")
+  ) {
+    return true;
+  }
   const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(down);
   if (!match) return false;
   const oct = match.slice(1, 5).map((x) => Number(x));
@@ -17,18 +37,24 @@ function isPrivateHost(host: string): boolean {
   return false;
 }
 
-export function validateHttpsCallbackUrl(urlStr: string): URL {
+export function validateHttpsCallbackUrl(
+  urlStr: string,
+  options?: { allowLocalHttp?: boolean }
+): URL {
   let uri: URL;
   try {
     uri = new URL(urlStr);
   } catch (err) {
     throw new WebhookDeliveryError(`Invalid webhook URL: ${(err as Error).message}`);
   }
-  if (uri.protocol !== "https:") {
-    throw new WebhookDeliveryError("Webhook URL must use HTTPS");
-  }
   if (!uri.hostname.trim()) {
     throw new WebhookDeliveryError("Webhook URL host missing");
+  }
+  if (options?.allowLocalHttp && uri.protocol === "http:" && isLoopbackHost(uri.hostname)) {
+    return uri;
+  }
+  if (uri.protocol !== "https:") {
+    throw new WebhookDeliveryError("Webhook URL must use HTTPS");
   }
   if (isPrivateHost(uri.hostname)) {
     throw new WebhookDeliveryError("Webhook URL blocked (private network)");
