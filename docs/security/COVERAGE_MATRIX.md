@@ -105,12 +105,12 @@ Maps normative requirements to implementation paths, automated tests, and owners
 |----|-------------|----------------|-------|--------|-------|
 | SEC-H035 | MCP disabled default | [`configuration.rb`](../../lib/context_drop/configuration.rb); [`mcp_controller.rb`](../../app/controllers/context_drop/mcp_controller.rb) | `mcp_spec.rb` | Implemented | Gem |
 | SEC-H036 | Constant-time Bearer | [`mcp_controller.rb`](../../app/controllers/context_drop/mcp_controller.rb); [`mcp_events_controller.rb`](../../app/controllers/context_drop/mcp_events_controller.rb) `secure_compare` | `mcp_spec.rb` | Implemented | Gem |
-| SEC-H037 | MCP data not executed | Tools return JSON only; [`lib/context_drop/mcp/dispatcher.rb`](../../lib/context_drop/mcp/dispatcher.rb) | Op / MCP client docs | Implemented | Gem+Op |
-| SEC-H038 | Remote HTTPS & SSRF/redirect defense | [`lib/context_drop/mcp/remote_client.rb`](../../lib/context_drop/mcp/remote_client.rb); [`src/mcp/remote-client.ts`](../../src/mcp/remote-client.ts) (`redirect: "error"`, private/metadata IP block) | `mcp_spec.rb`, `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H037 | MCP data fenced & agent comment isolation | `<untrusted_feedback_data>` framing in [`investigate_feedback.rb`](../../lib/context_drop/mcp/prompts/investigate_feedback.rb) & [`dispatcher.ts`](../../src/mcp/dispatcher.ts); internal-by-default `AddFeedbackComment` + `SecretRedactor` | `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H038 | Remote HTTPS & DNS-pinning SSRF/redirect defense | [`lib/context_drop/ssrf_guard.rb`](../../lib/context_drop/ssrf_guard.rb); [`remote_client.rb`](../../lib/context_drop/mcp/remote_client.rb) (`ipaddr=`); [`src/server/ssrf-guard.ts`](../../src/server/ssrf-guard.ts); [`remote-client.ts`](../../src/mcp/remote-client.ts) | `mcp_spec.rb`, `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 | SEC-H039 | MCP status auth | Same Bearer as HTTP MCP | `mcp_spec.rb` | Implemented | Gem |
-| SEC-H040 | SSE auth | `mcp_events_controller.rb` stream | events specs | Implemented | Gem |
+| SEC-H040 | SSE auth & bounded queues | `mcp_events_controller.rb` + [`event_stream_registry.rb`](../../lib/context_drop/mcp/event_stream_registry.rb) (`SizedQueue`, max 50 subscribers); TS `event-stream-registry.ts` | `events_and_notifications_spec.rb`, `assistant_security_spec.rb` | Implemented | Gem |
 | SEC-H041 | Webhook signing | [`lib/context_drop/notifications/webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb); TS `webhook-client.ts` | notifications spec | Implemented | Gem |
-| SEC-H042 | Webhook URL policy | [`notification_destination.rb`](../../app/models/context_drop/notification_destination.rb) `validate_settings_shape`; [`webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb) `validate_https_uri!`; [`src/server/handler.ts`](../../src/server/handler.ts) | `events_and_notifications_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Host |
+| SEC-H042 | Webhook & Lark URL/markdown policy | [`ssrf_guard.rb`](../../lib/context_drop/ssrf_guard.rb); [`lark_client.rb`](../../lib/context_drop/notifications/lark_client.rb) (`api_host` allowlist + `escape_lark_md`); [`webhook_client.rb`](../../lib/context_drop/notifications/webhook_client.rb); TS `lark-client.ts` & `webhook-client.ts` | `events_and_notifications_spec.rb`, `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Host |
 | SEC-H043 | Event payload minimization | [`lib/context_drop/feedback_events/publisher.rb`](../../lib/context_drop/feedback_events/publisher.rb) | events specs | Implemented | Gem |
 | SEC-H044 | Stdio MCP | [`lib/context_drop/mcp/stdio_runner.rb`](../../lib/context_drop/mcp/stdio_runner.rb); `bin/rails context_drop:mcp` | `mcp_spec.rb` | Implemented | Gem |
 
@@ -169,7 +169,7 @@ Maps normative requirements to implementation paths, automated tests, and owners
 |----|-------------|----------------|-------|--------|-------|
 | SEC-H060 | Git creds off browser | Build tools server-side only | — | Implemented | Host |
 | SEC-H061 | Protected branch | Host `register_build_tool` `git_push_branch` | — | Host | Host |
-| SEC-H062 | Path allowlist | Host `repo_read_file` adapter | — | Host | Host |
+| SEC-H062 | Path allowlist & patch guardrails | [`safe_repo_reader.rb`](../../lib/context_drop/assistant/safe_repo_reader.rb); [`patch_validator.rb`](../../lib/context_drop/assistant/patch_validator.rb); [`change-sets.ts`](../../src/assistant/change-sets.ts) `validateChangeSetPatches`; `context_drop_build.rb.tt` | `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem+Host |
 | SEC-H063 | Null stub until configured | [`adapters/null_build.rb`](../../lib/context_drop/assistant/adapters/null_build.rb) | — | Implemented | Gem |
 
 ---
@@ -187,8 +187,8 @@ Maps normative requirements to implementation paths, automated tests, and owners
 
 | ID | Requirement | Implementation | Tests | Status | Owner |
 |----|-------------|----------------|-------|--------|-------|
-| SEC-H066 | IDOR & assistant parity | [`src/server/handler.ts`](../../src/server/handler.ts) `matchesOwnFeedback`, `/assistant/*`, `src/assistant/*` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
-| SEC-H067 | Rate limits | `handler.ts` `checkRateLimit` + `checkAssistantRateLimit` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H066 | IDOR, Postgres secret & URI scheme parity | [`src/server/handler.ts`](../../src/server/handler.ts) `matchesOwnFeedback`, `isSafePageUrl`, `/assistant/*`; [`postgres.ts`](../../src/server/storage/postgres.ts) fail-closed production secret; [`url_safety.rb`](../../lib/context_drop/url_safety.rb) + Dashboard nonce CSP | `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
+| SEC-H067 | Rate limits & opt-in `trustProxy` + message caps | `handler.ts` `resolveClientIp` (`trustProxy: false` default) + `assistant_max_messages` / char caps | `assistant_security_spec.rb`, `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 | SEC-H068 | Integrations API key | `handler.ts` integrations routes; env `CONTEXT_DROP_INTEGRATIONS_API_KEY` | `nextjs-server-and-mcp.test.ts` | Implemented | Gem |
 
 ---

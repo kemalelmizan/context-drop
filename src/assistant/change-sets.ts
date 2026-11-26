@@ -24,6 +24,110 @@ export interface ChangeSetPatch {
   new_string: string;
 }
 
+export const MAX_CHANGE_SET_PATCHES = 20;
+export const MAX_CHANGE_SET_TOTAL_BYTES = 256 * 1024;
+
+const FORBIDDEN_PATCH_PATTERNS: readonly RegExp[] = [
+  /^\.git(?:\/|$)/i,
+  /^\.github(?:\/|$)/i,
+  /^\.circleci(?:\/|$)/i,
+  /^\.buildkite(?:\/|$)/i,
+  /^\.gitlab-ci/i,
+  /(?:^|\/)Jenkinsfile/i,
+  /(?:^|\/)Dockerfile/i,
+  /(?:^|\/)docker-compose/i,
+  /^Procfile/i,
+  /(?:^|\/)Gemfile(?:\.lock)?$/i,
+  /\.gemspec$/i,
+  /^Rakefile$/i,
+  /(?:^|\/)(?:package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/i,
+  /^(?:bin|script)(?:\/|$)/i,
+  /^config\/(?:initializers|environments)(?:\/|$)/i,
+  /^config\/(?:application|boot|environment|puma)\.rb$/i,
+  /(?:^|\/)\.env(?:\.(?!example$|sample$|template$)[^/]+)?$/i,
+  /^config\/master\.key$/i,
+  /^config\/credentials(?:\/|\.yml\.enc$)/i,
+  /^tmp\/context_drop_/i,
+  /\.(?:pem|key|p12|pfx|jks|sqlite3|db)$/i,
+  /(?:^|\/)id_(?:rsa|ed25519|ecdsa|dsa)/i
+];
+
+function matchAllowedGlob(glob: string, relPath: string): boolean {
+  const cleanGlob = glob.replace(/^\.\//, "").replace(/^\/+/, "");
+  if (cleanGlob === "**" || cleanGlob === "**/*") return true;
+  if (cleanGlob.endsWith("/**")) {
+    const prefix = cleanGlob.slice(0, -3);
+    if (relPath === prefix || relPath.startsWith(`${prefix}/`)) return true;
+  }
+  const escaped = cleanGlob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const pattern = escaped
+    .replace(/\*\*\\\//g, "(?:.+/)?")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]");
+  return new RegExp(`^${pattern}$`).test(relPath);
+}
+
+export function validateChangeSetPatches(
+  rawPatches: unknown,
+  allowedGlobs?: string[]
+): ChangeSetPatch[] {
+  const list = Array.isArray(rawPatches) ? rawPatches : [];
+  if (list.length > MAX_CHANGE_SET_PATCHES) {
+    throw new Error(`propose_change_set exceeds maximum patch count (${MAX_CHANGE_SET_PATCHES})`);
+  }
+
+  const globs = (allowedGlobs ?? []).map((g) => g.trim()).filter(Boolean);
+  let totalBytes = 0;
+
+  return list.map((raw) => {
+    const rec = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const rawPath = String(rec["path"] ?? "").trim();
+    if (!rawPath) {
+      throw new Error("Patch path is required");
+    }
+    if (/[\r\n\0]/.test(rawPath)) {
+      throw new Error("Invalid control character in patch path");
+    }
+    if (rawPath.startsWith("/") || rawPath.startsWith("\\") || /^[a-zA-Z]:/.test(rawPath)) {
+      throw new Error(`Patch path must be repository-relative: '${rawPath}'`);
+    }
+
+    const segments = rawPath.split(/[\\/]+/);
+    if (
+      segments.length === 0 ||
+      (segments.length === 1 && segments[0] === ".") ||
+      segments.includes("..")
+    ) {
+      throw new Error(`Patch path traversal denied: '${rawPath}'`);
+    }
+
+    const clean = segments.filter((s) => s.length > 0 && s !== ".").join("/");
+    if (!clean) {
+      throw new Error("Patch path is required");
+    }
+    if (FORBIDDEN_PATCH_PATTERNS.some((re) => re.test(clean))) {
+      throw new Error(`Patch target '${clean}' is protected by ContextDrop Build security policy`);
+    }
+    if (globs.length > 0 && !globs.some((g) => matchAllowedGlob(g, clean))) {
+      throw new Error(`Patch target '${clean}' is outside allowed Build globs`);
+    }
+
+    const oldStr = String(rec["old_string"] ?? "");
+    const newStr = String(rec["new_string"] ?? "");
+    totalBytes += Buffer.byteLength(oldStr, "utf8") + Buffer.byteLength(newStr, "utf8");
+    if (totalBytes > MAX_CHANGE_SET_TOTAL_BYTES) {
+      throw new Error("propose_change_set patches exceed 256 KB total size limit");
+    }
+
+    return {
+      path: clean,
+      old_string: oldStr,
+      new_string: newStr
+    };
+  });
+}
+
 export interface StoredChangeSetRecord {
   id: number;
   status: ChangeSetStatus;

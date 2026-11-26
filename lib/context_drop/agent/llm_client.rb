@@ -60,6 +60,9 @@ module ContextDrop
           end
 
           unless is_loopback_host
+            if ContextDrop::SsrfGuard.disallowed_hostname?(host_down)
+              raise LlmError, "Blocked disallowed private/metadata host (#{host_down}) in custom base URL"
+            end
             check_ip_literal!(host_down)
             if resolve_dns
               addrs = Resolv.getaddresses(host_down)
@@ -90,7 +93,7 @@ module ContextDrop
         end
 
         def reject_disallowed_ip!(ip)
-          if ip.loopback? || ip.link_local? || ip.private? || ip.to_s == "0.0.0.0"
+          if ContextDrop::SsrfGuard.disallowed_ip?(ip)
             raise LlmError, "Blocked disallowed private/metadata IP address (#{ip}) in custom base URL"
           end
         end

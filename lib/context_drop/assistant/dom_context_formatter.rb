@@ -9,7 +9,11 @@ module ContextDrop
         els = Array(element_references)
         return "" if els.empty?
 
-        lines = ["---", "Pinned Live DOM Context (on `#{page_url || '/'}`):"]
+        safe_url = ContextDrop::UrlSafety.sanitize_prompt_url(page_url, fallback: "/")
+        lines = [
+          "<untrusted_dom_context>",
+          "Pinned Live DOM Context (on `#{safe_url}`):"
+        ]
         els.each_with_index do |raw_el, idx|
           el = if defined?(ContextDrop::MetadataSanitizer)
                  ContextDrop::MetadataSanitizer.sanitize_element_reference(raw_el)
@@ -25,6 +29,7 @@ module ContextDrop
             lines << "#{idx + 1}. `<#{str_el['tag_name']}>` selector=`#{str_el['selector']}`"
           end
         end
+        lines << "</untrusted_dom_context>"
         lines.join("\n")
       end
     end

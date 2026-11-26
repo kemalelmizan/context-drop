@@ -35,7 +35,9 @@ import { ContextDropMcpDispatcher } from "../mcp/dispatcher.ts";
 import { subscribeMcpEventStream } from "../mcp/event-stream-registry.ts";
 import { resolveHostEnvironment } from "../mcp/environment-router.ts";
 import { deliverOccurrenceToDestinations } from "../notifications/deliverer.ts";
+import { LarkDeliveryError, validateLarkApiHost } from "../notifications/lark-client.ts";
 import { WebhookDeliveryError, validateHttpsCallbackUrl } from "../notifications/webhook-client.ts";
+import { isSafePageUrl, safeExternalHttpUrl } from "./ssrf-guard.ts";
 import {
   MANDATORY_SERVER_EXCLUDED_SELECTORS,
   SensitiveElementError,
@@ -69,6 +71,7 @@ const VALID_POSITIONS: readonly WidgetPosition[] = [
 ];
 
 const MAX_OWNERSHIP_TOKENS = 50;
+const MAX_RATE_LIMIT_BUCKETS = 10_000;
 const OWNERSHIP_TOKEN_DOMAIN = "cd_own:v1";
 
 interface RateLimitBucket {
@@ -227,14 +230,27 @@ function verifyMutationOrigin(
   return { ok: true };
 }
 
-function resolveClientIp(request: Request): string {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
+function resolveClientIp(
+  request: Request,
+  trustProxy?: ContextDropServerConfig["trustProxy"]
+): string {
+  if (typeof trustProxy === "function") {
+    const resolved = trustProxy(request)?.trim();
+    return resolved || "direct";
   }
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp;
+  if (trustProxy === true) {
+    const xff = request.headers.get("x-forwarded-for");
+    if (xff) {
+      const hops = xff
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const rightmost = hops[hops.length - 1];
+      if (rightmost) return rightmost;
+    }
+    const realIp = request.headers.get("x-real-ip")?.trim();
+    if (realIp) return realIp;
+  }
   return "127.0.0.1";
 }
 
@@ -482,11 +498,19 @@ function combineRequestOwnershipTokens(
     .join(",");
 }
 
-function serializeOwnFeedback(record: StoredFeedbackRecord, ownershipToken: string) {
+function serializeOwnFeedback(
+  record: StoredFeedbackRecord,
+  ownershipToken: string,
+  options?: { exposeAgentComments?: boolean }
+) {
   const elById = new Map<string, StoredFeedbackRecord["element_references"][number]>();
   for (const el of record.element_references) {
     elById.set(String(el.id), el);
   }
+  const visibleComments = (record.comments ?? []).filter((c) => {
+    if (c.author_type !== "Agent") return true;
+    return Boolean(options?.exposeAgentComments);
+  });
 
   return {
     id: record.id,
@@ -525,8 +549,8 @@ function serializeOwnFeedback(record: StoredFeedbackRecord, ownershipToken: stri
         created_at: att.created_at
       };
     }),
-    comments_count: (record.comments ?? []).length,
-    comments: (record.comments ?? []).map((comment) => ({
+    comments_count: visibleComments.length,
+    comments: visibleComments.map((comment) => ({
       id: comment.id,
       feedback_id: comment.feedback_id,
       author_label: comment.author_label,
@@ -629,11 +653,28 @@ export function createContextDropFetchHandler(
     return env === "development" && config.notifications?.allowInsecureWebhooks === true;
   };
 
-  const validateWebhookDestinationSettings = (
+  const validateDestinationSettings = (
     destinationType: string,
     enabled: boolean,
     settings: Record<string, string>
   ): string | null => {
+    if (destinationType === "lark") {
+      const apiHost = (settings["api_host"] ?? "").trim();
+      if (apiHost) {
+        try {
+          validateLarkApiHost(apiHost, {
+            allowedHosts: config.notifications?.larkAllowedHosts,
+            allowLocalHttp: isLocalWebhookHttpAllowed()
+          });
+        } catch (err) {
+          return err instanceof LarkDeliveryError ? err.message : "Invalid Lark API host";
+        }
+      }
+      if (enabled && !(settings["receive_id"] ?? "").trim()) {
+        return "Lark destination requires receive_id";
+      }
+      return null;
+    }
     if (destinationType !== "webhook") return null;
     const url = (settings["url"] ?? "").trim();
     if (!url) {
@@ -670,8 +711,14 @@ export function createContextDropFetchHandler(
   const integrationDashboardPath = (feedbackId: string | number): string => {
     const base = (config.integrations as { dashboardPathPrefix?: string } | undefined)
       ?.dashboardPathPrefix;
-    if (base) return `${base.replace(/\/$/, "")}/${feedbackId}`;
-    return `/integrations/feedback/${feedbackId}`;
+    const relPath = base
+      ? `${base.replace(/\/$/, "")}/${feedbackId}`
+      : `/integrations/feedback/${feedbackId}`;
+    const canonicalOrigin = safeExternalHttpUrl(config.publicBaseUrl);
+    if (canonicalOrigin) {
+      return `${canonicalOrigin.replace(/\/+$/, "")}${relPath.startsWith("/") ? "" : "/"}${relPath}`;
+    }
+    return relPath;
   };
 
   const emitFeedbackLifecycleEvent = async (
@@ -903,12 +950,17 @@ export function createContextDropFetchHandler(
       }
     }
 
-    const ip = resolveClientIp(request);
+    const ip = resolveClientIp(request, config.trustProxy);
     const windowBucket = Math.floor(nowMs / (periodSeconds * 1000));
     const key = `${ip}:${windowBucket}`;
     const existing = store.get(key);
 
     if (!existing) {
+      while (store.size >= MAX_RATE_LIMIT_BUCKETS) {
+        const oldestKey = store.keys().next().value;
+        if (oldestKey === undefined) break;
+        store.delete(oldestKey);
+      }
       store.set(key, {
         count: 1,
         expiresAtMs: (windowBucket + 1) * periodSeconds * 1000
@@ -1110,18 +1162,33 @@ export function createContextDropFetchHandler(
       }
 
       const encoder = new TextEncoder();
-      let unsubscribe: (() => void) | null = null;
+      const bufferedEvents: import("../events/types.ts").McpEventOccurrencePayload[] = [];
+      let streamCtrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+      const unsubscribe = subscribeMcpEventStream((payload) => {
+        if (streamCtrl) {
+          streamCtrl.enqueue(
+            encoder.encode(`event: mcp-event\ndata: ${JSON.stringify(payload)}\n\n`)
+          );
+        } else if (bufferedEvents.length < 100) {
+          bufferedEvents.push(payload);
+        }
+      });
+      if (!unsubscribe) {
+        return new Response("Too Many Requests", { status: 429 });
+      }
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
+          streamCtrl = controller;
           controller.enqueue(encoder.encode("event: ready\ndata: {}\n\n"));
-          unsubscribe = subscribeMcpEventStream((payload) => {
+          for (const ev of bufferedEvents.splice(0)) {
             controller.enqueue(
-              encoder.encode(`event: mcp-event\ndata: ${JSON.stringify(payload)}\n\n`)
+              encoder.encode(`event: mcp-event\ndata: ${JSON.stringify(ev)}\n\n`)
             );
-          });
+          }
         },
         cancel() {
-          unsubscribe?.();
+          streamCtrl = null;
+          unsubscribe();
         }
       });
       return new Response(stream, {
@@ -1161,7 +1228,7 @@ export function createContextDropFetchHandler(
         const settings = Object.fromEntries(
           Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
         );
-        const validationErr = validateWebhookDestinationSettings(destinationType, enabled, settings);
+        const validationErr = validateDestinationSettings(destinationType, enabled, settings);
         if (validationErr) {
           return jsonResponse({ error: validationErr }, 422);
         }
@@ -1206,7 +1273,7 @@ export function createContextDropFetchHandler(
                 Object.entries(asRecord(body["settings"])).map(([k, v]) => [k, String(v)])
               )
             : existingDest.settings;
-          const validationErr = validateWebhookDestinationSettings(
+          const validationErr = validateDestinationSettings(
             nextType,
             nextEnabled,
             nextSettings
@@ -1258,7 +1325,8 @@ export function createContextDropFetchHandler(
           }
         });
         await deliverOccurrenceToDestinations(store, occurrence, {
-          allowLocalHttp: isLocalWebhookHttpAllowed()
+          allowLocalHttp: isLocalWebhookHttpAllowed(),
+          larkAllowedHosts: config.notifications?.larkAllowedHosts
         });
         const fresh = (await store.getDestination(id))!;
         return jsonResponse({
@@ -1412,7 +1480,9 @@ export function createContextDropFetchHandler(
         const tok =
           findOwnershipTokenFor(rawTokens, rec.id, secret) ??
           generateOwnershipToken(rec.id, secret);
-        return serializeOwnFeedback(rec, tok);
+        return serializeOwnFeedback(rec, tok, {
+          exposeAgentComments: config.privacy?.exposeAgentCommentsToSubmitter === true
+        });
       });
 
       return jsonResponse(
@@ -1502,6 +1572,13 @@ export function createContextDropFetchHandler(
         if (!pageUrl) {
           return jsonResponse({ error: "Page url can't be blank" }, 422, corsHeaders);
         }
+        if (!isSafePageUrl(pageUrl)) {
+          return jsonResponse(
+            { error: "Page url must be a valid http(s) URL or relative path" },
+            422,
+            corsHeaders
+          );
+        }
 
         if (!message && sanitizedElements.length === 0 && preparedAttachments.length === 0) {
           return jsonResponse(
@@ -1577,7 +1654,9 @@ export function createContextDropFetchHandler(
             ownership_token: ownershipToken,
             confirmation_message: confirmation.message,
             confirmation_metadata: confirmation.metadata,
-            feedback: serializeOwnFeedback(created, ownershipToken),
+            feedback: serializeOwnFeedback(created, ownershipToken, {
+              exposeAgentComments: config.privacy?.exposeAgentCommentsToSubmitter === true
+            }),
             created_at: created.created_at,
             updated_at: created.updated_at
           },
@@ -1831,7 +1910,9 @@ export function createContextDropFetchHandler(
             attachments_count: updated.attachments.length,
             element_references_count: updated.element_references.length,
             ownership_token: ownershipToken,
-            feedback: serializeOwnFeedback(updated, ownershipToken),
+            feedback: serializeOwnFeedback(updated, ownershipToken, {
+              exposeAgentComments: config.privacy?.exposeAgentCommentsToSubmitter === true
+            }),
             created_at: updated.created_at,
             updated_at: updated.updated_at
           },
@@ -1978,7 +2059,9 @@ export function createContextDropFetchHandler(
             feedback_id: result.feedback.id,
             status: result.feedback.status,
             comment: result.comment,
-            feedback: serializeOwnFeedback(result.feedback, ownershipToken),
+            feedback: serializeOwnFeedback(result.feedback, ownershipToken, {
+              exposeAgentComments: config.privacy?.exposeAgentCommentsToSubmitter === true
+            }),
             created_at: result.comment.created_at
           },
           201,
@@ -2421,8 +2504,20 @@ export function createContextDropFetchHandler(
         const rawAttachments = Array.isArray(rawBody["attachments"])
           ? rawBody["attachments"]
           : [];
+        const rawMessagesCheck = Array.isArray(rawBody["messages"]) ? rawBody["messages"] : [];
+        const maxMessages = llmCfg?.maxMessages ?? 24;
         const maxAttachments = config.limits?.maxAttachments ?? 10;
         const maxElements = config.limits?.maxElementReferences ?? 10;
+
+        if (maxMessages > 0 && rawMessagesCheck.length > maxMessages) {
+          return jsonResponse(
+            {
+              error: `Message count (${rawMessagesCheck.length}) exceeds maximum allowed (${maxMessages})`
+            },
+            422,
+            responseHeaders
+          );
+        }
 
         if (rawAttachments.length > maxAttachments) {
           return jsonResponse(
@@ -2528,6 +2623,9 @@ export function createContextDropFetchHandler(
             credentials: creds,
             readTimeoutMs,
             maxIterations,
+            maxMessages: llmCfg?.maxMessages,
+            maxMessageLength: llmCfg?.maxMessageLength,
+            maxTotalMessageChars: llmCfg?.maxTotalMessageChars,
             buildTarget: config.assistant?.buildTarget,
             registry: assistantRegistry,
             stateStore: assistantStateStore,

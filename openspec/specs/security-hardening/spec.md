@@ -102,11 +102,11 @@ In `selection_mode: smart`, user-visible strings (confirmations, smart labels) S
 ## Requirements: Screenshot Capture
 
 ### Requirement: Pre-Capture Redaction
-Screenshots SHALL mask regions matching privacy exclusions before encoding.
+Screenshots SHALL mask regions matching privacy exclusions across both document light DOM and open Shadow DOM roots before encoding, and SHALL NOT paint leaf text from `<input>`, `<textarea>`, `<select>`, or `[contenteditable]` elements onto the canvas.
 
 #### Scenario: Sensitive banner in viewport shot
 - **WHEN** viewport screenshot is taken
-- **THEN** `[data-feedback-sensitive]` region is visually redacted
+- **THEN** `[data-feedback-sensitive]` region is visually redacted and `<textarea>` / `[contenteditable]` text is excluded from canvas painting
 
 ### Requirement: Widget UI Exclusion
 ContextDrop chrome SHALL be hidden from captures so feedback images do not leak assistant keys or internal debug HUD in verbose mode.
@@ -241,14 +241,19 @@ HTTP MCP authentication SHALL compare Bearer tokens in constant time.
 - **THEN** `401 Unauthorized` without executing tool
 
 ### Requirement: MCP Tool Data as Untrusted Input to Agents
-MCP returns feedback messages, URLs, and stack-adjacent strings; IDE agents SHALL treat them as data (documented in MCP namespace instructions). Engine SHALL NOT execute instructions embedded in feedback `message` fields.
+MCP prompts (`investigate_feedback`) and tools (`get_feedback`, `add_feedback_comment`) SHALL wrap untrusted submitter fields (`message`, `page_url`, `metadata`, `element_references`, comments) inside explicit `<untrusted_feedback_data>` delimiters with anti-prompt-injection guidance, scrub `add_feedback_comment` bodies via `SecretRedactor`, and hide `Agent`-authored MCP comments from submitter-facing `GET /feedback` responses by default (`expose_agent_comments_to_submitter = false`) unless explicitly marked `visibility: "public"`. Engine SHALL NOT execute instructions embedded in feedback `message` fields.
 
 #### Scenario: Feedback message contains shell command text
 - **WHEN** `get_feedback` returns message "run rm -rf /"
-- **THEN** server returns JSON only; no server-side execution occurs
+- **THEN** server returns JSON with `untrusted_content_notice` only; no server-side execution occurs
+
+#### Scenario: Submitter cannot exfiltrate internal MCP agent notes
+- **GIVEN** an anonymous submitter holds a valid `ownership_token` for feedback `#42` and `expose_agent_comments_to_submitter` is `false`
+- **WHEN** a developer's MCP agent posts a diagnostic note via `add_feedback_comment` (default `visibility: "internal"`)
+- **THEN** `GET /context_drop/feedback` omits the internal agent comment while the Triage Dashboard and MCP `get_feedback` retain it
 
 ### Requirement: Remote Federation HTTPS
-`RemoteClient` (Ruby and TypeScript) SHALL require HTTPS for non-loopback MCP URLs, block private/link-local/metadata hosts, ignore `allow_insecure_http` in production, and refuse HTTP redirects (`redirect: "error"`) to prevent Bearer token leakage.
+`RemoteClient` (Ruby and TypeScript) SHALL require HTTPS for non-loopback MCP URLs, block private/link-local/CGNAT/metadata hosts and wildcard DNS rebinding domains (`*.nip.io`, `*.sslip.io`, `*.xip.io`), resolve and verify target DNS records before connecting (pinning `Net::HTTP#ipaddr=` in Ruby), ignore `allow_insecure_http` in production, and refuse HTTP redirects (`redirect: "error"`) to prevent Bearer token leakage.
 
 #### Scenario: http:// remote URL
 - **THEN** connection refused or error at configuration/call time
@@ -277,7 +282,7 @@ Outbound webhook deliveries SHALL use Standard Webhooks (or documented HMAC head
 - **THEN** payload includes verifiable signature headers
 
 ### Requirement: Webhook URL Validation
-Dashboard (`NotificationDestination`) and standalone integrations API (`/integrations/destinations`) SHALL validate webhook URLs on save and delivery, rejecting non-HTTPS schemes and private, loopback, link-local, or cloud-metadata hosts in production; plaintext `http://` loopback URLs SHALL be permitted only in `development` when `allow_insecure_webhooks` is explicitly enabled.
+Dashboard (`NotificationDestination`), standalone integrations API (`/integrations/destinations`), and outbound delivery clients (`WebhookClient` and `LarkClient`) SHALL validate webhook and Lark `api_host` URLs on save and delivery, rejecting non-HTTPS schemes, private/loopback/link-local/CGNAT/metadata hosts, wildcard rebinding domains, and HTTP redirects, resolving DNS at delivery time (pinning `Net::HTTP#ipaddr=` in Ruby), restricting `LarkClient` `api_host` to allowlisted Lark/Feishu hosts, and escaping untrusted `lark_md` fields; plaintext `http://` loopback URLs SHALL be permitted only in `development` when `allow_insecure_webhooks` is explicitly enabled.
 
 #### Scenario: Production rejects HTTP or private-network webhook URL
 - **GIVEN** resolved environment is `production`
@@ -401,7 +406,34 @@ Host `git_push_branch` adapter SHALL refuse pushes to `main`/`master` and requir
 - **THEN** adapter returns error; no push
 
 ### Requirement: Path Allowlist (Host)
-`repo_read_file` and patch application SHALL enforce repository path allowlists (e.g. `app/views/**`) configured in host policy.
+`ContextDrop::Assistant::SafeRepoReader` (shipped in `context_drop` and used by default in `context_drop_build.rb.tt`) and `PatchValidator` (`validateChangeSetPatches` in TypeScript) SHALL enforce `realpath` containment, secret-file denylisting, CI/workflow/build-config patch protection, and configurable `allowed_globs` (e.g. `app/views/**`).
+
+---
+
+## Requirements: URI Safety, Scoped Uploads & Proxy Hardening
+
+### Requirement: Safe URI Schemes and Dashboard Content Security Policy
+`Feedback` ingestion (Rails and Node), Dashboard templates, `Referer` navigation shortcuts, and Widget `ChangeSet` links SHALL reject non-HTTP executable URI schemes (`javascript:`, `data:`, `vbscript:`, protocol-relative `//`), and Dashboard HTML responses SHALL emit a per-request nonce `Content-Security-Policy` blocking inline script injection.
+
+#### Scenario: Reject non-HTTP page_url at ingestion
+- **WHEN** a client submits `POST /feedback` with an executable non-HTTP scheme in `page_url`
+- **THEN** the server rejects the payload with `422 Unprocessable Entity`
+
+### Requirement: Scoped Pending Upload Signed IDs
+`POST /context_drop/attachments` SHALL issue `ActiveStorage::Blob` signed IDs scoped to `purpose: :context_drop_pending_upload` with a bounded expiration (`30` minutes), and `FeedbacksController` / `Assistant::Orchestrator` SHALL reject unscoped or already-attached host-application blobs.
+
+#### Scenario: Host ActiveStorage signed_id rejected by ContextDrop
+- **GIVEN** an `ActiveStorage::Blob` minted outside `AttachmentsController` without `purpose: :context_drop_pending_upload`
+- **WHEN** a client submits its `signed_id` to `POST /context_drop/feedback` or `POST /context_drop/assistant/turn`
+- **THEN** the server responds with `422 Unprocessable Entity`
+
+### Requirement: Fail-Closed Node Postgres Secret and Opt-In Proxy IP Resolution
+`createPostgresStorageAdapter` SHALL fail closed in `production` when no explicit or environment secret (`CONTEXT_DROP_SECRET_KEY`, `CONTEXT_DROP_SECRET`, `NEXTAUTH_SECRET`, `AUTH_SECRET`) is configured and use random per-instance keys in non-production; `@context-drop` HTTP rate limiting SHALL ignore client-supplied `X-Forwarded-For` / `X-Real-IP` headers unless `trustProxy` is explicitly enabled.
+
+#### Scenario: Spoofed X-Forwarded-For does not bypass Node rate limit by default
+- **GIVEN** `createContextDropNextHandler` runs with default `trustProxy` (`false`) and `rateLimit: { maxRequests: 2, periodSeconds: 3600 }`
+- **WHEN** a client sends 3 requests with distinct `X-Forwarded-For` IP headers
+- **THEN** the 3rd request receives `429 Too Many Requests`
 
 ---
 

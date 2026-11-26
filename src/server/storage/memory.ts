@@ -145,10 +145,26 @@ export function createMemoryStorageAdapter(): StorageAdapter {
   let nextAttachmentId = 1;
   let nextCommentId = 1;
 
+  const PENDING_BLOB_TTL_MS = 30 * 60 * 1000;
+  const MAX_PENDING_BLOBS = 200;
+
   const secret = crypto.randomBytes(32);
-  const pendingBlobs = new Map<string, ValidatedUpload>();
+  const pendingBlobs = new Map<string, { upload: ValidatedUpload; createdAtMs: number }>();
   const attachmentBlobs = new Map<string, Uint8Array>();
   const feedbacks = new Map<number, StoredFeedbackRecord>();
+
+  function prunePendingBlobs(nowMs: number): void {
+    for (const [k, v] of pendingBlobs.entries()) {
+      if (nowMs - v.createdAtMs > PENDING_BLOB_TTL_MS) {
+        pendingBlobs.delete(k);
+      }
+    }
+    while (pendingBlobs.size >= MAX_PENDING_BLOBS) {
+      const oldestKey = pendingBlobs.keys().next().value;
+      if (oldestKey === undefined) break;
+      pendingBlobs.delete(oldestKey);
+    }
+  }
 
   function signId(rawId: string): string {
     const sig = crypto.createHmac("sha256", secret).update(rawId).digest("hex");
@@ -174,10 +190,15 @@ export function createMemoryStorageAdapter(): StorageAdapter {
     },
 
     async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
+      const nowMs = Date.now();
+      prunePendingBlobs(nowMs);
       const rawId = crypto.randomUUID();
       pendingBlobs.set(rawId, {
-        ...blob,
-        data: new Uint8Array(blob.data)
+        upload: {
+          ...blob,
+          data: new Uint8Array(blob.data)
+        },
+        createdAtMs: nowMs
       });
       return { signed_blob_id: signId(rawId) };
     },
@@ -185,11 +206,13 @@ export function createMemoryStorageAdapter(): StorageAdapter {
     async consumePendingBlob(signedBlobId: string): Promise<ValidatedUpload | null> {
       const rawId = verifySignedId(signedBlobId);
       if (!rawId) return null;
-      const blob = pendingBlobs.get(rawId) ?? null;
-      if (blob) {
-        pendingBlobs.delete(rawId);
+      const entry = pendingBlobs.get(rawId) ?? null;
+      if (!entry) return null;
+      pendingBlobs.delete(rawId);
+      if (Date.now() - entry.createdAtMs > PENDING_BLOB_TTL_MS) {
+        return null;
       }
-      return blob;
+      return entry.upload;
     },
 
     async createFeedback(input: CreateFeedbackRecordInput): Promise<StoredFeedbackRecord> {

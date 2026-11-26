@@ -26,6 +26,9 @@ module ContextDrop
           url_str = env_config[:url].to_s.strip
           api_key = env_config[:api_key].to_s.strip
           uri = validate_endpoint_uri!(env_name, url_str, allow_insecure_http: !!env_config[:allow_insecure_http])
+          prod = defined?(ContextDrop) && ContextDrop.respond_to?(:config) && ContextDrop.config.rails_production?
+          allow_local = !prod && (LOOPBACK_HOSTS.include?(uri.host.to_s.downcase) || !!env_config[:allow_insecure_http])
+          pinned_ip = ContextDrop::SsrfGuard.resolve_public_ip!(uri.host, allow_loopback: allow_local)
 
           payload = {
             jsonrpc: "2.0",
@@ -35,6 +38,7 @@ module ContextDrop
           }
 
           http = Net::HTTP.new(uri.host, uri.port)
+          http.ipaddr = pinned_ip if pinned_ip
           http.use_ssl = (uri.scheme == "https")
           http.open_timeout = DEFAULT_OPEN_TIMEOUT
           http.read_timeout = DEFAULT_READ_TIMEOUT
@@ -65,6 +69,8 @@ module ContextDrop
           end
 
           parsed.is_a?(Hash) ? (parsed["result"] || parsed[:result]) : nil
+        rescue ContextDrop::SsrfGuard::SsrfError => e
+          raise RemoteError, "Blocked SSRF / disallowed remote MCP target '#{env_name}': #{e.message}"
         rescue JSON::ParserError => e
           raise RemoteError, "Invalid JSON from remote environment '#{env_name}': #{ContextDrop::SecretRedactor.scrub(e.message, extra_secrets: [api_key])}"
         rescue Timeout::Error, SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
@@ -115,12 +121,7 @@ module ContextDrop
         private
 
         def disallowed_private_host?(clean_host)
-          return true if clean_host == "metadata.google.internal" || clean_host.end_with?(".localhost")
-
-          ip = IPAddr.new(clean_host)
-          ip.loopback? || ip.private? || ip.link_local? || ip.to_s == "0.0.0.0" || ip.to_s == "::"
-        rescue IPAddr::InvalidAddressError
-          false
+          ContextDrop::SsrfGuard.disallowed_hostname?(clean_host)
         end
 
         def normalize_tool_result(raw)

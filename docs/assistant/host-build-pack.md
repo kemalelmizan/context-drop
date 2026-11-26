@@ -44,13 +44,25 @@ Write tools (`write: true`) execute **only** after the user approves a `ContextD
 
 ```ruby
 ContextDrop.configure do |c|
+  allowed_globs = %w[app/views/** app/components/** app/javascript/** config/locales/**]
+
   c.build_target = {
     environment: "staging",
     repo: "acme/web",
-    default_base_branch: "main"
+    default_base_branch: "main",
+    allowed_globs: allowed_globs
   }
 
-  c.register_build_tool(..., write: false) { |args| ... }
+  # Always use SafeRepoReader (enforces realpath jail, symlink rejection, 256 KB cap,
+  # secret-file denylist, and allowed_globs) rather than raw Rails.root.join + File.read.
+  c.register_build_tool(name: "repo_read_file", description: "Read allowed source file", write: false) do |args|
+    ContextDrop::Assistant::SafeRepoReader.read_file(
+      path: args["path"],
+      root: Rails.root,
+      allowed_globs: allowed_globs
+    )
+  end
+
   c.register_build_tool(..., write: true) { |args| ... }
 end
 ```

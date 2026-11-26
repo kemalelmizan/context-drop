@@ -1,29 +1,15 @@
 import type { NormalizedRemoteEnvConfig } from "./environment-router.ts";
 import { redactSecretsFromText } from "../notifications/secrets.ts";
+import {
+  assertResolvedPublicHost,
+  isDisallowedHostname
+} from "../server/ssrf-guard.ts";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 function isDisallowedPrivateHost(host: string): boolean {
-  const clean = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  if (
-    clean === "metadata.google.internal" ||
-    clean.endsWith(".localhost") ||
-    clean === "::" ||
-    clean.startsWith("fe80:") ||
-    clean.startsWith("fc") ||
-    clean.startsWith("fd")
-  ) {
-    return true;
-  }
-  const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(clean);
-  if (!match) return false;
-  const oct = match.slice(1, 5).map(Number);
-  if (oct[0] === 10 || oct[0] === 127 || oct[0] === 0) return true;
-  if (oct[0] === 169 && oct[1] === 254) return true;
-  if (oct[0] === 192 && oct[1] === 168) return true;
-  if (oct[0] === 172 && oct[1]! >= 16 && oct[1]! <= 31) return true;
-  return false;
+  return isDisallowedHostname(host);
 }
 
 export interface McpContentBlock {
@@ -111,6 +97,19 @@ export class RemoteMcpClient {
     }
 
     const parsedUrl = validateRemoteMcpUrl(envName, envConfig.url, envConfig.allowInsecureHttp);
+    const isProd =
+      (process.env.CONTEXT_DROP_ENV ?? process.env.NODE_ENV ?? "").trim().toLowerCase() ===
+      "production";
+    const allowLocal =
+      !isProd &&
+      (LOOPBACK_HOSTS.has(parsedUrl.hostname.toLowerCase()) || Boolean(envConfig.allowInsecureHttp));
+    try {
+      await assertResolvedPublicHost(parsedUrl.hostname, { allowLoopback: allowLocal });
+    } catch (err) {
+      throw new RemoteMcpError(
+        `Blocked SSRF / disallowed remote MCP target '${envName}': ${(err as Error).message}`
+      );
+    }
 
     const payload = {
       jsonrpc: "2.0",

@@ -2189,14 +2189,39 @@ export class ContextDropWidgetElement extends BaseHTMLElement {
       this.changeSetCardEl.appendChild(branch);
     }
 
-    if (cs.pr_url) {
-      const link = document.createElement("a");
-      link.className = "cd-change-set-link";
-      link.href = cs.pr_url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "Open pull request";
-      this.changeSetCardEl.appendChild(link);
+    if (Array.isArray(cs.patches) && cs.patches.length > 0) {
+      const filesEl = document.createElement("div");
+      filesEl.className = "cd-change-set-meta cd-change-set-files";
+      const paths = cs.patches
+        .map((p) => (p && typeof p.path === "string" ? p.path.trim() : ""))
+        .filter(Boolean);
+      filesEl.textContent = `Files (${paths.length}): ${paths.join(", ")}`;
+      this.changeSetCardEl.appendChild(filesEl);
+    }
+
+    if (cs.pr_url && /^https?:\/\/[^\s]+$/i.test(cs.pr_url.trim())) {
+      let validPrHref: string | null = null;
+      try {
+        const parsedPr = new URL(cs.pr_url.trim());
+        if (
+          (parsedPr.protocol === "http:" || parsedPr.protocol === "https:") &&
+          !parsedPr.username &&
+          !parsedPr.password
+        ) {
+          validPrHref = parsedPr.toString();
+        }
+      } catch {
+        validPrHref = null;
+      }
+      if (validPrHref) {
+        const link = document.createElement("a");
+        link.className = "cd-change-set-link";
+        link.href = validPrHref;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "Open pull request";
+        this.changeSetCardEl.appendChild(link);
+      }
     }
 
     const actions = document.createElement("div");

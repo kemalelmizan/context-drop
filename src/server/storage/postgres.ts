@@ -43,13 +43,27 @@ export interface PostgresStorageAdapterOptions {
 }
 
 function resolvePgSecret(explicit?: string): Buffer {
-  const raw =
+  const raw = (
     explicit ||
+    process.env.CONTEXT_DROP_SECRET_KEY ||
     process.env.CONTEXT_DROP_SECRET ||
     process.env.NEXTAUTH_SECRET ||
     process.env.AUTH_SECRET ||
-    "context-drop-default-pg-blob-secret";
-  return crypto.createHash("sha256").update(raw).digest();
+    ""
+  ).trim();
+
+  if (raw.length > 0) {
+    return crypto.createHash("sha256").update(raw).digest();
+  }
+
+  const env = (process.env.CONTEXT_DROP_ENV ?? process.env.NODE_ENV ?? "").trim().toLowerCase();
+  if (env === "production") {
+    throw new Error(
+      "ContextDrop PostgresStorageAdapter requires an explicit `secret` option or CONTEXT_DROP_SECRET_KEY / CONTEXT_DROP_SECRET in production."
+    );
+  }
+
+  return crypto.randomBytes(32);
 }
 
 function toIsoString(val: unknown): string {
@@ -328,6 +342,23 @@ export function createPostgresStorageAdapter(
 
     async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
       await ensureMigrated();
+      const staleRes = await pool.query(
+        `DELETE FROM context_drop_pending_blobs
+         WHERE created_at < NOW() - INTERVAL '30 minutes'
+            OR id IN (
+              SELECT id FROM context_drop_pending_blobs
+              ORDER BY created_at DESC
+              OFFSET 199
+            )
+         RETURNING blob_key`
+      );
+      if (blobStore?.deleteBlob) {
+        for (const r of staleRes.rows) {
+          const bk = r["blob_key"] as string | null;
+          if (bk) await blobStore.deleteBlob(bk);
+        }
+      }
+
       const rawId = crypto.randomUUID();
       let blobKey: string | null = null;
       let inlineBytes: Buffer | null = null;
@@ -369,7 +400,7 @@ export function createPostgresStorageAdapter(
 
       const res = await pool.query(
         `DELETE FROM context_drop_pending_blobs
-         WHERE id = $1
+         WHERE id = $1 AND created_at >= NOW() - INTERVAL '30 minutes'
          RETURNING filename, content_type, byte_size, dimensions_json, blob_key, data`,
         [rawId]
       );

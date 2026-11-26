@@ -594,9 +594,18 @@ module ContextDrop
           }
         end,
         attachments: feedback.attachments.map { |att| serialize_attachment(att, elements_by_id) },
-        comments_count: feedback.comments.size,
-        comments: feedback.comments.map { |comment| serialize_comment(comment) }
+        comments_count: submitter_visible_comments(feedback.comments).size,
+        comments: submitter_visible_comments(feedback.comments).map { |comment| serialize_comment(comment) }
       }
+    end
+
+    def submitter_visible_comments(comments)
+      Array(comments).select do |comment|
+        next true unless comment.author_type.to_s == "Agent"
+        next true if ContextDrop.config.expose_agent_comments_to_submitter
+
+        comment.metadata.is_a?(Hash) && comment.metadata["visibility"].to_s == "public"
+      end
     end
 
     def serialize_attachment(att, elements_by_id = {})
@@ -691,7 +700,10 @@ module ContextDrop
 
       case file_source[:type]
       when :signed_blob
-        blob = ActiveStorage::Blob.find_signed!(file_source[:signed_blob_id])
+        blob = ActiveStorage::Blob.find_signed!(file_source[:signed_blob_id], purpose: :context_drop_pending_upload)
+        if defined?(ActiveStorage::Attachment) && ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+          raise ContextDrop::UploadValidator::ValidationError, "Signed blob has already been attached"
+        end
         validate_existing_blob!(blob)
         att_record.file.attach(blob)
       when :validated_io
@@ -747,8 +759,12 @@ module ContextDrop
 
     def feedback_dashboard_url(feedback)
       path = "/context_drop/dashboard/feedbacks/#{feedback.id}"
-      if respond_to?(:request) && request&.base_url.present?
-        "#{request.base_url}#{path}"
+      configured_base = ContextDrop::UrlSafety.safe_external_http_url(ContextDrop.config.public_base_url)
+      if configured_base
+        "#{configured_base.chomp('/')}#{path}"
+      elsif respond_to?(:request) && request&.base_url.present?
+        safe_req_base = ContextDrop::UrlSafety.safe_external_http_url(request.base_url)
+        safe_req_base ? "#{safe_req_base.chomp('/')}#{path}" : path
       else
         path
       end

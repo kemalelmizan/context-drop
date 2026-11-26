@@ -5,9 +5,12 @@ require "securerandom"
 
 module ContextDrop
   class ApplicationController < ActionController::Base
+    MAX_RATE_LIMIT_BUCKETS = 10_000
+
     protect_from_forgery with: :exception, unless: :verified_cross_origin_widget_request?
 
     before_action :apply_widget_cors_headers!
+    before_action :reject_unallowed_cross_site_mutation!
     before_action :ensure_context_drop_enabled!
 
     rescue_from ActionController::InvalidAuthenticityToken, with: :handle_invalid_csrf_token
@@ -92,6 +95,9 @@ module ContextDrop
           store = self.class.rate_limit_store
           now = Time.now.to_i
           store.delete_if { |_k, v| v[:expires_at] <= now }
+          if !store.key?(cache_key) && store.size >= MAX_RATE_LIMIT_BUCKETS
+            store.shift
+          end
           entry = store[cache_key] ||= { count: 0, expires_at: now + period_seconds }
           entry[:count] += 1
           entry[:count]
@@ -154,6 +160,16 @@ module ContextDrop
         "Content-Type, Accept, X-CSRF-Token, X-Context-Drop-Client, X-Context-Drop-Ownership-Token, X-Context-Drop-Ownership-Tokens, Authorization"
       )
       response.set_header("Access-Control-Max-Age", "86400")
+    end
+
+    def reject_unallowed_cross_site_mutation!
+      return if request.get? || request.head? || request.options?
+
+      sec_site = request.headers["Sec-Fetch-Site"].to_s.strip.downcase
+      return unless sec_site == "cross-site"
+      return if verified_cross_origin_widget_request?
+
+      render json: { error: "Cross-site request rejected" }, status: :forbidden
     end
 
     def verified_cross_origin_widget_request?

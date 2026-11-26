@@ -11,7 +11,7 @@ import {
 export async function deliverOccurrenceToDestinations(
   store: LocalEventStore,
   occurrence: StoredEventOccurrence,
-  options?: { allowLocalHttp?: boolean }
+  options?: { allowLocalHttp?: boolean; larkAllowedHosts?: string[] }
 ): Promise<void> {
   const payload = store.toMcpPayload(occurrence);
   const destinations = await store.listDestinations();
@@ -31,7 +31,9 @@ export async function deliverOccurrenceToDestinations(
           appSecret: secrets["app_secret"],
           receiveIdType: String(dest.settings["receive_id_type"] ?? "chat_id"),
           receiveId,
-          occurrence: payload
+          occurrence: payload,
+          allowedHosts: options?.larkAllowedHosts,
+          allowLocalHttp: options?.allowLocalHttp
         });
       } else {
         const url = String(dest.settings["url"] ?? "").trim();
@@ -43,7 +45,7 @@ export async function deliverOccurrenceToDestinations(
           occurrence.event_id,
           body
         );
-        await postSignedJson(url, body, headers);
+        await postSignedJson(url, body, headers, { allowLocalHttp: options?.allowLocalHttp });
       }
       await store.recordDestinationDelivery(dest.id, "delivered", null);
     } catch (err) {

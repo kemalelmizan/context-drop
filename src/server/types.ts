@@ -252,6 +252,13 @@ export interface ContextDropServerConfig {
   allowAnonymous?: boolean;
   allowedOrigins?: Array<string | RegExp>;
   ownershipSecret?: string;
+  publicBaseUrl?: string;
+  /**
+   * Controls whether rate limiting trusts proxy IP headers (`X-Forwarded-For` / `X-Real-IP`).
+   * Defaults to `false` so automated bots cannot bypass rate limits by rotating `X-Forwarded-For`.
+   * Pass `true` (reads the rightmost proxy-appended hop) or a custom `(request) => clientIp` resolver behind a reverse proxy.
+   */
+  trustProxy?: boolean | ((request: Request) => string);
   storage?: StorageAdapter;
   storageDir?: string;
   features?: {
@@ -270,6 +277,7 @@ export interface ContextDropServerConfig {
   privacy?: {
     excludedSelectors?: string[];
     persistOwnershipTokens?: boolean;
+    exposeAgentCommentsToSubmitter?: boolean;
   };
   rateLimit?:
     | {
@@ -290,6 +298,8 @@ export interface ContextDropServerConfig {
     enabled?: boolean;
     /** Development-only opt-in allowing http://localhost webhook callbacks. Ignored in production. */
     allowInsecureWebhooks?: boolean;
+    /** Optional additional enterprise Lark/Feishu API hostnames beyond `open.larksuite.com` and `open.feishu.cn`. */
+    larkAllowedHosts?: string[];
   };
   /**
    * Optional authorization for `GET/POST /integrations/*` notification destination API

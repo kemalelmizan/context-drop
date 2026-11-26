@@ -5,6 +5,7 @@ require "json"
 module ContextDrop
   class McpController < ApplicationController
     skip_before_action :verify_authenticity_token
+    skip_before_action :reject_unallowed_cross_site_mutation!
     skip_before_action :ensure_context_drop_enabled!
 
     before_action :ensure_mcp_enabled!

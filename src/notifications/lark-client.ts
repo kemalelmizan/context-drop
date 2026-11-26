@@ -1,6 +1,61 @@
 import type { FeedbackEventName, McpEventOccurrencePayload } from "../events/types.ts";
+import {
+  DEFAULT_LARK_HOSTS,
+  assertResolvedPublicHost,
+  isDisallowedHostname,
+  isLoopbackHost,
+  normalizeHostname,
+  safeHref
+} from "../server/ssrf-guard.ts";
 
 export class LarkDeliveryError extends Error {}
+
+export function escapeLarkMd(raw: unknown): string {
+  return String(raw ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/([[\]()*_~`])/g, "\\$1");
+}
+
+export function validateLarkApiHost(
+  apiHostStr: string,
+  options?: { allowedHosts?: string[]; allowLocalHttp?: boolean }
+): URL {
+  let uri: URL;
+  try {
+    uri = new URL(apiHostStr.trim());
+  } catch (err) {
+    throw new LarkDeliveryError(`Invalid Lark API host: ${(err as Error).message}`);
+  }
+  const clean = normalizeHostname(uri.hostname);
+  if (!clean) {
+    throw new LarkDeliveryError("Lark API host missing");
+  }
+  if (uri.username || uri.password) {
+    throw new LarkDeliveryError("Lark API host must not include credentials");
+  }
+  if (options?.allowLocalHttp && uri.protocol === "http:" && isLoopbackHost(clean)) {
+    return uri;
+  }
+  if (uri.protocol !== "https:") {
+    throw new LarkDeliveryError("Lark API host must use HTTPS");
+  }
+  if (isDisallowedHostname(clean)) {
+    throw new LarkDeliveryError("Lark API host blocked (private or internal network)");
+  }
+  const permitted = new Set(
+    [...DEFAULT_LARK_HOSTS, ...(options?.allowedHosts ?? [])]
+      .map((h) => normalizeHostname(h))
+      .filter(Boolean)
+  );
+  if (!permitted.has(clean)) {
+    throw new LarkDeliveryError(
+      `Lark API host '${clean}' is not in allowed Lark hosts (${Array.from(permitted).join(", ")})`
+    );
+  }
+  return uri;
+}
 
 function eventTitle(name: FeedbackEventName): string {
   const map: Record<string, string> = {
@@ -27,14 +82,17 @@ function headerColor(name: FeedbackEventName): string {
 
 export function buildLarkInteractiveCard(occurrence: McpEventOccurrencePayload): string {
   const data = occurrence.data;
+  const statusStr = escapeLarkMd(data.status);
   const statusLine = data.previous_status
-    ? `${data.previous_status} → ${data.status}`
-    : data.status;
+    ? `${escapeLarkMd(data.previous_status)} → ${statusStr}`
+    : statusStr;
+  const safeMsg = data.message ? escapeLarkMd(String(data.message).slice(0, 500)) : null;
+  const safePage = data.page_url ? escapeLarkMd(String(data.page_url).slice(0, 500)) : null;
   const lines = [
-    `**Feedback #${data.feedback_id}** · \`${data.environment}\``,
+    `**Feedback #${escapeLarkMd(data.feedback_id)}** · \`${escapeLarkMd(data.environment)}\``,
     `**Status:** ${statusLine}`,
-    data.message ? `> ${String(data.message).slice(0, 500)}` : null,
-    data.page_url ? `**Page:** ${data.page_url}` : null
+    safeMsg ? `> ${safeMsg}` : null,
+    safePage ? `**Page:** ${safePage}` : null
   ]
     .filter(Boolean)
     .join("\n");
@@ -47,8 +105,8 @@ export function buildLarkInteractiveCard(occurrence: McpEventOccurrencePayload):
     },
     elements: [{ tag: "div", text: { tag: "lark_md", content: lines } }]
   };
-  if (data.dashboard_url) {
-    const dash = data.dashboard_url;
+  const dash = safeHref(data.dashboard_url);
+  if (dash) {
     card["elements"] = [
       ...(card["elements"] as unknown[]),
       {
@@ -74,14 +132,34 @@ export async function deliverLarkMessage(input: {
   receiveIdType: string;
   receiveId: string;
   occurrence: McpEventOccurrencePayload;
+  allowedHosts?: string[];
+  allowLocalHttp?: boolean;
 }): Promise<void> {
-  const host = input.apiHost.replace(/\/+$/, "");
+  const parsedHost = validateLarkApiHost(input.apiHost, {
+    allowedHosts: input.allowedHosts,
+    allowLocalHttp: input.allowLocalHttp
+  });
+  try {
+    await assertResolvedPublicHost(parsedHost.hostname, {
+      allowLoopback: Boolean(input.allowLocalHttp)
+    });
+  } catch (err) {
+    throw new LarkDeliveryError((err as Error).message);
+  }
+
+  const host = parsedHost.toString().replace(/\/+$/, "");
   const tokenRes = await fetch(`${host}/open-apis/auth/v3/tenant_access_token/internal`, {
     method: "POST",
+    redirect: "error",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: input.appId, app_secret: input.appSecret })
+    body: JSON.stringify({ app_id: input.appId, app_secret: input.appSecret }),
+    signal: AbortSignal.timeout(15_000)
   });
-  const tokenJson = (await tokenRes.json()) as { code?: number; msg?: string; tenant_access_token?: string };
+  const tokenJson = (await tokenRes.json()) as {
+    code?: number;
+    msg?: string;
+    tenant_access_token?: string;
+  };
   if (tokenJson.code !== 0 || !tokenJson.tenant_access_token) {
     throw new LarkDeliveryError(tokenJson.msg ?? "Failed to obtain Lark tenant_access_token");
   }
@@ -92,6 +170,7 @@ export async function deliverLarkMessage(input: {
 
   const sendRes = await fetch(msgUrl, {
     method: "POST",
+    redirect: "error",
     headers: {
       Authorization: `Bearer ${tokenJson.tenant_access_token}`,
       "Content-Type": "application/json"
@@ -100,7 +179,8 @@ export async function deliverLarkMessage(input: {
       receive_id: input.receiveId,
       msg_type: "interactive",
       content
-    })
+    }),
+    signal: AbortSignal.timeout(15_000)
   });
   const sendJson = (await sendRes.json()) as { code?: number; msg?: string };
   if (sendJson.code !== 0) {

@@ -9,6 +9,7 @@ module ContextDrop
       helper ContextDrop::DashboardHelper
 
       before_action :enforce_dashboard_authorization!
+      before_action :apply_dashboard_security_headers!
       before_action :ensure_tables!
       before_action :set_destination, only: %i[edit update destroy test_delivery]
 
@@ -124,6 +125,16 @@ module ContextDrop
         return if ContextDrop.config.dashboard_authorized?(self)
 
         render plain: "403 Forbidden — Not authorized to configure integrations", status: :forbidden
+      end
+
+      def apply_dashboard_security_headers!
+        @cd_csp_nonce = SecureRandom.base64(16)
+        response.set_header(
+          "Content-Security-Policy",
+          "default-src 'self'; script-src 'self' 'nonce-#{@cd_csp_nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+        )
+        response.set_header("X-Frame-Options", "SAMEORIGIN")
+        response.set_header("X-Content-Type-Options", "nosniff")
       end
 
       def ensure_tables!

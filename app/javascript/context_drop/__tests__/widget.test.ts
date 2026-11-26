@@ -14,6 +14,7 @@ import {
   resolveSmartComponent
 } from "../sanitizer.ts";
 import { ElementPicker } from "../element-picker.ts";
+import { collectRedactionRects } from "../screenshot.ts";
 import { ContextDropWidgetElement } from "../widget.ts";
 
 interface MockNodeInit {
@@ -656,6 +657,7 @@ class MockDomElement {
 
   private matchesSingleSelector(sel: string): boolean {
     if (!sel) return false;
+    if (sel === "*") return true;
     let rest = sel;
 
     const tagMatch = rest.match(/^[a-zA-Z][a-zA-Z0-9_-]*/);
@@ -817,6 +819,7 @@ function withMountedWidget(
       documentElement: MockDomElement;
       createElement: (tag: string) => MockDomElement;
       querySelector: (sel: string) => MockDomElement | null;
+      querySelectorAll: (sel: string) => MockDomElement[];
       elementsFromPoint?: (x: number, y: number) => MockDomElement[];
     };
     mockWindow: MockDomElement & { innerWidth: number; innerHeight: number; location: { href: string } };
@@ -848,12 +851,14 @@ function withMountedWidget(
     documentElement: MockDomElement;
     createElement: (tag: string) => MockDomElement;
     querySelector: (sel: string) => MockDomElement | null;
+    querySelectorAll: (sel: string) => MockDomElement[];
     elementsFromPoint?: (x: number, y: number) => MockDomElement[];
   } = {
     body: mockBody,
     documentElement: mockHtml,
     createElement: (tag: string) => new MockDomElement(tag),
-    querySelector: () => null
+    querySelector: (sel: string) => mockHtml.querySelector(sel),
+    querySelectorAll: (sel: string) => mockHtml.querySelectorAll(sel)
   };
 
   g.window = mockWindow;
@@ -2173,5 +2178,78 @@ describe("ContextDrop v0.2 Book-Corner Peel-to-Pin & Agentic Sidebar", () => {
         g.fetch = prevFetch;
       }
     }
+  });
+
+  it("pierces open Shadow DOM for screenshot redaction and renders ChangeSet patch paths while blocking unsafe pr_url schemes (AI-SEC-04, AI-SEC-05, AI-SEC-12)", async () => {
+    await withMountedWidget(
+      async ({ widget, shadowRoot, mockBody }) => {
+        // 1. Open Shadow DOM host element containing a sensitive node is redacted by collectRedactionRects
+        const hostWebComp = new MockDomElement("custom-billing-card") as MockDomElement & {
+          shadowRoot?: MockDomElement;
+        };
+        const openShadow = new MockDomElement("shadow-root");
+        const secretInput = new MockDomElement("div");
+        secretInput.setAttribute("data-feedback-sensitive", "true");
+        secretInput.setRect({ left: 42, top: 84, width: 120, height: 32 });
+        openShadow.appendChild(secretInput);
+        hostWebComp.shadowRoot = openShadow;
+        mockBody.appendChild(hostWebComp);
+
+        const rects = collectRedactionRects();
+        assert.ok(
+          rects.some((r) => r.x === 42 && r.y === 84 && r.width === 120 && r.height === 32),
+          "Expected sensitive element inside open Shadow DOM to be included in redaction rects"
+        );
+
+        // 2. ChangeSet card displays patched file paths and blocks non-http(s) pr_url
+        const internal = widget as unknown as {
+          activeChangeSet: Record<string, unknown> | null;
+          changeSetApprovalToken: string | null;
+          renderChangeSetCard: () => void;
+        };
+        internal.activeChangeSet = {
+          id: 99,
+          status: "draft",
+          summary: "Update button label",
+          branch_name: "context-drop/99",
+          pr_url: "data:text/html,unsafe",
+          patches: [{ path: "app/views/checkout.html.erb", old_string: "a", new_string: "b" }],
+          not_on_main: true
+        };
+        internal.changeSetApprovalToken = "tok_approve_99";
+        internal.renderChangeSetCard();
+
+        const csCard = shadowRoot.querySelector(".cd-change-set-card");
+        assert.ok(csCard);
+        const filesMeta = csCard.querySelector(".cd-change-set-files");
+        assert.ok(filesMeta);
+        assert.ok(filesMeta.textContent.includes("app/views/checkout.html.erb"));
+        assert.equal(
+          csCard.querySelector(".cd-change-set-link"),
+          null,
+          "Unsafe non-HTTP pr_url must not render an anchor tag"
+        );
+
+        internal.activeChangeSet = {
+          ...internal.activeChangeSet,
+          status: "pr_open",
+          pr_url: "https://github.com/acme/web/pull/99"
+        };
+        internal.renderChangeSetCard();
+        const safeLink = csCard.querySelector(".cd-change-set-link") as
+          | (MockDomElement & { href?: string })
+          | null;
+        assert.ok(safeLink);
+        assert.equal(safeLink.href, "https://github.com/acme/web/pull/99");
+      },
+      {
+        "data-config": JSON.stringify({
+          enabled: true,
+          environment: "staging",
+          position: "bottom_right",
+          assistant: { enabled: true, modes: ["ask", "build", "feedback"], llm_configured: true }
+        })
+      }
+    );
   });
 });

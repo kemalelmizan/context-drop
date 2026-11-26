@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { AssistantToolDefinition } from "./tools.ts";
+import { isDisallowedHostname, isLoopbackHost } from "../server/ssrf-guard.ts";
 
 export type AssistantLlmProviderId = "anthropic" | "gemini" | "openai" | "custom";
 
@@ -42,6 +43,9 @@ export interface AssistantLlmConfig {
   allowClientModelOverride?: boolean;
   timeoutsMs?: { ask?: number; build?: number };
   maxIterations?: { ask?: number; build?: number };
+  maxMessages?: number;
+  maxMessageLength?: number;
+  maxTotalMessageChars?: number;
   transport?: AssistantLlmTransport;
 }
 
@@ -51,37 +55,6 @@ const DEFAULT_PROVIDER_MODELS: Record<AssistantLlmProviderId, string> = {
   openai: "gpt-4.1",
   custom: "anthropic/claude-sonnet-4"
 };
-
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
-function isLoopbackHost(host: string): boolean {
-  const clean = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  return LOOPBACK_HOSTS.has(clean) || clean.endsWith(".localhost");
-}
-
-function isDisallowedPrivateHost(host: string): boolean {
-  const clean = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  if (
-    clean === "localhost" ||
-    clean.endsWith(".localhost") ||
-    clean === "metadata.google.internal" ||
-    clean === "::1" ||
-    clean === "::" ||
-    clean.startsWith("fe80:") ||
-    clean.startsWith("fc") ||
-    clean.startsWith("fd")
-  ) {
-    return true;
-  }
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(clean);
-  if (!m) return false;
-  const oct = m.slice(1, 5).map(Number);
-  if (oct[0] === 10 || oct[0] === 127 || oct[0] === 0) return true;
-  if (oct[0] === 169 && oct[1] === 254) return true;
-  if (oct[0] === 192 && oct[1] === 168) return true;
-  if (oct[0] === 172 && oct[1]! >= 16 && oct[1]! <= 31) return true;
-  return false;
-}
 
 export function validateCustomLlmBaseUrl(urlStr: string, isProduction = false): URL {
   let uri: URL;
@@ -93,11 +66,14 @@ export function validateCustomLlmBaseUrl(urlStr: string, isProduction = false): 
   if ((uri.protocol !== "http:" && uri.protocol !== "https:") || !uri.hostname) {
     throw new Error(`Invalid LLM base URL: ${urlStr}`);
   }
+  if (uri.username || uri.password) {
+    throw new Error("Custom LLM base URL must not include credentials");
+  }
   const loopback = !isProduction && isLoopbackHost(uri.hostname);
   if (uri.protocol === "http:" && !loopback) {
     throw new Error("Custom LLM base URL must use https:// (http:// is only permitted for non-production localhost)");
   }
-  if (!loopback && isDisallowedPrivateHost(uri.hostname)) {
+  if (!loopback && isDisallowedHostname(uri.hostname)) {
     throw new Error("Blocked disallowed private/metadata host in custom LLM base URL");
   }
   return uri;

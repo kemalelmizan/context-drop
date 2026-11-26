@@ -4139,6 +4139,43 @@
   }
 
   // --- Module: screenshot.ts ---
+  function queryAllIncludingOpenShadowRoots(
+    root            ,
+    selectorQuery        ,
+    fallbackSelectorQuery        
+  )            {
+    const results            = [];
+  
+    const collectFrom = (scope            )       => {
+      if (typeof scope.querySelectorAll !== "function") return;
+      let matched                     ;
+      try {
+        matched = scope.querySelectorAll(selectorQuery);
+      } catch {
+        matched = scope.querySelectorAll(fallbackSelectorQuery);
+      }
+      for (let i = 0; i < matched.length; i += 1) {
+        results.push(matched[i]);
+      }
+  
+      let allElements                     ;
+      try {
+        allElements = scope.querySelectorAll("*");
+      } catch {
+        return;
+      }
+      for (let i = 0; i < allElements.length; i += 1) {
+        const el = allElements[i]                                                ;
+        if (el.tagName && el.tagName.toLowerCase() === "context-drop-widget") continue;
+        if (el.shadowRoot) {
+          collectFrom(el.shadowRoot);
+        }
+      }
+    };
+  
+    collectFrom(root);
+    return results;
+  }
   function collectRedactionRects(customExcludedSelectors           = [])                         {
     if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return [];
   
@@ -4147,16 +4184,11 @@
       ...selectors.filter((s) => s !== "context-drop-widget" && s !== "[data-context-drop-ui]"),
       "iframe"
     ].join(", ");
+    const fallbackQuery =
+      "[data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], iframe";
   
     const rects                         = [];
-    let candidates                     ;
-    try {
-      candidates = document.querySelectorAll(selectorQuery);
-    } catch {
-      candidates = document.querySelectorAll(
-        "[data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], iframe"
-      );
-    }
+    const candidates = queryAllIncludingOpenShadowRoots(document, selectorQuery, fallbackQuery);
   
     for (let i = 0; i < candidates.length; i += 1) {
       const el = candidates[i];
@@ -4284,8 +4316,23 @@
             ctx.strokeRect(rx, ry, r.width, r.height);
           }
   
-          // Render leaf text labels so surrounding-context previews are legible
-          if (node.children && node.children.length === 0 && typeof ctx.fillText === "function") {
+          // Render leaf text labels so surrounding-context previews are legible, excluding form/editable controls
+          const tagLower = (node.tagName || "").toLowerCase();
+          const isEditableControl =
+            tagLower === "input" ||
+            tagLower === "textarea" ||
+            tagLower === "select" ||
+            tagLower === "option" ||
+            (node               ).isContentEditable === true ||
+            (typeof node.getAttribute === "function" &&
+              node.hasAttribute("contenteditable") &&
+              node.getAttribute("contenteditable") !== "false");
+          if (
+            !isEditableControl &&
+            node.children &&
+            node.children.length === 0 &&
+            typeof ctx.fillText === "function"
+          ) {
             const text = (node.textContent || "").replace(/\s+/g, " ").trim();
             if (text.length > 0 && r.height >= 10) {
               ctx.fillStyle = style.color || "#111318";
@@ -8146,14 +8193,39 @@
         this.changeSetCardEl.appendChild(branch);
       }
   
-      if (cs.pr_url) {
-        const link = document.createElement("a");
-        link.className = "cd-change-set-link";
-        link.href = cs.pr_url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = "Open pull request";
-        this.changeSetCardEl.appendChild(link);
+      if (Array.isArray(cs.patches) && cs.patches.length > 0) {
+        const filesEl = document.createElement("div");
+        filesEl.className = "cd-change-set-meta cd-change-set-files";
+        const paths = cs.patches
+          .map((p) => (p && typeof p.path === "string" ? p.path.trim() : ""))
+          .filter(Boolean);
+        filesEl.textContent = `Files (${paths.length}): ${paths.join(", ")}`;
+        this.changeSetCardEl.appendChild(filesEl);
+      }
+  
+      if (cs.pr_url && /^https?:\/\/[^\s]+$/i.test(cs.pr_url.trim())) {
+        let validPrHref                = null;
+        try {
+          const parsedPr = new URL(cs.pr_url.trim());
+          if (
+            (parsedPr.protocol === "http:" || parsedPr.protocol === "https:") &&
+            !parsedPr.username &&
+            !parsedPr.password
+          ) {
+            validPrHref = parsedPr.toString();
+          }
+        } catch {
+          validPrHref = null;
+        }
+        if (validPrHref) {
+          const link = document.createElement("a");
+          link.className = "cd-change-set-link";
+          link.href = validPrHref;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Open pull request";
+          this.changeSetCardEl.appendChild(link);
+        }
       }
   
       const actions = document.createElement("div");

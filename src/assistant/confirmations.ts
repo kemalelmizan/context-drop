@@ -1,4 +1,5 @@
 import type { SanitizedElementInput, StoredFeedbackRecord } from "../server/types.ts";
+import { sanitizePromptUrl } from "../server/ssrf-guard.ts";
 
 export const DEFAULT_CONFIRMATION_TEMPLATES: readonly string[] = [
   "Thanks — we recorded your feedback **#{{id}}** ({{environment}}). Status: {{status}} · {{pins_count}} pinned area(s) · {{attachments_count}} attachment(s) · captured {{created_at}}.",
@@ -92,7 +93,8 @@ export function formatDomContextForAssistant(
   disclosure: "friendly" | "full"
 ): string {
   if (!elements || elements.length === 0) return "";
-  const lines = ["---", `Pinned Live DOM Context (on \`${pageUrl || "/"}\`):`];
+  const safeUrl = sanitizePromptUrl(pageUrl, "/");
+  const lines = ["<untrusted_dom_context>", `Pinned Live DOM Context (on \`${safeUrl}\`):`];
   elements.forEach((el, idx) => {
     const meta = el.metadata && typeof el.metadata === "object" ? el.metadata : {};
     if (disclosure === "friendly") {
@@ -105,5 +107,6 @@ export function formatDomContextForAssistant(
       lines.push(`${idx + 1}. \`<${el.tag_name}>\` selector=\`${el.selector}\``);
     }
   });
+  lines.push("</untrusted_dom_context>");
   return lines.join("\n");
 }

@@ -30,7 +30,10 @@ module ContextDrop
                   :active_storage_service,
                   :allow_anonymous,
                   :persist_ownership_tokens,
+                  :expose_agent_comments_to_submitter,
                   :allow_insecure_webhooks,
+                  :public_base_url,
+                  :lark_allowed_hosts,
                   :max_attachments,
                   :max_element_references,
                   :max_attachment_size,
@@ -68,6 +71,9 @@ module ContextDrop
                   :assistant_rate_limit,
                   :assistant_timeouts,
                   :assistant_max_iterations,
+                  :assistant_max_messages,
+                  :assistant_max_message_length,
+                  :assistant_max_total_message_chars,
                   :assistant_allow_code_tools_in_ask,
                   :assistant_allow_anonymous_change_sets,
                   :authorize_assistant_mode,
@@ -86,7 +92,10 @@ module ContextDrop
       @active_storage_service = nil
       @allow_anonymous = true
       @persist_ownership_tokens = true
+      @expose_agent_comments_to_submitter = false
       @allow_insecure_webhooks = false
+      @public_base_url = nil
+      @lark_allowed_hosts = []
 
       @max_attachments = 10
       @max_element_references = 10
@@ -141,6 +150,9 @@ module ContextDrop
       @assistant_rate_limit = nil
       @assistant_timeouts = { ask: 45, build: 90 }
       @assistant_max_iterations = { ask: 4, build: 8 }
+      @assistant_max_messages = 24
+      @assistant_max_message_length = 8_000
+      @assistant_max_total_message_chars = 48_000
       @assistant_allow_code_tools_in_ask = false
       @assistant_allow_anonymous_change_sets = nil
       @build_target = {}

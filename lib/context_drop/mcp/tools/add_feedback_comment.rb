@@ -31,6 +31,11 @@ module ContextDrop
                 type: "string",
                 enum: %w[new updated fixed reviewed dismissed],
                 description: "Optional target workflow status (defaults to 'updated')."
+              },
+              visibility: {
+                type: "string",
+                enum: %w[internal public],
+                description: "Comment visibility: 'internal' (default; visible on Triage Dashboard and MCP, hidden from anonymous submitter GET /feedback) or 'public'."
               }
             }
           }
@@ -39,12 +44,17 @@ module ContextDrop
         def self.call(args = {})
           params = args.is_a?(Hash) ? args.transform_keys(&:to_s) : {}
           raw_id = params["id"] || params["feedback_id"]
-          body = params["body"].to_s.strip
+          raw_body = params["body"].to_s.strip
+          body = ContextDrop::SecretRedactor.scrub(raw_body)
           author_label = params["author_label"].to_s.strip.presence || "AI Agent"
           next_status = params["status"].to_s.strip.presence || "updated"
+          visibility = params["visibility"].to_s.strip.downcase.presence || "internal"
 
           return error_result("Missing required parameter: id") if raw_id.nil? || raw_id.to_s.strip.empty?
           return error_result("Missing required parameter: body") if body.empty?
+          unless %w[internal public].include?(visibility)
+            return error_result("Invalid visibility '#{visibility}'. Must be 'internal' or 'public'")
+          end
 
           unless ContextDrop::Feedback::STATUSES.include?(next_status)
             return error_result(
@@ -63,7 +73,8 @@ module ContextDrop
                 "id" => feedback_id,
                 "body" => body,
                 "author_label" => author_label,
-                "status" => next_status
+                "status" => next_status,
+                "visibility" => visibility
               }
               res = ContextDrop::MCP::RemoteClient.call_tool(target_env, remote_cfg, "add_feedback_comment", remote_args)
               return res if res[:isError]
@@ -100,7 +111,7 @@ module ContextDrop
               author_type: "Agent",
               author_label: author_label,
               body: body,
-              metadata: {}
+              metadata: { "visibility" => visibility }
             )
             feedback.update!(status: next_status)
           end
@@ -117,6 +128,7 @@ module ContextDrop
                   qualified_id: ContextDrop::MCP::EnvironmentRouter.qualify_id(env_name, feedback.id),
                   environment: env_name,
                   author_label: comment.display_author_label,
+                  visibility: visibility,
                   body: comment.body,
                   status: feedback.status,
                   created_at: comment.created_at&.iso8601

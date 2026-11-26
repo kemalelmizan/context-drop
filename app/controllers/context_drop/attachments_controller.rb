@@ -5,6 +5,9 @@ module ContextDrop
     before_action :enforce_submission_authorization!
     before_action :enforce_rate_limit!
 
+    PENDING_UPLOAD_PURPOSE = :context_drop_pending_upload
+    PENDING_UPLOAD_TTL = 30.minutes
+
     def create
       validated = ContextDrop::UploadValidator.validate!(params[:file])
 
@@ -20,7 +23,7 @@ module ContextDrop
       blob = ActiveStorage::Blob.create_and_upload!(**blob_args)
 
       render json: {
-        signed_blob_id: blob.signed_id,
+        signed_blob_id: blob.signed_id(purpose: PENDING_UPLOAD_PURPOSE, expires_in: PENDING_UPLOAD_TTL),
         filename: validated[:filename],
         content_type: validated[:content_type],
         byte_size: validated[:byte_size],

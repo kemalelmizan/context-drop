@@ -1,6 +1,6 @@
 # OpenSpec implementation state (handoff)
 
-**Last verified:** 2026-11-25 — Ruby `spec/run_all.rb` (82 passed), `npm test` (52 passed), `npm run typecheck` (0 errors).
+**Last verified:** 2026-11-26 — Ruby `spec/run_all.rb` (86 passed), `npm test` (54 passed), `npm run typecheck` (0 errors).
 
 Read this file **before** planning new work. Normative behavior lives in `openspec/specs/<capability>/spec.md`. Project context: `openspec/project.md`. Agent workflow: `openspec/AGENTS.md`.
 
@@ -45,6 +45,7 @@ All tasks in these folders are `[x]`. Deltas are **merged into** `openspec/specs
 | `node-assistant-parity` | Full `@context-drop` Next.js/Node parity for `/assistant/*`, ChangeSets, org BYOK, and smart confirmations |
 | `secret-logging-guard` | Rails `filter_parameters` initializer + `SecretRedactor` / `redactSecretsFromText` runtime log & error scrubbing (`SEC-H069`) |
 | `post-iteration-security-audit` | `0600` notification master keys, `WidgetHelper` metadata sanitization, `RemoteClient` SSRF/redirect defense, agent payload caps, attachment `Referrer-Policy` |
+| `ai-adversarial-hardening` | MCP `<untrusted_feedback_data>` fencing & internal-by-default agent comments, `SafeRepoReader` + `PatchValidator`, safe URI schemes + Dashboard nonce CSP, `SsrfGuard` DNS pinning + Lark `api_host`/`lark_md` hardening, scoped `ActiveStorage` pending upload `signed_id`s, fail-closed Postgres secret, opt-in `trustProxy` rate limits, conversation budget caps, Shadow DOM/textarea screenshot redaction |
 
 Use `openspec/changes/<id>/design.md` for historical rationale only. **Do not treat change deltas as the only source of truth** when a matching file exists under `openspec/specs/`.
 

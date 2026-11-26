@@ -359,6 +359,28 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
       },
 
       async savePendingBlob(blob: ValidatedUpload): Promise<{ signed_blob_id: string }> {
+        const cutoffIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const expiredRows = sqliteDb
+          .prepare(
+            `SELECT id, blob_key FROM context_drop_pending_blobs
+             WHERE created_at < ?
+                OR id IN (
+                  SELECT id FROM context_drop_pending_blobs
+                  ORDER BY created_at DESC
+                  LIMIT -1 OFFSET 199
+                )`
+          )
+          .all(cutoffIso);
+        if (expiredRows.length > 0) {
+          const delStmt = sqliteDb.prepare("DELETE FROM context_drop_pending_blobs WHERE id = ?");
+          for (const er of expiredRows) {
+            delStmt.run(String(er["id"]));
+            if (blobStore.deleteBlob && er["blob_key"]) {
+              await blobStore.deleteBlob(String(er["blob_key"]));
+            }
+          }
+        }
+
         const rawId = crypto.randomUUID();
         const stored = await blobStore.putBlob({
           key: `pending_${rawId}`,
@@ -394,6 +416,11 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
 
         sqliteDb.prepare("DELETE FROM context_drop_pending_blobs WHERE id = ?").run(rawId);
         const blobKey = String(row["blob_key"]);
+        const createdMs = Date.parse(String(row["created_at"] ?? ""));
+        if (Number.isFinite(createdMs) && Date.now() - createdMs > 30 * 60 * 1000) {
+          if (blobStore.deleteBlob) await blobStore.deleteBlob(blobKey);
+          return null;
+        }
         const bytes = await blobStore.getBlob(blobKey);
         if (blobStore.deleteBlob) {
           await blobStore.deleteBlob(blobKey);
@@ -853,6 +880,23 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
         filename: blob.filename
       });
       const state = readJsonStore();
+      const nowMs = Date.now();
+      const pendingKeys = Object.keys(state.pendingBlobs);
+      for (const k of pendingKeys) {
+        const item = state.pendingBlobs[k];
+        if (item && nowMs - Date.parse(item.created_at) > 30 * 60 * 1000) {
+          delete state.pendingBlobs[k];
+          if (blobStore.deleteBlob) await blobStore.deleteBlob(item.blob_key);
+        }
+      }
+      const remainingKeys = Object.keys(state.pendingBlobs);
+      if (remainingKeys.length >= 200) {
+        for (const k of remainingKeys.slice(0, remainingKeys.length - 199)) {
+          const item = state.pendingBlobs[k];
+          delete state.pendingBlobs[k];
+          if (item && blobStore.deleteBlob) await blobStore.deleteBlob(item.blob_key);
+        }
+      }
       state.pendingBlobs[rawId] = {
         filename: blob.filename,
         content_type: blob.content_type,
@@ -874,6 +918,11 @@ export function createLocalStorageAdapter(options: LocalStorageAdapterOptions = 
 
       delete state.pendingBlobs[rawId];
       writeJsonStore(state);
+
+      if (Date.now() - Date.parse(entry.created_at) > 30 * 60 * 1000) {
+        if (blobStore.deleteBlob) await blobStore.deleteBlob(entry.blob_key);
+        return null;
+      }
 
       const bytes = await blobStore.getBlob(entry.blob_key);
       if (blobStore.deleteBlob) {

@@ -5,10 +5,20 @@
 # See docs/assistant/host-build-pack.md
 
 ContextDrop.configure do |config|
+  allowed_build_globs = %w[
+    app/views/**
+    app/components/**
+    app/helpers/**
+    app/javascript/**
+    app/assets/**
+    config/locales/**
+  ].freeze
+
   config.build_target = {
     environment: "staging",
     repo: "your-org/your-repo",
-    default_base_branch: "main"
+    default_base_branch: "main",
+    allowed_globs: allowed_build_globs
   }
 
   config.register_build_tool(
@@ -22,30 +32,36 @@ ContextDrop.configure do |config|
       }
     },
     write: false
-  ) do |args|
-  { screen: "unknown", allowed_globs: ["app/views/**", "app/components/**"] }
+  ) do |_args|
+    { screen: "unknown", allowed_globs: allowed_build_globs }
   end
 
   config.register_build_tool(
     name: "repo_read_file",
-    description: "Read a file from the repository",
+    description: "Read a file from the repository within allowed Build globs",
     parameters: {
       type: "object",
       required: ["path"],
-      properties: { path: { type: "string" } }
+      properties: {
+        path: { type: "string" },
+        start_line: { type: "integer" },
+        end_line: { type: "integer" }
+      }
     },
     write: false
   ) do |args|
-    path = args["path"].to_s
-    full = Rails.root.join(path)
-    raise "Path not allowed" unless full.to_s.start_with?(Rails.root.to_s)
-
-    { path: path, content: File.read(full) }
+    ContextDrop::Assistant::SafeRepoReader.read_file(
+      path: args["path"].to_s,
+      root: Rails.root,
+      allowed_globs: allowed_build_globs,
+      start_line: args["start_line"] || 1,
+      end_line: args["end_line"] || 250
+    )
   end
 
   config.register_build_tool(
     name: "repo_search",
-    description: "Search repository source",
+    description: "Search repository source within allowed Build globs",
     parameters: {
       type: "object",
       required: ["query"],
@@ -53,7 +69,11 @@ ContextDrop.configure do |config|
     },
     write: false
   ) do |args|
-    { matches: [] }
+    ContextDrop::Assistant::SafeRepoReader.search(
+      query: args["query"].to_s,
+      root: Rails.root,
+      allowed_globs: allowed_build_globs
+    )
   end
 
   config.register_build_tool(

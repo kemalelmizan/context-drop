@@ -4,6 +4,10 @@ require "uri"
 
 module ContextDrop
   module DashboardHelper
+    def safe_page_href(raw_url)
+      ContextDrop::UrlSafety.safe_href(raw_url)
+    end
+
     def url_path_and_host(raw_url)
       return ["/", nil] if raw_url.blank?
 

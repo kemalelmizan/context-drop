@@ -141,7 +141,7 @@
                 <% path, host = url_path_and_host(fb.page_url) %>
                 <div class="cd-url-box">
                   <div class="cd-url-top">
-                    <span class="cd-url-path"><%= format_breakable_text(path) %></span><% if fb.page_url.present? %><a href="<%= fb.page_url %>"
+                    <span class="cd-url-path"><%= format_breakable_text(path) %></span><% if (safe_href = safe_page_href(fb.page_url)) %><a href="<%= safe_href %>"
                          target="_blank"
                          rel="noopener noreferrer"
                          class="cd-icon-link"

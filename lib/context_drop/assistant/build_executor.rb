@@ -43,10 +43,11 @@ module ContextDrop
         })
         return error_result(pr_result) if pr_result[:is_error]
 
-        pr_url = pr_result.dig(:data, "pr_url") || pr_result.dig(:data, :pr_url)
+        raw_pr_url = pr_result.dig(:data, "pr_url") || pr_result.dig(:data, :pr_url)
+        pr_url = ContextDrop::UrlSafety.safe_external_http_url(raw_pr_url)
         @change_set.update!(
           status: "pr_open",
-          pr_url: pr_url.to_s.presence,
+          pr_url: pr_url,
           summary: @change_set.summary.presence || pr_title
         )
 
@@ -64,7 +65,7 @@ module ContextDrop
 
         data = res[:data].is_a?(Hash) ? res[:data].transform_keys(&:to_s) : {}
         status = data["status"].to_s.presence
-        preview = data["preview_url"].to_s.presence
+        preview = ContextDrop::UrlSafety.safe_external_http_url(data["preview_url"])
 
         attrs = {}
         attrs[:status] = status if status && ChangeSet::STATUSES.include?(status)

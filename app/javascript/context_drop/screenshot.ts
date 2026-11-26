@@ -10,6 +10,44 @@ export interface ScreenshotCaptureResult {
   metadata: Record<string, unknown>;
 }
 
+function queryAllIncludingOpenShadowRoots(
+  root: ParentNode,
+  selectorQuery: string,
+  fallbackSelectorQuery: string
+): Element[] {
+  const results: Element[] = [];
+
+  const collectFrom = (scope: ParentNode): void => {
+    if (typeof scope.querySelectorAll !== "function") return;
+    let matched: NodeListOf<Element>;
+    try {
+      matched = scope.querySelectorAll(selectorQuery);
+    } catch {
+      matched = scope.querySelectorAll(fallbackSelectorQuery);
+    }
+    for (let i = 0; i < matched.length; i += 1) {
+      results.push(matched[i]);
+    }
+
+    let allElements: NodeListOf<Element>;
+    try {
+      allElements = scope.querySelectorAll("*");
+    } catch {
+      return;
+    }
+    for (let i = 0; i < allElements.length; i += 1) {
+      const el = allElements[i] as Element & { shadowRoot?: ShadowRoot | null };
+      if (el.tagName && el.tagName.toLowerCase() === "context-drop-widget") continue;
+      if (el.shadowRoot) {
+        collectFrom(el.shadowRoot);
+      }
+    }
+  };
+
+  collectFrom(root);
+  return results;
+}
+
 export function collectRedactionRects(customExcludedSelectors: string[] = []): BoundingRectSnapshot[] {
   if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return [];
 
@@ -18,16 +56,11 @@ export function collectRedactionRects(customExcludedSelectors: string[] = []): B
     ...selectors.filter((s) => s !== "context-drop-widget" && s !== "[data-context-drop-ui]"),
     "iframe"
   ].join(", ");
+  const fallbackQuery =
+    "[data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], iframe";
 
   const rects: BoundingRectSnapshot[] = [];
-  let candidates: NodeListOf<Element>;
-  try {
-    candidates = document.querySelectorAll(selectorQuery);
-  } catch {
-    candidates = document.querySelectorAll(
-      "[data-feedback-ignore], [data-feedback-sensitive], input[type='password'], input[type='hidden'], iframe"
-    );
-  }
+  const candidates = queryAllIncludingOpenShadowRoots(document, selectorQuery, fallbackQuery);
 
   for (let i = 0; i < candidates.length; i += 1) {
     const el = candidates[i];
@@ -160,8 +193,23 @@ export async function captureViewportScreenshot(
           ctx.strokeRect(rx, ry, r.width, r.height);
         }
 
-        // Render leaf text labels so surrounding-context previews are legible
-        if (node.children && node.children.length === 0 && typeof ctx.fillText === "function") {
+        // Render leaf text labels so surrounding-context previews are legible, excluding form/editable controls
+        const tagLower = (node.tagName || "").toLowerCase();
+        const isEditableControl =
+          tagLower === "input" ||
+          tagLower === "textarea" ||
+          tagLower === "select" ||
+          tagLower === "option" ||
+          (node as HTMLElement).isContentEditable === true ||
+          (typeof node.getAttribute === "function" &&
+            node.hasAttribute("contenteditable") &&
+            node.getAttribute("contenteditable") !== "false");
+        if (
+          !isEditableControl &&
+          node.children &&
+          node.children.length === 0 &&
+          typeof ctx.fillText === "function"
+        ) {
           const text = (node.textContent || "").replace(/\s+/g, " ").trim();
           if (text.length > 0 && r.height >= 10) {
             ctx.fillStyle = style.color || "#111318";

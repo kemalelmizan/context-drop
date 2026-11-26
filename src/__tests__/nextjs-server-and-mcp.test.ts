@@ -1862,6 +1862,197 @@ describe("Own Feedback Sync, Update, Soft Delete & MCP Soft-Delete Filtering", (
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("enforces AI-adversarial hardening across Node Postgres, SSRF/Lark, rate limits, patches, URI schemes, and MCP prompts (AI-SEC-01..12)", async () => {
+    const { isDisallowedHostname, isDisallowedIp } = await import("../server/ssrf-guard.ts");
+    const { buildLarkInteractiveCard, validateLarkApiHost, LarkDeliveryError } = await import(
+      "../notifications/lark-client.ts"
+    );
+    const { validateChangeSetPatches } = await import("../assistant/change-sets.ts");
+
+    // 1. AI-SEC-03: PostgresStorageAdapter fails closed in production without secret
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevSecret = process.env.CONTEXT_DROP_SECRET;
+    const prevSecretKey = process.env.CONTEXT_DROP_SECRET_KEY;
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.CONTEXT_DROP_SECRET;
+      delete process.env.CONTEXT_DROP_SECRET_KEY;
+      assert.throws(() =>
+        createPostgresStorageAdapter({
+          pool: { async query() { return { rows: [] }; } }
+        })
+      );
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevSecret !== undefined) process.env.CONTEXT_DROP_SECRET = prevSecret;
+      if (prevSecretKey !== undefined) process.env.CONTEXT_DROP_SECRET_KEY = prevSecretKey;
+    }
+
+    // 2. AI-SEC-06 & AI-SEC-09: Wildcard DNS rebinding, CGNAT, mapped IPv6, Lark api_host & lark_md escaping
+    assert.equal(isDisallowedHostname("169.254.169.254.nip.io"), true);
+    assert.equal(isDisallowedHostname("127.0.0.1.sslip.io"), true);
+    assert.equal(isDisallowedIp("100.64.0.5"), true);
+    assert.equal(isDisallowedIp("::ffff:169.254.169.254"), true);
+    assert.throws(() => validateLarkApiHost("https://evil.example.com"), LarkDeliveryError);
+    assert.throws(() => validateLarkApiHost("http://open.larksuite.com"), LarkDeliveryError);
+
+    const cardRaw = buildLarkInteractiveCard({
+      eventId: "ev_1",
+      name: "feedback.created",
+      timestamp: "2026-11-25T00:00:00Z",
+      cursor: "1",
+      data: {
+        feedback_id: 9,
+        environment: "production",
+        status: "new",
+        message: "<at id=all></at> [Phish](https://evil.example)",
+        page_url: "https://acme.com/app",
+        dashboard_url: "data:text/html,bad"
+      }
+    });
+    const cardParsed = JSON.parse(cardRaw) as { elements: Array<Record<string, unknown>> };
+    const mdText = String((cardParsed.elements[0]?.["text"] as Record<string, unknown>)["content"]);
+    assert.ok(!mdText.includes("<at id=all>"));
+    assert.ok(mdText.includes("&lt;at id=all&gt;"));
+    assert.equal(cardParsed.elements.length, 1);
+
+    // 3. AI-SEC-05: Patch target validation rejects CI workflows, secrets, and traversal
+    for (const badPath of [
+      ".github/workflows/deploy.yml",
+      "Dockerfile",
+      "package.json",
+      ".env.local",
+      "../outside.ts"
+    ]) {
+      assert.throws(() =>
+        validateChangeSetPatches([{ path: badPath, old_string: "", new_string: "x" }])
+      );
+    }
+
+    // 4. AI-SEC-04, AI-SEC-07, AI-SEC-08, AI-SEC-01 on Next.js handler
+    const memStorage = createMemoryStorageAdapter();
+    const hardenedApp = createContextDropNextHandler({
+      environment: "development",
+      storage: memStorage,
+      ownershipSecret: "hardened-node-secret-0123456789",
+      rateLimit: { maxRequests: 2, periodSeconds: 3600 },
+      assistant: {
+        enabled: true,
+        rateLimit: { maxRequests: 10, periodSeconds: 3600 },
+        llm: {
+          provider: "anthropic",
+          apiKey: "sk-ant-hardened",
+          maxMessages: 3,
+          transport: async () => ({ text: "ok", tool_calls: [] })
+        }
+      }
+    });
+
+    // AI-SEC-04: Reject unsafe scheme in page_url (consumes 1st of 2 rate limit credits)
+    const badPageRes = await hardenedApp.POST(
+      new Request("http://localhost:3000/api/context-drop/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://localhost:3000",
+          "X-Forwarded-For": "203.0.113.1"
+        },
+        body: JSON.stringify({
+          feedback: { message: "XSS url", page_url: "data:text/html,bad" }
+        })
+      })
+    );
+    assert.equal(badPageRes.status, 422);
+
+    // Valid feedback (consumes 2nd of 2 rate limit credits despite rotated X-Forwarded-For)
+    const okFbRes = await hardenedApp.POST(
+      new Request("http://localhost:3000/api/context-drop/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://localhost:3000",
+          "X-Forwarded-For": "203.0.113.2"
+        },
+        body: JSON.stringify({
+          feedback: { message: "Valid feedback", page_url: "/checkout" }
+        })
+      })
+    );
+    assert.equal(okFbRes.status, 201);
+    const okFbBody = (await okFbRes.json()) as { id: number; ownership_token: string };
+
+    // AI-SEC-08: 3rd request with rotated X-Forwarded-For is throttled (429) because trustProxy defaults to false
+    const spoofedIpRes = await hardenedApp.POST(
+      new Request("http://localhost:3000/api/context-drop/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://localhost:3000",
+          "X-Forwarded-For": "203.0.113.99"
+        },
+        body: JSON.stringify({
+          feedback: { message: "Spoofed IP bypass attempt", page_url: "/checkout" }
+        })
+      })
+    );
+    assert.equal(spoofedIpRes.status, 429);
+
+    // AI-SEC-07: Assistant turn exceeding maxMessages (3) rejected with 422
+    const tooManyMsgsRes = await hardenedApp.POST(
+      new Request("http://localhost:3000/api/context-drop/assistant/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+        body: JSON.stringify({
+          mode: "ask",
+          page_url: "http://localhost:3000/checkout",
+          messages: [
+            { role: "user", content: "1" },
+            { role: "assistant", content: "2" },
+            { role: "user", content: "3" },
+            { role: "assistant", content: "4" }
+          ]
+        })
+      })
+    );
+    assert.equal(tooManyMsgsRes.status, 422);
+
+    // AI-SEC-01: Agent comments hidden from anonymous submitter GET /feedback by default, and MCP prompt fenced
+    await memStorage.addComment?.(okFbBody.id, {
+      author_type: "Agent",
+      author_label: "AI Agent",
+      body: "Internal agent triage note",
+      attachments: []
+    });
+    const ownPollRes = await hardenedApp.GET(
+      new Request("http://localhost:3000/api/context-drop/feedback", {
+        headers: { "X-Context-Drop-Ownership-Tokens": okFbBody.ownership_token }
+      })
+    );
+    const ownPollJson = (await ownPollRes.json()) as {
+      feedbacks: Array<{ comments: unknown[]; comments_count: number }>;
+    };
+    assert.equal(ownPollJson.feedbacks[0]?.comments.length, 0);
+    assert.equal(ownPollJson.feedbacks[0]?.comments_count, 0);
+
+    const mcp = new ContextDropMcpDispatcher({
+      storage: memStorage,
+      hostEnvironment: "development"
+    });
+    const promptRpc = await mcp.dispatch({
+      jsonrpc: "2.0",
+      id: 901,
+      method: "prompts/get",
+      params: { name: "investigate_feedback", arguments: { feedback_id: okFbBody.id } }
+    });
+    assert.ok(promptRpc && !Array.isArray(promptRpc));
+    const promptMsg = (
+      promptRpc.result as { messages: Array<{ content: { text: string } }> }
+    ).messages[0]?.content.text ?? "";
+    assert.ok(promptMsg.includes("SECURITY NOTICE"));
+    assert.ok(promptMsg.includes("<untrusted_feedback_data>"));
+  });
 });
 
 

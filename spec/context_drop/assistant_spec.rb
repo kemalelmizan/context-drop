@@ -122,7 +122,7 @@ RSpec.describe "ContextDrop Assistant" do
                     {
                       attachment_type: "image",
                       filename: "blob-shot.png",
-                      signed_blob_id: blob.signed_id
+                      signed_blob_id: blob.signed_id(purpose: :context_drop_pending_upload, expires_in: 30.minutes)
                     }
                   ]
                 }.to_json,

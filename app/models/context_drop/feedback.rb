@@ -51,6 +51,7 @@ module ContextDrop
 
     validates :page_url, presence: true
     validates :status, presence: true, inclusion: { in: STATUSES }
+    validate :ensure_safe_page_url
     validate :ensure_content_or_context_present
     validate :ensure_collection_limits
 
@@ -165,6 +166,13 @@ module ContextDrop
         self[:environment] = resolved_env
       end
       self.metadata["environment"] ||= resolved_env
+    end
+
+    def ensure_safe_page_url
+      return if page_url.blank?
+      return if ContextDrop::UrlSafety.valid_page_url?(page_url)
+
+      errors.add(:page_url, "must be a valid http(s) URL or relative path")
     end
 
     def ensure_content_or_context_present

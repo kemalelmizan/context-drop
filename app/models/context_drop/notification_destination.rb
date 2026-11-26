@@ -73,6 +73,8 @@ module ContextDrop
     def validate_settings_shape
       case destination_type
       when "lark"
+        api_host = settings.is_a?(Hash) ? settings["api_host"].to_s.strip : ""
+        ContextDrop::Notifications::LarkClient.validate_api_host!(api_host) unless api_host.empty?
         return unless enabled
 
         errors.add(:settings, "require receive_id for Lark") if !settings.is_a?(Hash) || settings["receive_id"].to_s.strip.empty?
@@ -85,7 +87,8 @@ module ContextDrop
 
         ContextDrop::Notifications::WebhookClient.validate_https_uri!(url)
       end
-    rescue ContextDrop::Notifications::WebhookClient::DeliveryError => e
+    rescue ContextDrop::Notifications::WebhookClient::DeliveryError,
+           ContextDrop::Notifications::LarkClient::DeliveryError => e
       errors.add(:settings, e.message)
     end
   end

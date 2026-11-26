@@ -1,41 +1,11 @@
 import crypto from "node:crypto";
+import {
+  assertResolvedPublicHost,
+  isDisallowedHostname,
+  isLoopbackHost
+} from "../server/ssrf-guard.ts";
 
 export class WebhookDeliveryError extends Error {}
-
-function isLoopbackHost(host: string): boolean {
-  const clean = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  if (clean === "localhost" || clean.endsWith(".localhost")) return true;
-  if (clean === "127.0.0.1" || clean === "::1") return true;
-  const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(clean);
-  if (match && Number(match[1]) === 127) return true;
-  return false;
-}
-
-function isPrivateHost(host: string): boolean {
-  const down = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  if (
-    down === "localhost" ||
-    down.endsWith(".localhost") ||
-    down === "metadata.google.internal" ||
-    down === "::1" ||
-    down === "::" ||
-    down.startsWith("fe80:") ||
-    down.startsWith("fc") ||
-    down.startsWith("fd")
-  ) {
-    return true;
-  }
-  const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(down);
-  if (!match) return false;
-  const oct = match.slice(1, 5).map((x) => Number(x));
-  if (oct[0] === 10) return true;
-  if (oct[0] === 127) return true;
-  if (oct[0] === 0) return true;
-  if (oct[0] === 169 && oct[1] === 254) return true;
-  if (oct[0] === 192 && oct[1] === 168) return true;
-  if (oct[0] === 172 && oct[1]! >= 16 && oct[1]! <= 31) return true;
-  return false;
-}
 
 export function validateHttpsCallbackUrl(
   urlStr: string,
@@ -50,13 +20,16 @@ export function validateHttpsCallbackUrl(
   if (!uri.hostname.trim()) {
     throw new WebhookDeliveryError("Webhook URL host missing");
   }
+  if (uri.username || uri.password) {
+    throw new WebhookDeliveryError("Webhook URL must not include credentials");
+  }
   if (options?.allowLocalHttp && uri.protocol === "http:" && isLoopbackHost(uri.hostname)) {
     return uri;
   }
   if (uri.protocol !== "https:") {
     throw new WebhookDeliveryError("Webhook URL must use HTTPS");
   }
-  if (isPrivateHost(uri.hostname)) {
+  if (isDisallowedHostname(uri.hostname)) {
     throw new WebhookDeliveryError("Webhook URL blocked (private network)");
   }
   return uri;
@@ -80,9 +53,23 @@ export function signedWebhookHeaders(secret: string, msgId: string, body: string
 export async function postSignedJson(
   urlStr: string,
   body: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  options?: { allowLocalHttp?: boolean }
 ): Promise<void> {
-  const res = await fetch(urlStr, { method: "POST", headers, body });
+  const uri = validateHttpsCallbackUrl(urlStr, options);
+  try {
+    await assertResolvedPublicHost(uri.hostname, { allowLoopback: Boolean(options?.allowLocalHttp) });
+  } catch (err) {
+    throw new WebhookDeliveryError((err as Error).message);
+  }
+
+  const res = await fetch(uri.toString(), {
+    method: "POST",
+    redirect: "error",
+    headers,
+    body,
+    signal: AbortSignal.timeout(12_000)
+  });
   if (!res.ok) {
     const text = (await res.text()).slice(0, 300);
     throw new WebhookDeliveryError(`HTTP ${res.status}: ${text}`);

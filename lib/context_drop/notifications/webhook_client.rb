@@ -49,6 +49,8 @@ module ContextDrop
                            end
 
           uri = URI.parse(url.to_s.strip)
+          raise DeliveryError, "Webhook URL must not include credentials" unless uri.userinfo.nil?
+
           if allow_dev_http && uri.is_a?(URI::HTTP) && !uri.host.to_s.strip.empty? && loopback_host?(uri.host)
             return uri
           end
@@ -80,7 +82,10 @@ module ContextDrop
         private
 
         def post_json(uri, body, headers)
+          allow_local = defined?(ContextDrop) && ContextDrop.respond_to?(:config) && ContextDrop.config.insecure_webhooks_allowed?
+          pinned_ip = ContextDrop::SsrfGuard.resolve_public_ip!(uri.host, allow_loopback: allow_local)
           http = Net::HTTP.new(uri.host, uri.port)
+          http.ipaddr = pinned_ip if pinned_ip
           http.use_ssl = uri.scheme == "https"
           http.open_timeout = 8
           http.read_timeout = 12
@@ -90,25 +95,16 @@ module ContextDrop
           return res if res.is_a?(Net::HTTPSuccess)
 
           raise DeliveryError, "HTTP #{res.code}: #{res.body.to_s.truncate(300)}"
+        rescue ContextDrop::SsrfGuard::SsrfError => e
+          raise DeliveryError, e.message
         end
 
         def loopback_host?(host)
-          clean = host.to_s.strip.downcase.delete_prefix("[").delete_suffix("]")
-          return true if %w[localhost 127.0.0.1 ::1].include?(clean) || clean.end_with?(".localhost")
-
-          IPAddr.new(clean).loopback?
-        rescue IPAddr::InvalidAddressError
-          false
+          ContextDrop::SsrfGuard.loopback_host?(host)
         end
 
         def private_or_local_host?(host)
-          clean = host.to_s.strip.downcase.delete_prefix("[").delete_suffix("]")
-          return true if %w[localhost metadata.google.internal].include?(clean) || clean.end_with?(".localhost")
-
-          ip = IPAddr.new(clean)
-          ip.loopback? || ip.private? || ip.link_local? || ip.to_s == "0.0.0.0" || ip.to_s == "::"
-        rescue IPAddr::InvalidAddressError
-          false
+          ContextDrop::SsrfGuard.disallowed_hostname?(host)
         end
       end
     end

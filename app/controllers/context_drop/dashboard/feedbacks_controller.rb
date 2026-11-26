@@ -7,6 +7,7 @@ module ContextDrop
       helper ContextDrop::DashboardHelper
 
       before_action :enforce_dashboard_authorization!
+      before_action :apply_dashboard_security_headers!
       before_action :resolve_navigation_shortcuts
 
       PER_PAGE = 25
@@ -55,7 +56,10 @@ module ContextDrop
         @total_pages = [(@total_filtered.to_f / PER_PAGE).ceil, 1].max
         @feedbacks = scope.limit(PER_PAGE).offset((@page - 1) * PER_PAGE)
 
-        session[:context_drop_dashboard_index_url] = request.fullpath if respond_to?(:session) && request&.get?
+        if respond_to?(:session) && request&.get?
+          safe_full = ContextDrop::UrlSafety.safe_relative_path(request.fullpath)
+          session[:context_drop_dashboard_index_url] = safe_full if safe_full
+        end
       end
 
       def show
@@ -251,13 +255,20 @@ module ContextDrop
         str.to_s.gsub(/[%_\\]/) { |m| "\\#{m}" }
       end
 
+      def apply_dashboard_security_headers!
+        @cd_csp_nonce = SecureRandom.base64(16)
+        response.set_header(
+          "Content-Security-Policy",
+          "default-src 'self'; script-src 'self' 'nonce-#{@cd_csp_nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+        )
+        response.set_header("X-Frame-Options", "SAMEORIGIN")
+        response.set_header("X-Content-Type-Options", "nosniff")
+      end
+
       def resolve_navigation_shortcuts
         @host_app_path = resolve_host_app_path
-        @triage_index_back_path = if respond_to?(:session) && session[:context_drop_dashboard_index_url].present?
-                                    session[:context_drop_dashboard_index_url]
-                                  else
-                                    dashboard_feedbacks_path
-                                  end
+        saved_index = respond_to?(:session) ? ContextDrop::UrlSafety.safe_relative_path(session[:context_drop_dashboard_index_url]) : nil
+        @triage_index_back_path = saved_index || dashboard_feedbacks_path
       end
 
       def resolve_host_app_path
@@ -265,20 +276,23 @@ module ContextDrop
         if respond_to?(:session) && request&.referer.present?
           begin
             ref_uri = URI.parse(request.referer)
-            same_host = ref_uri.host.nil? || (request.respond_to?(:host) && ref_uri.host == request.host)
+            same_host = (ref_uri.scheme.nil? && ref_uri.host.nil?) ||
+                        ((ref_uri.is_a?(URI::HTTP) || ref_uri.is_a?(URI::HTTPS)) && request.respond_to?(:host) && ref_uri.host == request.host)
             if same_host && ref_uri.path.present? && !ref_uri.path.start_with?(engine_prefix)
-              full_ref = [ref_uri.path, ref_uri.query].compact.join("?")
-              session[:context_drop_return_to] = full_ref
+              candidate = [ref_uri.path, ref_uri.query].compact.join("?")
+              safe_ref = ContextDrop::UrlSafety.safe_relative_path(candidate)
+              session[:context_drop_return_to] = safe_ref if safe_ref
             end
           rescue URI::InvalidURIError
             # Ignore malformed referer headers
           end
         end
 
-        return session[:context_drop_return_to] if respond_to?(:session) && session[:context_drop_return_to].present?
+        saved_return = respond_to?(:session) ? ContextDrop::UrlSafety.safe_relative_path(session[:context_drop_return_to]) : nil
+        return saved_return if saved_return.present?
 
         if respond_to?(:main_app) && main_app.respond_to?(:root_path)
-          main_app.root_path
+          ContextDrop::UrlSafety.safe_relative_path(main_app.root_path) || "/"
         else
           "/"
         end

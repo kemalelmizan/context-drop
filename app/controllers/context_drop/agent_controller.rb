@@ -77,6 +77,14 @@ module ContextDrop
       raw_elements = params[:element_references].is_a?(Array) ? params[:element_references].map { |e| to_plain_hash(e) } : []
       raw_attachments = params[:attachments].is_a?(Array) ? params[:attachments].map { |a| to_plain_hash(a) } : []
 
+      max_msgs = [ContextDrop.config.assistant_max_messages.to_i, 40].max
+      if raw_messages.size > max_msgs
+        render json: {
+          error: "Message count (#{raw_messages.size}) exceeds maximum allowed (#{max_msgs})"
+        }, status: :unprocessable_entity
+        return
+      end
+
       if raw_attachments.size > ContextDrop.config.max_attachments.to_i
         render json: {
           error: "Attachments count (#{raw_attachments.size}) exceeds maximum allowed (#{ContextDrop.config.max_attachments})"
@@ -160,6 +168,8 @@ module ContextDrop
     end
 
     def valid_same_origin_request?
+      return false if request.headers["Sec-Fetch-Site"].to_s.strip.downcase == "cross-site"
+
       origin = request.headers["Origin"].to_s.strip
       return true if origin.empty? # Same-origin non-CORS or test harness without Origin; CSRF still protects POST/DELETE
 

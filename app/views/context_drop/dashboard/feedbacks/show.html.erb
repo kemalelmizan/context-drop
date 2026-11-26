@@ -93,8 +93,8 @@
     <dd>
       <div style="display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;">
         <code class="cd-mono" style="word-break: break-all;"><%= @feedback.page_url %></code>
-        <% if @feedback.page_url.present? %>
-          <a href="<%= @feedback.page_url %>"
+        <% if (safe_href = safe_page_href(@feedback.page_url)) %>
+          <a href="<%= safe_href %>"
              target="_blank"
              rel="noopener noreferrer"
              class="cd-icon-link"
@@ -301,7 +301,7 @@
 </div>
 </div>
 
-<script>
+<script nonce="<%= @cd_csp_nonce %>">
   (function() {
     var form = document.getElementById("cd-dashboard-comment-form");
     var textarea = document.getElementById("cd-dashboard-comment-body");
